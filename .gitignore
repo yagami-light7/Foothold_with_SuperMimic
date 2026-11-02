@@ -1,0 +1,64 @@
+# Python缓存、测试和构建产物。
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyright/
+.coverage
+htmlcov/
+*.egg-info/
+/build/
+/dist/
+
+# 本地解释器、编辑器及仿真窗口状态；文档和机器人USD正常提交。
+.venv*/
+venv/
+.vscode/
+.idea/
+.DS_Store
+imgui.ini
+
+# 账号和机器私有配置；示例配置可提交，不在仓库保存真实凭据。
+.env
+.env.*
+!.env.example
+.netrc
+.aws/
+.ssh/
+.swanlab/
+.codex/
+.agents/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# 大体积运行数据和模型单独传输，避免git add .误收训练产物。
+/logs/
+/.log_archive/
+/checkpoints/
+/artifacts/
+swanlog/
+events.out.tfevents.*
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.log
+*.tmp
+/assets/*.zip
+
+# 旧实验Shell入口只做本地归档，不上传GitHub。
+/scripts/history_train/
+
+# 只随代码分发这一份已验证的续训起点，历史checkpoint仍保持忽略。
+!/pretrained/s54_walk_12h_20261102/model.pt
+
+# 实验报告只提交Markdown和图表；原始数据、脚本快照与模型保留在本地。
+/reports/**
+!/reports/**/
+!/reports/**/*.md
+!/reports/**/*.png
+/reports/**/snapshot/
+/reports/**/before/

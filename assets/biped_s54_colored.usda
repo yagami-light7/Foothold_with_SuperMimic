@@ -1,0 +1,440 @@
+#usda 1.0
+(
+    defaultPrim = "biped_s54"
+    doc = "S54 visual appearance only. Grayscale palette and mesh assignment adapted from supermimic_s54/tools/render.py:apply_render_style"
+    metersPerUnit = 1
+    subLayers = [
+        @biped_s54.usd@
+    ]
+    upAxis = "Z"
+)
+
+over "biped_s54"
+{
+    over "Looks"
+    {
+        def Material "S54_ShellGray"
+        {
+            token outputs:mdl:surface.connect = </biped_s54/Looks/S54_ShellGray/Shader.outputs:out>
+            token outputs:surface.connect = </biped_s54/Looks/S54_ShellGray/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                color3f inputs:diffuse_color_constant = (0.5704816, 0.5704816, 0.5704816)
+                float inputs:metallic_constant = 0
+                float inputs:reflection_roughness_constant = 0.8
+                token outputs:out
+            }
+        }
+
+        def Material "S54_JointGray"
+        {
+            token outputs:mdl:surface.connect = </biped_s54/Looks/S54_JointGray/Shader.outputs:out>
+            token outputs:surface.connect = </biped_s54/Looks/S54_JointGray/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                color3f inputs:diffuse_color_constant = (0.073238954, 0.073238954, 0.073238954)
+                float inputs:metallic_constant = 0
+                float inputs:reflection_roughness_constant = 0.8
+                token outputs:out
+            }
+        }
+
+        def Material "S54_EndDark"
+        {
+            token outputs:mdl:surface.connect = </biped_s54/Looks/S54_EndDark/Shader.outputs:out>
+            token outputs:surface.connect = </biped_s54/Looks/S54_EndDark/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                color3f inputs:diffuse_color_constant = (0.010022826, 0.010022826, 0.010022826)
+                float inputs:metallic_constant = 0
+                float inputs:reflection_roughness_constant = 0.8
+                token outputs:out
+            }
+        }
+    }
+
+    over "leg_l1_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_JointGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "leg_l2_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_JointGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "leg_l3_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_ShellGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "leg_l5_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_JointGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "leg_l4_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_ShellGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "leg_l6_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_EndDark> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "leg_r1_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_JointGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "leg_r2_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_JointGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "leg_r3_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_ShellGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "leg_r4_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_ShellGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "leg_r5_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_JointGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "leg_r6_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_EndDark> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "waist_yaw"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_JointGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "zarm_l1_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_ShellGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "zarm_l2_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_JointGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "zarm_l3_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_JointGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "zarm_l4_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_ShellGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "zarm_l5_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_JointGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "zarm_l6_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_JointGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "zarm_l7_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_EndDark> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "zarm_r1_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_ShellGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "zarm_r2_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_JointGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "zarm_r3_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_JointGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "zarm_r4_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_ShellGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "zarm_r5_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_JointGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "zarm_r6_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_JointGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "zarm_r7_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_EndDark> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "zhead_1_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_ShellGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "zhead_2_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_ShellGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "waist_camera"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_ShellGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+
+    over "base_link"
+    {
+        over "visuals" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </biped_s54/Looks/S54_ShellGray> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+        }
+    }
+}
+

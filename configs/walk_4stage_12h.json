@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "length_unit": "m",
+  "frequency_unit": "Hz",
+  "phases": [
+    {"name": "walk_1", "updates": 3000, "step_length_range": [0.05, 0.25], "frequency_range": [0.5, 1.5]},
+    {"name": "walk_2", "updates": 3000, "step_length_range": [0.05, 0.30], "frequency_range": [0.5, 1.5]},
+    {"name": "walk_3", "updates": 3000, "step_length_range": [0.05, 0.40], "frequency_range": [0.5, 1.8]},
+    {"name": "walk_4", "updates": 3000, "step_length_range": [0.05, 0.40], "frequency_range": [0.5, 2.0]}
+  ]
+}
