@@ -8,6 +8,7 @@ HOURS_EXPLICIT=false
 TRAIN_ENVS=2048
 ENVS_EXPLICIT=false
 TRAIN_CHUNK=50000
+TRAIN_SAVE_INTERVAL=""
 INITIAL_CHECKPOINT="$TASK_ROOT/logs/straight/2026-10-30_18-26-34_stride_cadence_lr105/training/00012_straight/model_interrupted.pt"
 CHECKPOINT_EXPLICIT=false
 TRAIN_OUTPUT=""
@@ -26,6 +27,7 @@ while [[ $# -gt 0 ]]; do
     --hours) TRAIN_HOURS="${2:?缺少小时数}"; HOURS_EXPLICIT=true; shift 2 ;;
     --num-envs) TRAIN_ENVS="${2:?缺少环境数}"; ENVS_EXPLICIT=true; shift 2 ;;
     --chunk-iterations) TRAIN_CHUNK="${2:?缺少每段PPO更新次数}"; shift 2 ;;
+    --save-interval|--save_interval) TRAIN_SAVE_INTERVAL="${2:?缺少checkpoint保存间隔}"; shift 2 ;;
     --checkpoint) INITIAL_CHECKPOINT="${2:?缺少checkpoint}"; CHECKPOINT_EXPLICIT=true; shift 2 ;;
     --output-dir) TRAIN_OUTPUT="${2:?缺少输出目录}"; shift 2 ;;
     --resume-dir) RESUME_DIRECTORY="${2:?缺少恢复目录}"; shift 2 ;;
@@ -40,13 +42,14 @@ while [[ $# -gt 0 ]]; do
       echo "用法: bash scripts/train_walk_12h.sh [--checkpoint FILE] [--dry-run]"
       echo "      [--hours 12] [--num-envs 2048] [--output-dir DIR] [--resume-dir DIR]"
       echo "      [--chunk-iterations 50000]"
+      echo "      [--save-interval 250] 每N次PPO更新保存checkpoint，必须为正整数"
       echo "      [--schedule configs/walk_4stage_12h.json] [--tail hold-last|stop]"
       echo "      [--adaptive-plan configs/walk_hard_region.json]（按物理评估晋级，与schedule互斥）"
       echo "      [--swanlab-detail compact|full] 默认精简上传，完整诊断保存在本地"
       echo "      [--eval-envs 64] [--eval-steps 1000] 评估步数至少1000"
       echo "步长单位为米，频率单位Hz；默认前三阶段各3000次PPO更新，第四阶段训练到总12小时。"
       echo "恢复同一实验时继承剩余时间、课程进度和SwanLab身份；checkpoint与resume-dir互斥。"
-      echo "checkpoint保存间隔取agents/rsl_rl_ppo_cfg.py的save_interval；每个训练段结束后评估。"
+      echo "checkpoint保存间隔默认取agents/rsl_rl_ppo_cfg.py，可用save-interval覆盖。"
       echo "adaptive-plan设置evaluation.enabled=false时关闭基线、周期和末尾eval，使用全部剩余预算训练。"
       echo "默认训练段在阶段边界结束；缩短chunk-iterations可定期评估，课程仍按更新数切换。"
       exit 0 ;;
@@ -68,6 +71,7 @@ arguments=(
   --eval-envs "$EVAL_ENVS" --eval-steps "$EVAL_STEPS" --eval-frequency-corners --eval-every-chunks 1
   --print-every 10 --seed 42 --project S54-Locomotion --mode online --continue-after-pass)
 arguments+=(--swanlab-detail "$SWANLAB_DETAIL")
+if [[ -n "$TRAIN_SAVE_INTERVAL" ]]; then arguments+=(--save-interval "$TRAIN_SAVE_INTERVAL"); fi
 if [[ -n "$RESUME_DIRECTORY" ]]; then
   ! "$CHECKPOINT_EXPLICIT" || { echo "resume-dir不能与checkpoint并用" >&2; exit 2; }
   [[ -z "$TRAIN_OUTPUT" ]] || { echo "resume-dir不能与output-dir并用" >&2; exit 2; }

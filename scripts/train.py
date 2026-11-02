@@ -56,6 +56,8 @@ parser.add_argument("--output_dir", type=Path, help="Explicit new run directory 
 parser.add_argument("--metrics_jsonl", action="store_true", help="Stream PPO curves to the long-run supervisor")
 parser.add_argument("--num_steps_per_env", type=int)
 parser.add_argument("--num_mini_batches", type=int)
+parser.add_argument("--save_interval", "--save-interval", type=int,
+                    help="每N次PPO更新保存checkpoint；正整数，未指定时沿用PPO配置")
 restart = parser.add_mutually_exclusive_group()
 restart.add_argument("--resume", type=Path, help="Continue the same stage, including optimizer state")
 restart.add_argument("--warm_start", type=Path, help="Transfer actor only; reset critic, optimizer and iteration")
@@ -64,6 +66,8 @@ add_gait_arguments(parser)
 add_launcher_args(parser)
 parser.set_defaults(device="cuda:0")
 args_cli = parser.parse_args()
+if args_cli.save_interval is not None and args_cli.save_interval < 1:
+    parser.error("save_interval必须为正整数")
 
 
 # Import training components after parsing launcher arguments.
@@ -148,6 +152,9 @@ def main():
 
     agent_cfg.device = args_cli.device
     agent_cfg.max_iterations = args_cli.max_iterations
+    # 仅覆盖保存频率，不改变PPO更新次数、模型或优化器恢复方式。
+    if args_cli.save_interval is not None:
+        agent_cfg.save_interval = args_cli.save_interval
 
     # Adapt model configuration to installed RSL-RL version.
     installed_version = check_rsl_rl_version()
@@ -194,6 +201,7 @@ def main():
     print("Environments:", args_cli.num_envs)
     print("Iterations:", 0 if args_cli.validate_only else agent_cfg.max_iterations)
     print("Rollout length:", agent_cfg.num_steps_per_env)
+    print("Checkpoint save interval:", agent_cfg.save_interval)
     print("Device:", agent_cfg.device)
     print("Learning rate:", agent_cfg.algorithm.learning_rate, "schedule:", agent_cfg.algorithm.schedule)
     print("Action scales:", env_cfg.action_scale_by_joint or env_cfg.action_scale)

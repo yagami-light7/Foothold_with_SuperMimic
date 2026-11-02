@@ -10,7 +10,7 @@ GAIT_FIELDS = ("gait_frequency", "gait_frequency_range", "left_gait_frequency", 
 
 def add_gait_arguments(parser):
     parser.add_argument("--initial-swing-side", "--initial_swing_side", choices=("left", "right", "random"),
-                        default=None, help="每次reset的起始摆动脚；random为左右各50%，覆盖checkpoint配置")
+                        default=None, help="每次reset的起始摆动脚；random为左右各50%%，覆盖checkpoint配置")
     for name in GAIT_FIELDS[:-1]:
         options = ("--" + name.replace("_", "-"), "--" + name)
         if name.endswith("range"):

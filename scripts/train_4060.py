@@ -284,6 +284,8 @@ class Supervisor:
                 "--seed", str(self.args.seed), "--metrics_jsonl", "--output_dir", str(directory), "--viz", "none"]
         if self.args.step_length_range is not None and stage == "straight":
             command += ["--step_length_range", *(str(value) for value in self.args.step_length_range)]
+        if getattr(self.args, "save_interval", None) is not None:
+            command += ["--save_interval", str(self.args.save_interval)]
         rate = self.args.learning_rate if learning_rate is None else learning_rate
         if rate is not None:
             command += ["--learning_rate", str(rate)]
@@ -576,9 +578,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reserve-mib", type=int, default=768)
     parser.add_argument("--rollout-steps", type=int, default=64)
     parser.add_argument("--mini-batches", type=int, default=4)
+    parser.add_argument("--save-interval", "--save_interval", type=int,
+                        help="每N次PPO更新保存checkpoint；正整数，未指定时沿用PPO配置")
     parser.add_argument("--max-hours", type=float, default=12)
     parser.add_argument("--max-iterations", type=int, default=20000, help="Total updates across curriculum stages")
-    parser.add_argument("--chunk-iterations", type=int, default=100, help="Evaluate after this many updates")
+    parser.add_argument("--chunk-iterations", type=int, default=100,
+                        help="单个训练子进程最多执行的PPO更新次数；是否评估由课程配置控制")
     parser.add_argument("--print-every", type=int, default=10, help="Print a compact training summary every N updates")
     parser.add_argument("--eval-envs", type=int, default=64)
     parser.add_argument("--eval-steps", type=int, default=1000)
@@ -661,6 +666,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("learning-rate必须在(0,0.01)内")
     if args.normalization_prior_rollouts < 0:
         parser.error("normalization-prior-rollouts must be nonnegative")
+    if args.save_interval is not None and args.save_interval < 1:
+        parser.error("save-interval必须为正整数")
     return args
 
 
@@ -697,6 +704,9 @@ def main() -> None:
             setattr(args, key, previous[key])
         args.ablation = previous.get("ablation", "none")
         args.normalization_prior_rollouts = previous.get("normalization_prior_rollouts", 0)
+        # 未显式指定时继承原实验的保存间隔；允许恢复时只调整保存频率。
+        if args.save_interval is None:
+            args.save_interval = previous.get("save_interval")
         args.step_length_range = previous.get("step_length_range")
         args.learning_rate = args.learning_rate if args.learning_rate is not None else previous.get("learning_rate")
         args.continue_after_pass = args.continue_after_pass or previous.get("continue_after_pass", False)

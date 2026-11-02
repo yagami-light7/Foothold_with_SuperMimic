@@ -23,6 +23,63 @@ from scripts.training_log_writer import TensorboardJsonWriter
 
 
 class TrainingSupervisorTests(unittest.TestCase):
+    def _save_interval_preview(self, *options):
+        # 运行真实CLI与命令生成路径；dry-run不启动仿真、训练或SwanLab。
+        command = [sys.executable, str(PROJECT_ROOT / "scripts/train_4060.py"),
+                   "--isaac-python", sys.executable, "--num-envs", "16",
+                   "--start-stage", "straight", "--max-iterations", "1",
+                   "--dry-run", *options]
+        return subprocess.run(command, text=True, capture_output=True)
+
+    def test_save_interval_forwarding_and_default(self):
+        default = self._save_interval_preview()
+        self.assertEqual(default.returncode, 0, default.stderr)
+        self.assertNotIn("--save_interval", json.loads(default.stdout)["plans"][0]["command"])
+        for flag in ("--save-interval", "--save_interval"):
+            with self.subTest(flag=flag):
+                result = self._save_interval_preview(flag, "100")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                command = json.loads(result.stdout)["plans"][0]["command"]
+                self.assertEqual(command[command.index("--save_interval") + 1], "100")
+
+    def test_save_interval_rejects_invalid_values(self):
+        for value in ("0", "-1", "1.5"):
+            with self.subTest(value=value):
+                result = self._save_interval_preview("--save-interval", value)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("save-interval", result.stderr)
+
+    def test_resume_inherits_or_overrides_save_interval(self):
+        from scripts.train_4060 import parse_args
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            # 保存真实解析器生成的配置，覆盖旧实验缺少字段和新实验已有字段两种情况。
+            argv = ["train_4060.py", "--isaac-python", sys.executable,
+                    "--num-envs", "16", "--start-stage", "straight"]
+            with patch.object(sys, "argv", argv):
+                launcher = vars(parse_args())
+            state = dict(stages=["straight"], stage_index=0, chunk=0, updates=0,
+                         samples=0, num_envs=16, pass_streak=0)
+            (directory / "state.json").write_text(json.dumps(state))
+            for saved, explicit, expected in ((None, None, None), (500, None, "500"),
+                                               (500, "100", "100")):
+                with self.subTest(saved=saved, explicit=explicit):
+                    if saved is None:
+                        launcher.pop("save_interval", None)
+                    else:
+                        launcher["save_interval"] = saved
+                    (directory / "launcher.json").write_text(json.dumps(launcher, default=str))
+                    options = ["--resume-dir", str(directory)]
+                    if explicit is not None:
+                        options += ["--save-interval", explicit]
+                    result = self._save_interval_preview(*options)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    command = json.loads(result.stdout)["plans"][0]["command"]
+                    if expected is None:
+                        self.assertNotIn("--save_interval", command)
+                    else:
+                        self.assertEqual(command[command.index("--save_interval") + 1], expected)
+
     @unittest.skipUnless((PROJECT_ROOT / 'scripts/history_train/train_walk_3h.sh').is_file(),
                          '历史入口只在本地归档，不随Git上传；当前入口另有覆盖')
     def test_walk_launcher_forwards_explicit_checkpoint_without_starting_training(self):

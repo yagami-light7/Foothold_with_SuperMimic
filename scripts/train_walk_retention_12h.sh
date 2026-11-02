@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # 从仓库内最新预训练模型完整续训12小时，2048环境、SwanLab在线精简上传。
 # 仅将首步XY倍率1.5提高到2.0；保留15格固定配额和10%角点，不运行任何eval。
-# 每250次更新保存checkpoint，墙钟截止另存model_interrupted.pt。
-# 用法：bash scripts/train_walk_retention_12h.sh [--checkpoint FILE] [--hours 12] [--dry-run]
+# 默认每250次更新保存checkpoint，可用--save-interval覆盖；墙钟截止另存model_interrupted.pt。
+# 用法：bash scripts/train_walk_retention_12h.sh [--checkpoint FILE] [--hours 12] [--save-interval 250] [--dry-run]
 set -euo pipefail
 TASK_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
