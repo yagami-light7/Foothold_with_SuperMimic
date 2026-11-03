@@ -36,6 +36,11 @@ WM_BATCHES=16
 PI_BATCH=256
 HORIZON=32
 GOAL_FRAMES=10
+GOAL_MODE="motion"             # motion | foot_trajectory
+GOAL_DT=""                     # empty: motion=0.02s, foot_trajectory=0.1s
+FOOT_CONFIG=""                 # optional AlternatingConfig JSON path
+FOOT_TASK_CONFIG=""            # FootTrackingCfg JSON (e.g. standing balance)
+CHECK_FOOT_GRADIENTS=false
 HIST=10
 
 # Training schedule
@@ -77,6 +82,11 @@ Options:
   --all-clips              Select all accepted CSVs in the motion directory.
   --iterations N           Total iteration target, including already completed iterations.
   --motion-dir DIR         Override the reference directory.
+  --goal-mode MODE         motion (default) or foot_trajectory.
+  --goal-dt SECONDS        Future sample spacing (foot default: 0.1).
+  --foot-config FILE       Optional alternating footstep sampler JSON.
+  --foot-task-config FILE  Independent foot MDP/standing task JSON.
+  --check-foot-gradients   Audit pure foot Actor gradients and replay timing.
   --swanlab-project NAME   Cloud project (default: SuperMimic).
   --swanlab-workspace NAME Cloud workspace (default: your account).
   --swanlab-name NAME      Cloud experiment name (default: run name).
@@ -118,6 +128,11 @@ while (( $# )); do
     --all-clips) CLIPS=(); shift ;;
     --iterations) need_value "$@"; ITERATIONS_OVERRIDE="$2"; shift 2 ;;
     --motion-dir|--motion_dir) need_value "$@"; MOTION_DIR="$2"; shift 2 ;;
+    --goal-mode|--goal_mode) need_value "$@"; GOAL_MODE="$2"; shift 2 ;;
+    --goal-dt|--goal_dt) need_value "$@"; GOAL_DT="$2"; shift 2 ;;
+    --foot-config|--foot_config) need_value "$@"; FOOT_CONFIG="$2"; shift 2 ;;
+    --foot-task-config|--foot_task_config) need_value "$@"; FOOT_TASK_CONFIG="$2"; shift 2 ;;
+    --check-foot-gradients|--check_foot_gradients) CHECK_FOOT_GRADIENTS=true; shift ;;
     --swanlab-project) need_value "$@"; SWANLAB_PROJECT="$2"; shift 2 ;;
     --swanlab-workspace) need_value "$@"; SWANLAB_WORKSPACE="$2"; shift 2 ;;
     --swanlab-name) need_value "$@"; SWANLAB_EXPERIMENT="$2"; shift 2 ;;
@@ -150,6 +165,9 @@ fi
 if [[ "$SWANLAB_MODE" != online && "$SWANLAB_MODE" != offline ]]; then
   echo 'SwanLab mode must be online or offline' >&2
   exit 2
+fi
+if [[ "$GOAL_MODE" != motion && "$GOAL_MODE" != foot_trajectory ]]; then
+  echo 'Expected --goal-mode motion or foot_trajectory' >&2; exit 2
 fi
 
 if [[ "$CONTAINER_NAME" == "supermimic" ]]; then
@@ -219,6 +237,7 @@ ARGS=(
   --pi_batch "$PI_BATCH"
   --horizon "$HORIZON"
   --goal_frames "$GOAL_FRAMES"
+  --goal_mode "$GOAL_MODE"
   --hist "$HIST"
   --wm_only_iters "$RUN_WM_ONLY"
   --lr "$LR"
@@ -229,15 +248,23 @@ ARGS=(
   --amp "$AMP"
   "${RESUME_ARGS[@]}"
 )
+if [[ -n "$GOAL_DT" ]]; then ARGS+=(--goal_dt "$GOAL_DT"); fi
+if [[ -n "$FOOT_CONFIG" ]]; then ARGS+=(--foot_config "$FOOT_CONFIG"); fi
+if [[ -n "$FOOT_TASK_CONFIG" ]]; then ARGS+=(--foot_task_config "$FOOT_TASK_CONFIG"); fi
+if [[ "$CHECK_FOOT_GRADIENTS" == true ]]; then ARGS+=(--check_foot_gradients); fi
 if [[ "$NO_COMPILE" == true ]]; then
   ARGS+=(--no_compile)
 fi
-SELECT_ARGS=(--motion_dir "$MOTION_DIR")
-if (( ${#CLIPS[@]} )); then
-  ARGS+=(--clips "${CLIPS[@]}")
-  SELECT_ARGS+=(--clips "${CLIPS[@]}")
+if [[ "$GOAL_MODE" == motion ]]; then
+  SELECT_ARGS=(--motion_dir "$MOTION_DIR")
+  if (( ${#CLIPS[@]} )); then
+    ARGS+=(--clips "${CLIPS[@]}")
+    SELECT_ARGS+=(--clips "${CLIPS[@]}")
+  fi
+  PYTHONDONTWRITEBYTECODE=1 python3 -m supermimic.reference_selection "${SELECT_ARGS[@]}"
+else
+  echo 'Independent foot task: Motion directory and clip selection are unused'
 fi
-PYTHONDONTWRITEBYTECODE=1 python3 -m supermimic.reference_selection "${SELECT_ARGS[@]}"
 TRAIN_CMD=(python supermimic/train.py --log_dir "logs/$RUN" "${ARGS[@]}")
 JOB_CMD=(bash tools/run_s54_job.sh "logs/$RUN" "${TRAIN_CMD[@]}")
 SWANLAB_PYTHON="${SWANLAB_PYTHON:-$REPO/.venv-swanlab/bin/python}"

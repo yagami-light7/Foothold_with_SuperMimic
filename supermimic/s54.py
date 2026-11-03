@@ -16,6 +16,7 @@ ROBOT_ID = "kuavo_s54_leju_gmr_v1"
 SOURCE_FPS = 30.0
 ROOT_BODY = "base_link"
 COM_BODY = "waist_yaw"
+FOOT_BODY_NAMES = ["leg_l6_link", "leg_r6_link"]
 CSV_JOINT_NAMES = ([f"leg_{s}{i}_joint" for s in "lr" for i in range(1, 7)]
                    + ["waist_yaw_joint"]
                    + [f"zarm_{s}{i}_joint" for s in "lr" for i in range(1, 8)])

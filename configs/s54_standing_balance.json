@@ -1,0 +1,10 @@
+{
+  "command_mode": "standing",
+  "episode_steps": 100,
+  "domain_randomization": false,
+  "reset_joint_noise": 0.005,
+  "reset_xy_noise": 0.005,
+  "reset_tilt_noise": 0.01,
+  "reset_yaw_noise": 0.05,
+  "reset_velocity_noise": 0.01
+}

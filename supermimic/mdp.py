@@ -87,11 +87,20 @@ INV_DIM = 1 + 6 + 3 + 3 + 2 * NUM_J
 
 
 class MDP:
+    is_foot = False
+    max_step_reward = MAX_STEP_REWARD
+
     def __init__(self, kin: S54Kinematics, motion: MotionLib, default_q: torch.Tensor, cfg: RewardCfg = RewardCfg()):
-        self.kin, self.motion, self.cfg = kin, motion, cfg
+        self.motion = motion
+        self._init_robot(kin, default_q, cfg)
+        assert motion.q.shape[-1] == NUM_J and motion.body_p.shape[-2] == len(TRACKED_BODIES)
+
+    def _init_robot(self, kin, default_q, cfg):
+        """Robot-only proprioception and limits shared with independent foot tasks."""
+        self.kin, self.cfg = kin, cfg
         assert default_q.numel() == NUM_J
         assert kin.tracked_names == TRACKED_BODIES
-        assert motion.q.shape[-1] == NUM_J and motion.body_p.shape[-2] == len(TRACKED_BODIES)
+        self.critic_dim = INV_DIM + CRITIC_EXTRA
         self.default_q = default_q
         mid, half = (kin.q_lo + kin.q_hi) / 2, (kin.q_hi - kin.q_lo) / 2
         self.soft_lo, self.soft_hi = mid - half * cfg.soft_limit_factor, mid + half * cfg.soft_limit_factor
@@ -101,20 +110,20 @@ class MDP:
         self.head_indices = torch.tensor([JOINT_NAMES.index(n) for n in HEAD_JOINT_NAMES], device=dev)
 
     # ---------------- observation ----------------
-    def obs(self, S, a_prev, xi, f) -> torch.Tensor:
+    def obs(self, S, a_prev, xi, f, reference_R=None) -> torch.Tensor:
         """Noise-free proprioceptive observation (+ reference-relative root orientation)."""
         p, R, v, w, q, qd = S
         Rt = R.transpose(-1, -2)
         dq0 = xi[..., JOINT_OFFSET]
         g_b = -R[..., 2, :]  # R^T (0,0,-1)
-        rel = mat_to_6d(Rt @ self.motion.root_R[f])
+        rel = mat_to_6d(Rt @ (self.motion.root_R[f] if reference_R is None else reference_R))
         return torch.cat((q - self.default_q - dq0, qd, (Rt @ w.unsqueeze(-1)).squeeze(-1), g_b, a_prev, rel), -1)
 
     def add_noise(self, o: torch.Tensor) -> torch.Tensor:
         return o + (2 * torch.rand_like(o) - 1) * self.obs_noise
 
     # ---------------- reward / termination ----------------
-    def reward(self, S, f, a, a_prev, terms: bool = False):
+    def reward(self, S, f, a, a_prev, terms: bool = False, *, command=None, ep_step=None):
         """Per-step reward (already multiplied by dt) comparing S with reference frame f."""
         c, m = self.cfg, self.motion
         p, R, v, w, q, qd = S
@@ -159,14 +168,14 @@ class MDP:
             }
         return r
 
-    def termination(self, S, f) -> torch.Tensor:
+    def termination(self, S, f, *, command=None, ep_step=None) -> torch.Tensor:
         p, R = S[0], S[1]
         rp, rR = self.motion.root_p[f], self.motion.root_R[f]
         e_z = (rp[..., 2] - p[..., 2]).abs()
         e_tilt = (rR[..., 2, 2] - R[..., 2, 2]).abs()
         return (e_z > self.cfg.term_height) | (e_tilt > self.cfg.term_tilt)
 
-    def soft_termination(self, S, f, tz: float = 0.02, tt: float = 0.04) -> torch.Tensor:
+    def soft_termination(self, S, f, tz: float = 0.02, tt: float = 0.04, *, command=None, ep_step=None) -> torch.Tensor:
         """Differentiable termination probability for imagined rollouts."""
         p, R = S[0], S[1]
         rp, rR = self.motion.root_p[f], self.motion.root_R[f]
@@ -175,7 +184,7 @@ class MDP:
         alive = (1 - torch.sigmoid((e_z - self.cfg.term_height) / tz)) * (1 - torch.sigmoid((e_tilt - self.cfg.term_tilt) / tt))
         return 1 - alive
 
-    def critic_features(self, S, f, xi) -> torch.Tensor:
+    def critic_features(self, S, f, xi, *, command=None, ep_step=None) -> torch.Tensor:
         """Critic input: invariant state, goal, sim context, and robot-vs-reference errors."""
         m = self.motion
         p, R, v, w, q, qd = S

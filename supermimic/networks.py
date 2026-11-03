@@ -1,4 +1,4 @@
-"""World model, policy (motion encoder + shared decoder), and critic (paper Table A.4)."""
+"""World model, policy (configurable goal encoder + decoder), and critic (Table A.4)."""
 
 from __future__ import annotations
 

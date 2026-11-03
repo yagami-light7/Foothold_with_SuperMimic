@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import torch
+from collections import Counter
 
 from .mdp import STATE_DIM, XI_DIM, NUM_J
+from .foot_trajectory import FootstepCommand
 
 FIELDS = {
     "s": (STATE_DIM, torch.float32),
@@ -20,19 +22,43 @@ FIELDS = {
 
 
 class ReplayBuffer:
-    def __init__(self, T: int, N: int, device: str):
+    def __init__(self, T: int, N: int, device: str, foot_commands: bool = False):
         self.T, self.N, self.device = T, N, device
+        self.fields = dict(FIELDS)
+        if foot_commands:
+            self.fields['command_id'] = ((), torch.long)
+        self.command_store = {}
+        self.command_refs = Counter()
         self.data = {}
-        for k, (shape, dt) in FIELDS.items():
+        for k, (shape, dt) in self.fields.items():
             shp = (T, N) + ((shape,) if isinstance(shape, int) else shape)
             self.data[k] = torch.zeros(shp, dtype=dt, device=device)
         self.ptr, self.size = 0, 0
 
     def add(self, tr: dict):
-        for k in FIELDS:
+        if 'command_id' in self.fields:
+            # The transition owns a snapshot taken BEFORE env.step auto-resets.
+            # Store once per command, rather than copying a whole plan per row.
+            if self.size == self.T:
+                for cid, count in Counter(self.data['command_id'][self.ptr].cpu().tolist()).items():
+                    self.command_refs[cid] -= count
+                    if self.command_refs[cid] == 0:
+                        del self.command_refs[cid], self.command_store[cid]
+            ids = tr['command_id'].cpu().tolist()
+            for i, cid in enumerate(ids):
+                if cid not in self.command_store:
+                    self.command_store[cid] = tr['command'].index(i).clone()
+                self.command_refs[cid] += 1
+        for k in self.fields:
             self.data[k][self.ptr] = tr[k]
         self.ptr = (self.ptr + 1) % self.T
         self.size = min(self.size + 1, self.T)
+
+    def commands(self, ids: torch.Tensor) -> FootstepCommand:
+        """Resolve immutable plans outside compiled imagination, in sample order."""
+        if ids.ndim != 1:
+            raise ValueError('Expected one command ID per imagination start')
+        return FootstepCommand.cat([self.command_store[cid] for cid in ids.cpu().tolist()])
 
     def _row(self, age: torch.Tensor) -> torch.Tensor:
         """Map age-ordered time index (0 = oldest) to the storage row."""
@@ -63,6 +89,9 @@ class ReplayBuffer:
         back = torch.minimum(back, age.unsqueeze(-1))  # stay inside the buffer
         hrows = self._row(age.unsqueeze(-1) - back)
         henv = env.unsqueeze(-1).expand_as(hrows)
-        start = {k: self.data[k][row, env] for k in ("s", "a_prev", "xi", "f")}
-        hist_d = {k: self.data[k][hrows, henv] for k in ("s", "a_prev", "xi", "f")}
+        keys = ('s', 'a_prev', 'xi', 'f', 'ep_step')
+        if 'command_id' in self.fields:
+            keys += ('command_id',)
+        start = {k: self.data[k][row, env] for k in keys}
+        hist_d = {k: self.data[k][hrows, henv] for k in keys}
         return start, hist_d

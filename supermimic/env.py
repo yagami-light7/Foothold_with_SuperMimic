@@ -28,6 +28,7 @@ from .robot import S54_CFG, action_scale
 from .s54 import (JOINT_NAMES, NUM_J, XI_DIM, JOINT_OFFSET, COM_OFFSET, COM_BODY,
                   TRACKED_BODIES, ROOT_BODY, name_mapping, USD_PATH, MJCF_PATH, checkpoint_contract)
 from .rotations import mat_to_quat, quat_to_mat, so3_exp
+from .goals import GoalSource
 
 
 @configclass
@@ -51,7 +52,7 @@ class TrackingSim:
     """
 
     def __init__(self, sim_cfg, num_envs: int, motion: MotionLib, mdp: MDP, gamma: float = 0.99, eval_mode: bool = False,
-                 max_episode_steps: int = 500, reset_noise: bool = True):
+                 max_episode_steps: int | None = None, reset_noise: bool = True, goals: GoalSource | None = None):
         if not USD_PATH.is_file():
             raise FileNotFoundError(f"Generate S54 USD first: python tools/mjcf_to_usd.py ({USD_PATH})")
         manifest = json.loads((USD_PATH.parents[1]/"contract.json").read_text())
@@ -63,6 +64,8 @@ class TrackingSim:
         self.sim = SimulationContext(sim_cfg)
         self.scene = instantiate(TrackingSceneCfg(num_envs=num_envs, env_spacing=0.0, replicate_physics=True))
         self.sim.reset()
+        # Isaac Lab 3 renamed this public manager; support the original image too.
+        self.physics = self.sim.physics_manager if hasattr(self.sim, 'physics_manager') else self.sim.backend_manager
         self.robot = self.scene["robot"]
         canonical_to_sim, sim_to_canonical = name_mapping(self.robot.joint_names)
         self.canonical_to_sim = torch.tensor(canonical_to_sim, device=self.device)
@@ -71,9 +74,17 @@ class TrackingSim:
         print("S54 mapping (canonical CSV → simulator):", dict(zip(JOINT_NAMES, canonical_to_sim)), flush=True)
         self.N = num_envs
         self.motion, self.mdp, self.gamma = motion, mdp, gamma
+        self.goals = goals if goals is not None else GoalSource(motion, mdp.kin)
+        if mdp.is_foot and not self.goals.is_foot:
+            raise ValueError('FootTrackingMDP requires a foot GoalSource')
+        self.command = None
+        self.command_id = torch.full((num_envs,), -1, dtype=torch.long, device=self.device)
+        self._next_command_id = 0
         self.eval_mode = eval_mode
-        self.max_episode_steps = max_episode_steps if not eval_mode else 10**9
+        episode_steps = max_episode_steps if max_episode_steps is not None else (mdp.cfg.episode_steps if mdp.is_foot else 500)
+        self.max_episode_steps = episode_steps if (mdp.is_foot or not eval_mode) else 10**9
         self.reset_noise = reset_noise and not eval_mode
+        self.randomize = not eval_mode and (not mdp.is_foot or mdp.cfg.domain_randomization)
         dev = self.device
         self.default_q = self.robot.data.default_joint_pos.torch[0, self.canonical_to_sim].clone()
         self.alpha = torch.tensor([action_scale(n) for n in JOINT_NAMES], device=dev)
@@ -82,7 +93,7 @@ class TrackingSim:
         # ---- sim context xi = [friction, joint offsets(NUM_J), torso com offset(3)] ----
         self.xi = torch.zeros(self.N, XI_DIM, device=dev)
         self._setup_friction()
-        if eval_mode:
+        if not self.randomize:
             self.xi[:, 0] = 1.0
         else:
             self.xi[:, 0] = torch.empty(self.N, device=dev).uniform_(0.3, 1.2)
@@ -106,16 +117,17 @@ class TrackingSim:
         self.start_bin = torch.zeros(self.N, dtype=torch.long, device=dev)
         self.ep_disc_ret = torch.zeros(self.N, device=dev)
         self.ep_ret = torch.zeros(self.N, device=dev)
-        self.G_max = MAX_STEP_REWARD / (1 - gamma)
-        self.bin_G = torch.full((motion.num_bins,), 0.0, device=dev)
-        self.bin_w_avg = torch.full((motion.num_bins,), 1.0 / motion.num_bins, device=dev)
+        self.G_max = mdp.max_step_reward / (1 - gamma)
+        num_bins = motion.num_bins if motion is not None else 1
+        self.bin_G = torch.full((num_bins,), 0.0, device=dev)
+        self.bin_w_avg = torch.full((num_bins,), 1.0 / num_bins, device=dev)
         self.done_eval = torch.zeros(self.N, dtype=torch.bool, device=dev)
         self.failed_eval = torch.zeros(self.N, dtype=torch.bool, device=dev)
         self.reset(torch.arange(self.N, device=dev))
 
     # ------------------------------------------------------------------ friction
     def _setup_friction(self):
-        mgr = self.sim.backend_manager
+        mgr = self.physics
         model = mgr.get_model()
         self._mu_view = wp.to_torch(self.robot._root_view.get_attribute("shape_material_mu", model)[:, 0])
         # ground shapes (body == -1): lowest friction of the range, since MuJoCo takes the max of a pair
@@ -125,7 +137,7 @@ class TrackingSim:
 
     def _apply_friction(self):
         self._mu_view[:] = self.xi[:, :1]
-        self.sim.backend_manager.add_model_change(ModelFlags.SHAPE_PROPERTIES)
+        self.physics.add_model_change(ModelFlags.SHAPE_PROPERTIES)
 
     # ------------------------------------------------------------------ state
     def state(self):
@@ -155,13 +167,22 @@ class TrackingSim:
             return
         n = len(env_ids)
         dev = self.device
-        if frames is None:
+        command = None
+        if self.mdp.is_foot:
+            if frames is not None:
+                raise ValueError('Foot tasks reset from the S54 model, not Motion frame indices')
+            frames = torch.zeros(n, dtype=torch.long, device=dev)
+            bins = torch.zeros_like(frames)
+            nominal = self.mdp.nominal_state(n)
+            command = self.goals.new_command(nominal)
+            p,R,v,w,q,qd = self.mdp.perturb_reset(nominal) if self.reset_noise else nominal
+        elif frames is None:
             frames, bins = self.sample_frames(n)
         else:
             bins = self.motion.frame_bin[frames]
-        m = self.motion
-        p, R, v, w, q, qd = (x.clone() for x in m.ref_state(frames))
-        if self.reset_noise:
+        if not self.mdp.is_foot:
+            p, R, v, w, q, qd = (x.clone() for x in self.motion.ref_state(frames))
+        if self.reset_noise and not self.mdp.is_foot:
             p = p + torch.stack(
                 (torch.empty(n, device=dev).uniform_(-0.05, 0.05), torch.empty(n, device=dev).uniform_(-0.05, 0.05),
                  torch.empty(n, device=dev).uniform_(-0.01, 0.01)), -1)  # fmt: skip
@@ -190,10 +211,21 @@ class TrackingSim:
         self.start_bin[env_ids] = bins
         self.ep_disc_ret[env_ids] = 0.0
         self.ep_ret[env_ids] = 0.0
-        if not self.eval_mode:
+        if self.randomize:
             self.xi[env_ids, JOINT_OFFSET] = torch.empty(n, NUM_J, device=dev).uniform_(-0.01, 0.01)
         self.scene.reset(env_ids)
         self.refresh()
+        if self.goals.is_foot:
+            # All state/command coordinates exclude the fixed scene.env_origins.
+            if command is None:
+                S = tuple(x[env_ids] for x in self.state())
+                command = self.goals.new_command(S)
+            if self.command is None:
+                self.command = command
+            else:
+                self.command.assign(env_ids, command)
+            self.command_id[env_ids] = torch.arange(n, device=dev) + self._next_command_id
+            self._next_command_id += n
 
     def refresh(self):
         """Propagate written states so that ``state()`` is consistent after a reset."""
@@ -201,28 +233,39 @@ class TrackingSim:
         self.scene.update(0.0)
 
     # ------------------------------------------------------------------ step
+    def pd_target(self, a: torch.Tensor, xi=None):
+        """Canonical joint setpoint applied by the simulator (also used by diagnostics)."""
+        xi = self.xi if xi is None else xi
+        return self.default_q + xi[:, JOINT_OFFSET] + self.alpha * a
+
     def step(self, a: torch.Tensor) -> dict:
         S = self.state()
         f = self.f.clone()
         xi = self.xi.clone()
         a_prev = self.a_prev.clone()
         ep_step = self.ep_step.clone()
-        target = self.default_q + xi[:, JOINT_OFFSET] + self.alpha * a
+        command = self.command.clone() if self.goals.is_foot else None
+        command_id = self.command_id.clone() if self.goals.is_foot else None
+        target = self.pd_target(a, xi)
         self.robot.set_joint_position_target_index(target=target[:, self.sim_to_canonical])
         self.scene.write_data_to_sim()
         self.sim.step(render=False)
         self.scene.update(CONTROL_DT)
         S1 = self.state()
         f1 = f + 1
-        r, terms = self.mdp.reward(S1, f1, a, a_prev, terms=True)
-        term = self.mdp.termination(S1, f1)
-        clip_end = self.motion.clip_end[self.motion.clip_id[f]]
-        timeout = (f1 >= clip_end) | (ep_step + 1 >= self.max_episode_steps)
+        r, terms = self.mdp.reward(S1, f1, a, a_prev, terms=True, command=command, ep_step=ep_step+1)
+        term = self.mdp.termination(S1, f1, command=command, ep_step=ep_step+1)
+        timeout = ep_step + 1 >= self.max_episode_steps
+        if not self.mdp.is_foot:
+            clip_end = self.motion.clip_end[self.motion.clip_id[f]]
+            timeout = timeout | (f1 >= clip_end)
         done = term | timeout
         out = {
             "s": flatten_state(S), "a": a.clone(), "a_prev": a_prev, "f": f, "s1": flatten_state(S1), "r": r,
-            "term": term, "done": done, "ep_step": ep_step, "xi": xi, "terms": terms,
+            "term": term, "timeout": timeout, "done": done, "ep_step": ep_step, "xi": xi, "terms": terms,
         }  # fmt: skip
+        if self.goals.is_foot:
+            out.update(command=command, command_id=command_id)
         # bookkeeping
         self.ep_disc_ret += (self.gamma ** ep_step.float()) * r
         self.ep_ret += r
@@ -239,9 +282,10 @@ class TrackingSim:
             T = self.ep_step[ids].float()
             boot = torch.where(term[ids], 0.0, (self.gamma**T) * (self.ep_ret[ids] / T) / (1 - self.gamma))
             G = self.ep_disc_ret[ids] + boot
-            b = self.start_bin[ids]
-            self.bin_G.index_put_((b,), 0.8 * self.bin_G[b] + 0.2 * G)
+            if not self.mdp.is_foot:
+                b = self.start_bin[ids]
+                self.bin_G.index_put_((b,), 0.8 * self.bin_G[b] + 0.2 * G)
             out["ep_len"] = T
-            out["ep_ret_norm"] = self.ep_ret[ids] / (T * MAX_STEP_REWARD)
+            out["ep_ret_norm"] = self.ep_ret[ids] / (T * self.mdp.max_step_reward)
             self.reset(ids)
         return out

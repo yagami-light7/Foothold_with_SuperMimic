@@ -1,5 +1,11 @@
 # KUAVO S54 SuperMimic
 
+足部轨迹与可切换 Goal 接口见 [S54_FOOT_TRAJECTORY.md](docs/S54_FOOT_TRAJECTORY.md)。
+足部模式默认使用未来 1 秒的 10 个双脚目标，共 230 维；保留原 Motion 模式作为默认。
+独立 Foot MDP 与 Standing 最小训练见 [训练前检查报告](docs/S54_FOOT_TRACKING_TRAINING.md)。
+Standing 第 96 步失败的配对诊断、实际接触证据和有界 3090 配置见 [STANDING_DIAGNOSIS.md](STANDING_DIAGNOSIS.md)。
+Foot 训练已去除 Motion 数据依赖；短测试通过梯度/同步检查，但无噪声评估仍提前终止，尚不适合长时间正式训练。
+
 已实现 S54 数据、模型准备、FK、MDP、网络维度、训练入口、评估与渲染适配。
 沙盒外通过 `sg docker` 接通宿主机；独立容器内已完成 USD 导入、Newton 1/16 环境和 30 iteration 训练。
 原先的设备/权限错误仅来自沙盒，不是宿主机故障。评估、NPZ 与 5 秒视频也已完成。结果见 [报告](docs/S54_PORTING_REPORT.md)。

@@ -1,0 +1,46 @@
+{
+  "description": "Proposed bounded RTX 3090 pilot; not benchmarked on a 3090. Fresh task contract with a 10 s timeout. No smoke checkpoint resume.",
+  "max_wall_minutes": 30,
+  "train": {
+    "goal_mode": "foot_trajectory",
+    "foot_task_config": "configs/s54_standing_3090_task.json",
+    "foot_config": "configs/s54_foot_trajectory.json",
+    "goal_frames": 10,
+    "goal_dt": 0.1,
+    "num_envs": 128,
+    "iterations": 600,
+    "buffer_steps": 512,
+    "warmup_steps": 256,
+    "wm_window": 8,
+    "wm_batches": 2,
+    "wm_batch": 256,
+    "pi_batch": 64,
+    "horizon": 8,
+    "hist": 2,
+    "wm_only_iters": 200,
+    "lr": 0.00005,
+    "utd": 0.4,
+    "action_noise": 0.03,
+    "critic_epochs": 2,
+    "critic_minibatches": 2,
+    "ckpt_every": 100,
+    "log_every": 10,
+    "amp": "bf16",
+    "no_compile": true,
+    "check_foot_gradients": true,
+    "viz": "none"
+  },
+  "training_seeds": [54, 55, 56],
+  "evaluation": {
+    "durations_s": [2, 5, 10],
+    "seeds": [54, 55, 56],
+    "reset_noise": true,
+    "num_envs": 1,
+    "checkpoint_every": 100
+  },
+  "review_gates": {
+    "world_model": "Audit held-out Newton starts at 1/4/8 steps with recorded actions; inspect phase-dependent height/orientation bias and paired reward errors before increasing horizon or noise.",
+    "standing": "Require all 3 evaluation seeds to reach normal timeout at 2, 5 and 10 s, with stable height/tilt, before calling the task converged.",
+    "scope": "One seed per launch. Calibration stops at iteration 200 with no Actor updates; review paired WM diagnostics before explicitly resuming a pilot to total iteration 600. Each launch also stops after 30 min. No automatic extension."
+  }
+}

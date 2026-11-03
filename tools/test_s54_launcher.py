@@ -114,6 +114,30 @@ class SelectionAndSyncTests(unittest.TestCase):
         self.assertIn('--iterations 30', result.stdout)
         self.assertIn('SwanLab: disabled', result.stdout)
 
+    def test_foot_goal_options_reach_training_without_launch(self):
+        config = self.root / 'foot sampler.json'
+        config.write_text('{}')
+        result = subprocess.run(['bash', str(REPO / 'run_train.sh'), '--dry-run', 'train',
+                                 's54_foot_launcher_test', '--motion-dir', str(self.references()),
+                                 '--clips', 'dance1_subject1', '--no-swanlab', '--goal-mode', 'foot_trajectory',
+                                 '--goal-dt', '0.1', '--foot-config', str(config)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('--goal_mode foot_trajectory', result.stdout)
+        self.assertIn('--goal_dt 0.1', result.stdout)
+        self.assertIn('--foot_config', result.stdout)
+        self.assertFalse((REPO / 'logs/s54_foot_launcher_test').exists())
+
+    def test_foot_standing_dry_run_needs_no_motion_directory(self):
+        result = subprocess.run(['bash',str(REPO/'run_train.sh'),'--dry-run','train','s54_standing_dry_test',
+                                 '--goal-mode','foot_trajectory','--motion-dir',str(self.root/'missing_motion'),
+                                 '--foot-task-config','configs/s54_standing_balance.json',
+                                 '--check-foot-gradients','--no-swanlab'],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn('Motion directory and clip selection are unused',result.stdout)
+        self.assertIn('--foot_task_config configs/s54_standing_balance.json',result.stdout)
+        self.assertIn('--check_foot_gradients',result.stdout)
+        self.assertNotIn('--clips dance1_subject1',result.stdout)
+
     def test_resume_uses_total_iteration_override_without_creating_logs(self):
         # The launcher only checks the path here; a real Torch checkpoint is
         # validated by train.py. Keep this fixture outside all user run folders.

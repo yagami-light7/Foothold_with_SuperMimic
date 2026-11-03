@@ -45,7 +45,7 @@ def main():
             assert out['linear_velocity']<1e-3 and out['angular_velocity']<1e-3,out
             return out
         report['reset_fk']=alignment()
-        backend=env.sim.backend_manager;model=backend.get_model()
+        backend=env.physics;model=backend.get_model()
         shape_body=wp.to_torch(model.shape_body)
         collidable=(wp.to_torch(model.shape_flags).long() & int(ShapeFlags.COLLIDE_SHAPES))!=0
         ground=int(((shape_body<0)&collidable).sum())
