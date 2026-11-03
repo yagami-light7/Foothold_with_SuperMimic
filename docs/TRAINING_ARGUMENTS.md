@@ -398,3 +398,5 @@ bash scripts/train_walk_12h.sh --help
 ```
 
 当前课程训练的是平地直行。评估实际效果仍需检查左右脚落点误差、首步表现、存活率、支撑脚滑动/跳动等；归一化回报接近 1 不等于所有命令都已走稳。
+
+监督器退出后的云端曲线补传，见 [SwanLab恢复说明](SWANLAB_RECOVERY.md)。可以用 `scripts/replay_swanlab.py` 从本地JSONL恢复尾段或新建完整曲线，不需要重新训练。
