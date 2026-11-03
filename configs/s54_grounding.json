@@ -1,0 +1,10 @@
+{
+  "clearance_m": 0.003,
+  "ik_clearance_m": 0.004,
+  "contact_height_m": 0.035,
+  "contact_speed_m_s": 0.8,
+  "contact_smoothing_frames": 1.5,
+  "root_lift_smoothing": 15.0,
+  "root_lift_acceleration_smoothing": 80.0,
+  "validation_tolerance_m": 0.0001
+}

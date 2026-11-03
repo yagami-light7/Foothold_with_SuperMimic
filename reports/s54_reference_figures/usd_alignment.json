@@ -1,0 +1,340 @@
+{
+  "path": "/mnt/sage_data/workspace/supermimic_s54/data/s54_newton_usd/s54_sim/s54_sim.usda",
+  "pass": true,
+  "errors": [],
+  "joints": [
+    {
+      "name": "leg_l1_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 3.6652931212757496e-09,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 1.7400209273432665e-08
+    },
+    {
+      "name": "leg_l2_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 0.0,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 4.66648906183309e-08
+    },
+    {
+      "name": "leg_l3_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 3.623962407939274e-09,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 5.522042267891436e-08
+    },
+    {
+      "name": "leg_l4_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 9.298336619651773e-09,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 7.85528677660352e-08
+    },
+    {
+      "name": "leg_l5_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 8.58359453859064e-09,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 2.5471328268800164e-08
+    },
+    {
+      "name": "leg_l6_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 0.0,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 4.969742728455628e-09
+    },
+    {
+      "name": "leg_r1_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 3.6652931212757496e-09,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 1.7400209273432665e-08
+    },
+    {
+      "name": "leg_r2_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 0.0,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 4.66648906183309e-08
+    },
+    {
+      "name": "leg_r3_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 3.623962407939274e-09,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 5.522042267891436e-08
+    },
+    {
+      "name": "leg_r4_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 9.298336619651773e-09,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 7.85528677660352e-08
+    },
+    {
+      "name": "leg_r5_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 8.58359453859064e-09,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 2.5471328268800164e-08
+    },
+    {
+      "name": "leg_r6_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 0.0,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 4.969742728455628e-09
+    },
+    {
+      "name": "waist_yaw_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 7.510185251469181e-10,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 8.325792588692593e-08
+    },
+    {
+      "name": "zarm_l1_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 7.694872219448377e-09,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 5.522042267891436e-08
+    },
+    {
+      "name": "zarm_l2_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 0.0,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 1.0188531307520066e-07
+    },
+    {
+      "name": "zarm_l3_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 0.0,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 2.6467654734574353e-09
+    },
+    {
+      "name": "zarm_l4_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 1.0690503061141262e-08,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 1.1675014066625522e-07
+    },
+    {
+      "name": "zarm_l5_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 1.0857375018922839e-09,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 5.522042267891436e-08
+    },
+    {
+      "name": "zarm_l6_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 5.960464066756543e-11,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 3.288615912921955e-08
+    },
+    {
+      "name": "zarm_l7_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 2.831220639876175e-10,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 3.288615912921955e-08
+    },
+    {
+      "name": "zarm_r1_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 7.694872219448377e-09,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 5.522042267891436e-08
+    },
+    {
+      "name": "zarm_r2_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 0.0,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 1.0188531307520066e-07
+    },
+    {
+      "name": "zarm_r3_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 0.0,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 2.6467654734574353e-09
+    },
+    {
+      "name": "zarm_r4_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 1.0690503061141262e-08,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 1.1675014066625522e-07
+    },
+    {
+      "name": "zarm_r5_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 1.0857375018922839e-09,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 5.522042267891436e-08
+    },
+    {
+      "name": "zarm_r6_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 5.960464066756543e-11,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 3.288615912921955e-08
+    },
+    {
+      "name": "zarm_r7_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 2.831220639876175e-10,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 3.288615912921955e-08
+    },
+    {
+      "name": "zhead_1_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 3.2425975209515068e-09,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 5.522042267891436e-08
+    },
+    {
+      "name": "zhead_2_joint",
+      "parent_ok": true,
+      "child_ok": true,
+      "offset_error_m": 0.0,
+      "anchor_error_m": 0.0,
+      "rotation_error_rad": 0.0,
+      "axis_error": 0.0,
+      "range_error_rad": 8.624894243247638e-09
+    }
+  ],
+  "articulation_roots": [
+    "/s54_sim/Geometry/base_link"
+  ],
+  "variants": {
+    "/s54_sim": {
+      "Physics": [
+        "mujoco",
+        "none",
+        "physics",
+        "physx"
+      ]
+    }
+  },
+  "dynamic_backend_check": "NOT RUN",
+  "neutral_body_position_max_m": 0.0,
+  "neutral_body_rotation_max_rad": 0.0,
+  "collision_prims_by_body": {
+    "leg_l6_link": 13,
+    "leg_l4_link": 1,
+    "leg_l3_link": 2,
+    "leg_r6_link": 13,
+    "leg_r4_link": 1,
+    "leg_r3_link": 2,
+    "zarm_l7_link": 2,
+    "zarm_l4_link": 1,
+    "zarm_l3_link": 1,
+    "zarm_l1_link": 1,
+    "zarm_r7_link": 2,
+    "zarm_r4_link": 1,
+    "zarm_r3_link": 1,
+    "zarm_r1_link": 1,
+    "zhead_2_link": 1,
+    "waist_yaw": 2,
+    "base_link": 2
+  },
+  "usd_neutral_foot_collision_min_z_m": {
+    "leg_l6_link": -0.15170000763535785,
+    "leg_r6_link": -0.15170000763535785
+  },
+  "mjcf_neutral_foot_collision_min_z_m": {
+    "leg_l6_link": -0.1516999999999999,
+    "leg_r6_link": -0.1516999999999999
+  }
+}

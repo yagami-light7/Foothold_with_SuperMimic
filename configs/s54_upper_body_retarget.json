@@ -1,0 +1,29 @@
+{
+  "description": "S54 arm-only anatomical IK; weights multiply residuals before least squares.",
+  "human_root_to_robot_wxyz": [0.5, 0.5, 0.5, 0.5],
+  "hand_rotation_offset_wxyz": [0.5, 0.5, -0.5, -0.5],
+  "upper_direction_weight": 3.0,
+  "forearm_direction_weight": 3.0,
+  "hand_orientation_weight": 0.10,
+  "previous_pose_weight": 0.035,
+  "neutral_pose_weight": 0.003,
+  "anatomical_elbow_branch": true,
+  "temporal_mode": "offline_projection",
+  "urdf_velocity_scale": 1.0,
+  "velocity_numerical_margin": 0.000001,
+  "global_refinement_iterations": 12,
+  "refinement_damping": 0.01,
+  "refinement_trust_region_rad": 0.35,
+  "refinement_window_frames": 90,
+  "refinement_context_frames": 15,
+  "refinement_trigger_deg": 3.0,
+  "refinement_causal_seed": true,
+  "quality": {
+    "upper_p95_deg": 20.0,
+    "forearm_p95_deg": 20.0,
+    "wrist_p95_m": 0.10,
+    "artificial_horizontal_excess_fraction": 0.20,
+    "joint3_near_limit_fraction": 0.30
+  },
+  "max_nfev": 60
+}

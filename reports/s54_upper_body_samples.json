@@ -1,0 +1,66 @@
+{
+  "seed": 54,
+  "selection": "Random.sample from local LAFAN1 clips excluding dance1_subject1/walk1_subject1",
+  "clips": {
+    "fallAndGetUp3_subject1": {
+      "status": "PASS",
+      "frames": 300,
+      "fps": 30.0,
+      "upper_p95_deg": {
+        "left": 0.14276578674797089,
+        "right": 0.8697684467241484
+      },
+      "spread_fraction": {
+        "left": 0.0,
+        "right": 0.2
+      },
+      "human_spread_fraction": {
+        "left": 0.0,
+        "right": 0.20333333333333334
+      }
+    },
+    "pushAndStumble1_subject3": {
+      "status": "PASS",
+      "frames": 300,
+      "fps": 30.0,
+      "upper_p95_deg": {
+        "left": 0.7930443499183483,
+        "right": 0.0010262506510600585
+      },
+      "spread_fraction": {
+        "left": 0.43,
+        "right": 0.4066666666666667
+      },
+      "human_spread_fraction": {
+        "left": 0.43,
+        "right": 0.4066666666666667
+      }
+    },
+    "walk3_subject3": {
+      "status": "PASS",
+      "frames": 300,
+      "fps": 30.0,
+      "upper_p95_deg": {
+        "left": 0.6697183217157681,
+        "right": 0.001478891656576202
+      },
+      "spread_fraction": {
+        "left": 0.20666666666666667,
+        "right": 0.19666666666666666
+      },
+      "human_spread_fraction": {
+        "left": 0.20666666666666667,
+        "right": 0.19666666666666666
+      }
+    }
+  },
+  "motionlib": {
+    "clips": [
+      "fallAndGetUp3_subject1",
+      "pushAndStumble1_subject3",
+      "walk3_subject3"
+    ],
+    "total_control_frames": 1497,
+    "finite": true
+  }
+}
