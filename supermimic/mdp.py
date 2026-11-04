@@ -6,7 +6,7 @@ velocity of the base_link link frame, joint positions and velocities.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
 import torch
 
@@ -89,6 +89,10 @@ INV_DIM = 1 + 6 + 3 + 3 + 2 * NUM_J
 class MDP:
     is_foot = False
     max_step_reward = MAX_STEP_REWARD
+
+    def contract(self):
+        return dict(version=1,mode='motion',config=asdict(self.cfg),obs_dim=OBS_DIM,
+                    critic_state_dim=self.critic_dim,control_dt=CONTROL_DT,reward='tracked_bodies_root_head_v1')
 
     def __init__(self, kin: S54Kinematics, motion: MotionLib, default_q: torch.Tensor, cfg: RewardCfg = RewardCfg()):
         self.motion = motion

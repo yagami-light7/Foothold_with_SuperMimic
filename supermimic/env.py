@@ -29,6 +29,7 @@ from .s54 import (JOINT_NAMES, NUM_J, XI_DIM, JOINT_OFFSET, COM_OFFSET, COM_BODY
                   TRACKED_BODIES, ROOT_BODY, name_mapping, USD_PATH, MJCF_PATH, checkpoint_contract)
 from .rotations import mat_to_quat, quat_to_mat, so3_exp
 from .goals import GoalSource
+from .transfer import SIMULATION
 
 
 @configclass
@@ -39,10 +40,10 @@ class TrackingSceneCfg(InteractiveSceneCfg):
 
 def make_sim(device: str, args) -> SimulationContext:
     physics = NewtonCfg(
-        solver_cfg=MJWarpSolverCfg(njmax=500, nconmax=128, cone="pyramidal", integrator="implicitfast", use_mujoco_contacts=True),
-        num_substeps=4,
+        solver_cfg=MJWarpSolverCfg(**{k:v for k,v in SIMULATION.items() if k!='num_substeps'}),
+        num_substeps=SIMULATION['num_substeps'],
     )
-    return sim_utils.SimulationCfg(dt=CONTROL_DT, device=device, physics=physics)
+    return sim_utils.SimulationCfg(dt=CONTROL_DT, device=device, physics=physics,gravity=(0.,0.,-9.81))
 
 
 class TrackingSim:
@@ -219,7 +220,7 @@ class TrackingSim:
             # All state/command coordinates exclude the fixed scene.env_origins.
             if command is None:
                 S = tuple(x[env_ids] for x in self.state())
-                command = self.goals.new_command(S)
+                command = self.goals.new_command(S,frames=frames)
             if self.command is None:
                 self.command = command
             else:

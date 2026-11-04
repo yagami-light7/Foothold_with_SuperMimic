@@ -35,6 +35,8 @@ parser.add_argument('--seeds', nargs='+', type=int, help='Foot evaluation seeds;
 parser.add_argument('--reset_noise', action='store_true', help='Foot eval: configured reset perturbations only; no observation/action noise')
 parser.add_argument('--diagnostics', action='store_true', help='Foot records: actual Newton ground contacts and forces')
 parser.add_argument('--controller', choices=['policy', 'default_pd'], default='policy')
+parser.add_argument('--reference_manifest',help='Optional hashed train/held-out reference manifest')
+parser.add_argument('--manifest_split',choices=['train','heldout'])
 add_launcher_args(parser)
 args = parser.parse_args()
 saved_config = json.loads(open(os.path.join(args.run_dir, 'args.json')).read())
@@ -46,7 +48,11 @@ if not foot_run and (args.duration_s is not None or args.seeds or args.reset_noi
 motion_files = []
 if not foot_run:
     try:
-        motion_files = select_reference_files(args.motion_dir, args.clips or saved_config.get('clips'))
+        manifest=args.reference_manifest or saved_config.get('reference_manifest')
+        if manifest:
+            from supermimic.motion_prior_data import load_manifest
+            motion_files,_=load_manifest(manifest,args.manifest_split or saved_config.get('manifest_split','train'))
+        else: motion_files = select_reference_files(args.motion_dir, args.clips or saved_config.get('clips'))
     except (ValueError, FileNotFoundError) as exc:
         parser.error(str(exc))
 elif not 1 <= args.num_envs <= 16:
@@ -64,7 +70,7 @@ from supermimic.networks import Policy
 from supermimic.s54 import default_joint_pos_list, JOINT_NAMES, ROBOT_ID, assert_checkpoint
 from supermimic.goals import GoalSource, GoalSpec
 from supermimic.foot_trajectory import AlternatingConfig
-from supermimic.foot_mdp import FootTrackingMDP,resolve_foot_task
+from supermimic.foot_mdp import FootTrackingMDP,resolve_foot_task,assert_task_checkpoint
 from supermimic.foot_evaluate import evaluate_foot
 
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -80,6 +86,13 @@ task_cfg = resolve_foot_task(saved_config.get('foot_task_config')) if foot_run e
 goals = GoalSource(motion, kin, goal_spec, foot_config,command_mode=task_cfg.command_mode if foot_run else 'alternating')
 default_q = torch.tensor(default_joint_pos_list(),device=dev)
 mdp = (FootTrackingMDP(kin,default_q,goals,task_cfg) if foot_run else MDP(kin,motion,default_q,RewardCfg(**reward_config)))
+if goal_spec.mode=='reference_foot':
+    from supermimic.reference_foot import ReferenceFootGoalSource,PairedMotionMDP
+    goals=ReferenceFootGoalSource(motion,kin,goal_spec,foot_config)
+    mdp=PairedMotionMDP(kin,motion,default_q,goals,RewardCfg(**reward_config))
+if saved_config.get('prior_config'):
+    from supermimic.upper_prior import PriorFootMDP,resolve_prior
+    mdp=PriorFootMDP(kin,default_q,goals,task_cfg,resolve_prior(saved_config['prior_config']))
 C = args.num_envs if foot_run else len(motion.names)
 
 
@@ -104,11 +117,15 @@ def evaluate(env: TrackingSim, ck: dict, record: str | None = None) -> dict:
                          failed=[f'seed{r["seed"]}:{name}' for r in results for name in r['failed']], per_seed=results)
         return aggregate
     assert_checkpoint(ck)
+    assert_task_checkpoint(ck,mdp)
     goal_spec.assert_checkpoint(ck, foot_config)
     a_ = ck["args"]
     K, Hh = a_["goal_frames"], a_["hist"]
     networks.AMP_DTYPE = torch.bfloat16 if a_.get("amp", "none") == "bf16" else None
-    pi = Policy(OBS_DIM, goal_spec.dim, hist=Hh).to(dev)
+    if goal_spec.mode=='reference_foot':
+        from supermimic.networks import DualEncoderPolicy
+        pi=DualEncoderPolicy(hist=Hh).to(dev)
+    else:pi = Policy(OBS_DIM, goal_spec.dim, hist=Hh,obs_adapter=a_.get('obs_adapter','identity')).to(dev)
     pi.load_state_dict(ck["pi"])
     pi.eval()
     # Re-evaluating a checkpoint uses the same sampled foot commands.

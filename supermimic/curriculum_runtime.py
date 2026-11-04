@@ -39,7 +39,7 @@ def emit(path, iteration, values):
 
 
 @torch.no_grad()
-def evaluate(env, pi, goals, mdp, curriculum, hist, full=False, deadline=float('inf'), rich=False, critic=None):
+def evaluate(env, pi, goals, mdp, curriculum, hist, full=False, deadline=float('inf'), rich=False, critic=None,wm=None):
     """Reuse the training scene sequentially. Reset training episodes afterwards.
 
     Freeze policy normalization, no replay insertion, fixed independent seeds.
@@ -72,6 +72,16 @@ def evaluate(env, pi, goals, mdp, curriculum, hist, full=False, deadline=float('
             prev_contact=torch.ones(n,2,dtype=torch.bool,device=env.device)
             last_landing=torch.full((n,2),float('nan'),device=env.device); freq_error=error.clone(); freq_count=error.clone()
             previous_landing_pos=None
+            pose_metrics=None
+            if curriculum.cfg.get('posture_gate'):
+                pose_metrics={key:torch.zeros(n,device=env.device) for key in curriculum.cfg['posture_gate']}
+            trace=None
+            if wm is not None and curriculum.cfg.get('wm_gate'):
+                from .mdp import flatten_state
+                trace={k:[] for k in ('state','action','a_prev','reward','command_step')}
+                trace['state'].append(flatten_state(tuple(v[:n] for v in env.state())).clone())
+                trace['command_step'].append(env.ep_step[:n].clone())
+                paired_command=env.command.index(ids).clone()
             discounted_return=error.clone(); initial_values=None
             if critic is not None:
                 initial=tuple(v[:n] for v in env.state()); cc=env.command.index(ids)
@@ -87,9 +97,19 @@ def evaluate(env, pi, goals, mdp, curriculum, hist, full=False, deadline=float('
                 actions=torch.zeros_like(env.a_prev)
                 actions[:n]=bound_action(pi(history,goals.goal(S,env.f[:n],env.ep_step[:n],command)))
                 out=env.step(actions)
+                if trace is not None:
+                    trace['state'].append(out['s1'][:n].clone());trace['command_step'].append(out['ep_step'][:n].clone()+1)
+                    trace['action'].append(out['a'][:n].clone());trace['a_prev'].append(out['a_prev'][:n].clone())
+                    trace['reward'].append(out['r'][:n].clone())
                 if 'r' in out:
                     discounted_return+=torch.where(alive,env.gamma**steps*out['r'][:n],0.)
                 state=tuple(v[:n] for v in env.state()); bp,_,bv,_=mdp.kin.forward(*state)
+                if pose_metrics is not None:
+                    R=state[1]
+                    values=dict(root_pitch_max_abs_deg=torch.asin((-R[:,2,0]).clamp(-1,1)).abs()*180/np.pi,
+                        root_roll_max_abs_deg=torch.atan2(R[:,2,1],R[:,2,2]).abs()*180/np.pi,
+                        height_deviation_max_m=(state[0][:,2]-mdp.nominal_height).abs())
+                    for key in pose_metrics:pose_metrics[key]=torch.maximum(pose_metrics[key],torch.where(alive,values[key],0.))
                 feet=bp[:n,mdp.foot_indices]; velocities=bv[:n,mdp.foot_indices]
                 ref=mdp._reference(command,env.ep_step[:n])
                 e=(feet-ref.position[:n,0]).square().sum(-1).mean(-1)
@@ -161,6 +181,16 @@ def evaluate(env, pi, goals, mdp, curriculum, hist, full=False, deadline=float('
                            step_length_error=float(step_error.sum()/step_count.sum().clamp_min(1)),
                            step_length_measurements=int(step_count.sum()))
             row['discounted_episode_return']=discounted_return.cpu().tolist()
+            if pose_metrics is not None:row.update({key:float(value.max()) for key,value in pose_metrics.items()})
+            if trace is not None:
+                from .standing_diagnostics import paired_predictions
+                try:
+                    paired={k:torch.stack(v) for k,v in trace.items()}
+                    paired.update(episode_lengths=steps.int().cpu().tolist(),xi=env.xi[:n].clone())
+                    prediction,_=paired_predictions(wm,mdp,paired_command,paired,env.device,stride=25)
+                    row['wm_paired']=prediction
+                except ValueError as exc:
+                    row['wm_paired_error']=str(exc)
             if initial_values is not None:
                 row['critic_initial_values']=initial_values.cpu().tolist()
                 physically_ended=env.failed_eval[:n]
@@ -171,6 +201,8 @@ def evaluate(env, pi, goals, mdp, curriculum, hist, full=False, deadline=float('
         for task in {r['command']['task'] for r in rows if r['status']=='evaluated'}:
             part=[r for r in rows if r['command']['task']==task and r['status']=='evaluated']
             metrics[task]=dict(success_rate=min(r['success_rate'] for r in part),foot_rmse=max(r['foot_rmse'] for r in part))
+            if curriculum.cfg.get('posture_gate'):
+                metrics[task].update({key:max(r[key] for r in part) for key in curriculum.cfg['posture_gate']})
         # A deadline-truncated protocol cannot promote a stage based on a subset.
         for row in rows:
             if row['status'] in ('budget_skipped','incomplete'):
@@ -191,7 +223,12 @@ def evaluate(env, pi, goals, mdp, curriculum, hist, full=False, deadline=float('
                 estimated+=max((r['command_wall_seconds'] for r in measured),default=30.)
             elif row['status']=='evaluated': estimated+=row['command_wall_seconds']
         minimum_next=min(300.,max(10.,estimated*1.15)) if any(r['status'] in ('budget_skipped','incomplete') for r in rows) else 10.
-        return dict(minimum_next_eval_seconds=minimum_next,bucket_metrics=buckets,kind='full' if full else 'fast',rows=rows,metrics=metrics,wall_seconds=time.monotonic()-started)
+        wm_metrics=None
+        if curriculum.cfg.get('wm_gate'):
+            qualified=[r['wm_paired']['horizons']['8'] for r in rows if r.get('wm_paired')]
+            if len(qualified)==len([r for r in rows if r['status']=='evaluated']) and qualified:
+                wm_metrics={key:max(r[key] for r in qualified) for key in curriculum.cfg['wm_gate']}
+        return dict(minimum_next_eval_seconds=minimum_next,bucket_metrics=buckets,kind='full' if full else 'fast',rows=rows,metrics=metrics,wm_metrics=wm_metrics,wall_seconds=time.monotonic()-started)
     finally:
         goals.fixed_command=None; env.eval_mode,env.max_episode_steps,env.reset_noise=old
         curriculum.load_state_dict(sampler_state)

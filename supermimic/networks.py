@@ -137,8 +137,11 @@ class WorldModel(nn.Module):
 class Policy(nn.Module):
     """a = dec(enc(g), o_{t-9:t}); deterministic, latent z in R^32 bounded by tanh."""
 
-    def __init__(self, obs_dim: int, goal_dim: int, hist: int = 10, z_dim: int = 32):
+    def __init__(self, obs_dim: int, goal_dim: int, hist: int = 10, z_dim: int = 32, obs_adapter='identity'):
         super().__init__()
+        if obs_adapter not in ('identity','mask_reference_orientation'):
+            raise ValueError('Unknown observation adapter')
+        self.obs_adapter = obs_adapter
         self.hist = hist
         self.enc = mlp(goal_dim, [2048, 1024, 512, 256], z_dim)
         self.dec = mlp(z_dim + obs_dim * hist, [2048, 1024, 512, 256], NUM_J)
@@ -148,11 +151,40 @@ class Policy(nn.Module):
         self.obs_norm = RunningNorm(obs_dim)
         self.goal_norm = RunningNorm(goal_dim)
 
+    def encode(self, goal):
+        return torch.tanh(run_mlp(self.enc,self.goal_norm(goal)))
+
+    def decode(self, obs_hist, z):
+        o = self.obs_norm(obs_hist)
+        if self.obs_adapter == 'mask_reference_orientation':
+            o = torch.cat((o[...,:93],torch.zeros_like(o[...,93:])), -1)
+        return run_mlp(self.dec,torch.cat((z,o.flatten(-2)),-1))
+
     def forward(self, obs_hist: torch.Tensor, goal: torch.Tensor) -> torch.Tensor:
         """obs_hist: (B, hist, obs_dim) noisy observations, newest last."""
-        z = torch.tanh(run_mlp(self.enc, self.goal_norm(goal)))
-        o = self.obs_norm(obs_hist).flatten(-2)
-        return run_mlp(self.dec, torch.cat((z, o), -1))
+        return self.decode(obs_hist,self.encode(goal))
+
+
+class DualEncoderPolicy(Policy):
+    """Optional two interfaces with one complete Decoder; not an action-MSE loss.
+
+    The Motion norm/encoder are separate. Foot uses its explicit observation
+    adapter; forwarding Motion bypasses that adapter and preserves its semantics.
+    Standard deployment uses only Policy's Foot enc/dec/norm state.
+    """
+    def __init__(self, obs_dim=99, foot_dim=230, motion_dim=730, hist=10):
+        super().__init__(obs_dim,foot_dim,hist,obs_adapter='mask_reference_orientation')
+        self.motion_enc = mlp(motion_dim,[2048,1024,512,256],32)
+        self.motion_goal_norm = RunningNorm(motion_dim)
+        self.motion_obs_norm = RunningNorm(obs_dim)
+
+    def forward_motion(self, obs_hist, goal):
+        z = self.encode_motion(goal)
+        o = self.motion_obs_norm(obs_hist).flatten(-2)
+        return run_mlp(self.dec,torch.cat((z,o),-1))
+
+    def encode_motion(self,goal):
+        return torch.tanh(run_mlp(self.motion_enc,self.motion_goal_norm(goal)))
 
 
 class Critic(nn.Module):

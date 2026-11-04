@@ -83,7 +83,7 @@ def resolve_foot_task(value=None):
 
 
 def assert_task_checkpoint(checkpoint, mdp):
-    if not mdp.is_foot:
+    if not mdp.is_foot and mdp.contract()['mode']=='motion' and checkpoint.get('task_contract') is None:
         return  # Preserve legacy Motion checkpoints and their evaluation convention.
     if checkpoint.get('task_contract') != mdp.contract():
         raise ValueError('Foot MDP contract mismatch: goal-only/other-task checkpoints cannot resume this task')

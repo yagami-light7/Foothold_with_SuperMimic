@@ -1,0 +1,1 @@
+{"bank":"results/s54/motion_prior_stage0_verified/upper_templates.npz","w_upper_pose":0.03,"w_torso":0.02,"w_upper_velocity":0.01,"pose_std":0.5,"torso_std":0.35,"velocity_std":1.5,"speed_tolerance":0.12,"yaw_rate_tolerance":0.15,"lateral_speed_tolerance":0.05}

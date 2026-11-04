@@ -126,7 +126,7 @@ class Curriculum:
         self.hist[c.bucket] += 1
         return c
 
-    def update(self, metrics, elapsed, allow_promotion=True, bucket_metrics=None):
+    def update(self, metrics, elapsed, allow_promotion=True, bucket_metrics=None,wm_metrics=None):
         """Only complete, physical evaluations may call this. Never WM loss."""
         for bucket,m in (bucket_metrics or {}).items(): self.bucket_success[bucket]=m['success_rate']
         for task, m in metrics.items():
@@ -135,6 +135,14 @@ class Curriculum:
         passed = all(t in metrics and metrics[t]['success_rate'] >=
                      (self.cfg['standing_threshold'] if t=='standing' else self.cfg['success_threshold'])
                      and metrics[t]['foot_rmse'] <= self.cfg['rmse_threshold'] for t in required)
+        # Optional MotionPrior experiment gate. Legacy curricula keep their behavior.
+        if self.cfg.get('wm_gate'):
+            passed = passed and wm_metrics is not None and all(
+                key in wm_metrics and math.isfinite(wm_metrics[key]) and wm_metrics[key]<=limit
+                for key,limit in self.cfg['wm_gate'].items())
+        if self.cfg.get('posture_gate'):
+            passed=passed and all(key in metrics[task] and math.isfinite(metrics[task][key]) and metrics[task][key]<=limit
+                for task in required for key,limit in self.cfg['posture_gate'].items())
         self.passes = self.passes+1 if passed else 0
         self.failures = 0 if passed else self.failures+1
         self.progress = min(1.,self.progress+.2) if passed else max(0.,self.progress-.1)

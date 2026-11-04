@@ -1,5 +1,9 @@
 # KUAVO S54 SuperMimic
 
+Motion→Foot 直接迁移、可选配对 BPTT Bridge、上身先验与有界实验结果见
+[MotionPrior_FootTrajectory 实验记录](experiment/MotionPrior_FootTrajectory.md#12-实施与实验记录2026-11-04)。
+新入口通过接口 smoke；真实 Standing Gate 仍未通过。
+
 足部轨迹与可切换 Goal 接口见 [S54_FOOT_TRAJECTORY.md](docs/S54_FOOT_TRAJECTORY.md)。
 足部模式默认使用未来 1 秒的 10 个双脚目标，共 230 维；保留原 Motion 模式作为默认。
 独立 Foot MDP 与 Standing 最小训练见 [训练前检查报告](docs/S54_FOOT_TRACKING_TRAINING.md)。

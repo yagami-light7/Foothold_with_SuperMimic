@@ -26,7 +26,7 @@ def evaluate_foot(env, checkpoint, goals, mdp, record=None, device='cuda:0', *,
         raise ValueError('Unknown controller')
     cfg = checkpoint['args']; hist_len = cfg['hist']
     networks.AMP_DTYPE = torch.bfloat16 if cfg.get('amp') == 'bf16' else None
-    pi = Policy(OBS_DIM, goals.spec.dim, hist=hist_len).to(device)
+    pi = Policy(OBS_DIM, goals.spec.dim, hist=hist_len,obs_adapter=cfg.get('obs_adapter','identity')).to(device)
     pi.load_state_dict(checkpoint['pi']); pi.eval()
     seed = cfg.get('seed', 0) if seed is None else seed
     # Evaluation horizon is a protocol override, never a change to the saved MDP contract.

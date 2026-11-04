@@ -21,7 +21,7 @@ class GoalSpec:
     dt: float | None = None
 
     def __post_init__(self):
-        if self.mode not in ('motion', 'foot_trajectory') or not isinstance(self.frames, int) or self.frames < 1:
+        if self.mode not in ('motion', 'foot_trajectory','reference_foot') or not isinstance(self.frames, int) or self.frames < 1:
             raise ValueError('Invalid goal mode or number of future samples')
         dt = (CONTROL_DT if self.mode == 'motion' else 0.1) if self.dt is None else self.dt
         if not 0 < dt < float('inf'):
@@ -39,7 +39,7 @@ class GoalSpec:
         return self.frames * self.frame_dim
 
     def contract(self):
-        return dict(version=1, **asdict(self), frame_dim=self.frame_dim, dim=self.dim,
+        return dict(version=2 if self.mode=='reference_foot' else 1, **asdict(self), frame_dim=self.frame_dim, dim=self.dim,
                     coordinates='reference_heading' if self.mode == 'motion' else 'current_root_yaw',
                     rotation='6d_columns', quaternion='wxyz',
                     observation_reference='motion_root' if self.mode == 'motion' else 'fixed_command_heading')
@@ -60,7 +60,7 @@ class GoalSpec:
 
 
 def add_goal_args(parser):
-    parser.add_argument('--goal_mode', choices=['motion', 'foot_trajectory'], default='motion')
+    parser.add_argument('--goal_mode', choices=['motion', 'foot_trajectory','reference_foot'], default='motion')
     parser.add_argument('--goal_dt', type=float, default=None, help='Future sample spacing: motion=0.02, foot=0.1 seconds')
     parser.add_argument('--foot_config', default=None, help='AlternatingConfig JSON; motion mode does not use it')
 
@@ -85,6 +85,12 @@ def foot_goal(S, command, ep_step, spec):
     times = (command_time(ep_step,CONTROL_DT,torch.float64)[:,None]+offsets64[None]).to(p.dtype)
     offsets = offsets64.to(p.dtype)
     ref = query(command, times)
+    return encode_foot_samples(S,ref,offsets)
+
+
+def encode_foot_samples(S,ref,offsets):
+    """Shared 23D encoding; the reference source does not enter the Actor."""
+    p,R = S[:2]
     Ht = yaw_mat(R).transpose(-1, -2)[:, None, None]
     local_p = (Ht @ (ref.position - p[:, None, None]).unsqueeze(-1)).squeeze(-1)
     local_R = mat_to_6d(Ht @ quat_to_mat(ref.quaternion))
@@ -95,7 +101,7 @@ def foot_goal(S, command, ep_step, spec):
 class GoalSource:
     def __init__(self, motion, kin, spec=GoalSpec(), foot_config=AlternatingConfig(), command_mode='alternating'):
         self.motion, self.kin, self.spec, self.foot_config = motion, kin, spec, foot_config
-        self.is_foot = spec.mode == 'foot_trajectory'
+        self.is_foot = spec.mode != 'motion'
         if command_mode not in ('alternating', 'standing', 'curriculum'):
             raise ValueError('Expected alternating or standing foot commands')
         self.command_mode = command_mode
@@ -110,7 +116,7 @@ class GoalSource:
             self.ankle_height = [0.003 - geometry.local_low(side, np.eye(3)) for side in (0, 1)]
             self.foot_indices = [kin.tracked_names.index(n) for n in FOOT_BODY_NAMES]
 
-    def new_command(self, S, generator=None):
+    def new_command(self, S, generator=None, frames=None):
         if not self.is_foot:
             return None
         feet = self.kin.forward(*S)[0][:, self.foot_indices].clone()

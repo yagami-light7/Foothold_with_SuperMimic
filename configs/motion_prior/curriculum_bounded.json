@@ -1,0 +1,9 @@
+{
+ "version":1,"seed":5404,"budget_seconds":300,"checkpoint_seconds":120,"eval_seconds":60,"eval_fraction":0.05,
+ "weights":[[1,0,0,0,0,0],[0.5,0.5,0,0,0,0],[0.4,0.6,0,0,0,0],[0.3,0.5,0.2,0,0,0],[0.3,0.4,0.2,0,0.1,0],[0.3,0.4,0.2,0,0.05,0.05]],
+ "length_bins":[[0.02,0.06],[0.06,0.1],[0.1,0.15]],"frequency_bins":[[0.4,0.65],[0.65,0.8],[0.8,1.0]],
+ "yaw_limits":[0,0,0,0,0.08,0.12],"clearance":0.035,"max_speed":0.2,
+ "standing_threshold":1.0,"success_threshold":0.95,"rmse_threshold":0.035,"consecutive_passes":2,"min_stage_seconds":60,
+ "wm_gate":{"base_height_rmse_m":0.01,"root_pitch_rmse_deg":1.0,"feet_position_rmse_m":0.015,"paired_reward_mae":0.02},
+ "posture_gate":{"root_pitch_max_abs_deg":10.0,"root_roll_max_abs_deg":10.0,"height_deviation_max_m":0.05}
+}

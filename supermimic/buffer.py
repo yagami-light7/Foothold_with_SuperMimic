@@ -60,7 +60,9 @@ class ReplayBuffer:
         """Resolve immutable plans outside compiled imagination, in sample order."""
         if ids.ndim != 1:
             raise ValueError('Expected one command ID per imagination start')
-        return FootstepCommand.cat([self.command_store[cid] for cid in ids.cpu().tolist()])
+        commands=[self.command_store[cid] for cid in ids.cpu().tolist()]
+        if len({type(c) for c in commands}) != 1: raise ValueError('Cannot mix paired and quintic command schemas')
+        return type(commands[0]).cat(commands)
 
     def _row(self, age: torch.Tensor) -> torch.Tensor:
         """Map age-ordered time index (0 = oldest) to the storage row."""

@@ -72,6 +72,18 @@ parser.add_argument('--curriculum_config', help='Enable the bounded curriculum (
 parser.add_argument('--max_device_memory_mib',type=float,default=None,help='Optional device-memory stop threshold at telemetry intervals')
 parser.add_argument('--fresh_start', action='store_true', help='Assert fresh models/progress; forbid resume and transfer')
 parser.add_argument('--init_weights', help='Explicit transfer of compatible WM/Actor weights; fresh optimizers/critic')
+parser.add_argument('--init_from_motion', help='Cross-task Stage 1 initialization; never a resume')
+parser.add_argument('--init_from_bridge', help='Initialize Quintic Foot RL from an optional paired Motion-reward bridge')
+parser.add_argument('--transfer_components', choices=['wm','wm_decoder'],default='wm_decoder')
+parser.add_argument('--obs_adapter', choices=['identity','mask_reference_orientation'],default='identity')
+parser.add_argument('--freeze_decoder',action='store_true')
+parser.add_argument('--train_decoder',action='store_true',help='Explicitly finetune D during direct Foot RL; bridge always freezes D')
+parser.add_argument('--reference_manifest',help='Hashed clip-level train/held-out manifest')
+parser.add_argument('--manifest_split',choices=['train','heldout'],default='train')
+parser.add_argument('--prior_config',help='Optional upper-body prior config; default off')
+parser.add_argument('--wall_seconds',type=float,help='Safe wall-clock stop, including initialization; finite bounded experiments')
+parser.add_argument('--reward_term_logging',action='store_true',help='Persist per-term mean/std and weighted prior contributions locally')
+parser.add_argument('--paired_latent_weight',type=float,default=0.,help='Optional same-clip latent alignment; never applies to random Quintic goals')
 add_goal_args(parser)
 add_launcher_args(parser)
 args = parser.parse_args()
@@ -80,6 +92,26 @@ try:
     if args.goal_mode != 'foot_trajectory' and (args.foot_task_config or args.check_foot_gradients):
         raise ValueError('Foot task configuration/gradient checks require --goal_mode foot_trajectory')
     task_cfg = resolve_foot_task(args.foot_task_config) if args.goal_mode == 'foot_trajectory' else None
+    if args.goal_mode=='reference_foot' and (args.foot_task_config or args.curriculum_config):
+        raise ValueError('Paired bridge uses Motion reward/reset and its own reference-foot goal')
+    if args.init_from_motion and args.goal_mode=='motion': raise ValueError('init_from_motion is a cross-task Foot initializer')
+    if args.init_from_bridge and args.goal_mode!='foot_trajectory': raise ValueError('Bridge initialization targets Quintic Foot RL')
+    if sum(bool(x) for x in (args.resume,args.init_weights,args.init_from_motion,args.init_from_bridge))>1:
+        raise ValueError('Choose exactly one resume/initialization source')
+    if args.freeze_decoder and args.train_decoder: raise ValueError('Conflicting Decoder update flags')
+    if args.goal_mode=='reference_foot' and args.train_decoder: raise ValueError('Sequential bridge freezes Decoder; joint Motion training is not enabled')
+    if args.init_from_motion and args.transfer_components=='wm_decoder': args.obs_adapter='mask_reference_orientation'
+    if args.init_from_motion and args.transfer_components=='wm_decoder' and not args.train_decoder: args.freeze_decoder=True
+    if args.init_from_bridge:
+        args.obs_adapter='mask_reference_orientation'
+        if not args.train_decoder: args.freeze_decoder=True
+    if args.goal_mode=='reference_foot':
+        if not (args.init_from_motion or args.resume): raise ValueError('Paired bridge requires Stage 1 initialization or same-task resume')
+        if args.goal_frames!=10: raise ValueError('The paired Motion encoder contract currently requires K=10')
+        args.freeze_decoder=True;args.obs_adapter='mask_reference_orientation'
+    if not math.isfinite(args.paired_latent_weight) or args.paired_latent_weight<0 or (args.paired_latent_weight and args.goal_mode!='reference_foot'):
+        raise ValueError('Latent alignment requires paired reference data and a nonnegative weight')
+    if args.wall_seconds is not None and (not math.isfinite(args.wall_seconds) or args.wall_seconds<=0): raise ValueError('Invalid wall_seconds')
     if args.curriculum_config and (task_cfg is None or task_cfg.command_mode != 'curriculum'):
         raise ValueError('Curriculum requires command_mode=curriculum foot task')
     if task_cfg is not None and task_cfg.command_mode == 'curriculum' and not args.curriculum_config:
@@ -94,7 +126,7 @@ try:
     if not 0<=args.gamma<1: raise ValueError('gamma must be in [0,1)')
     if args.max_device_memory_mib is not None and args.max_device_memory_mib<=0:
         raise ValueError('max_device_memory_mib must be positive')
-    if args.fresh_start and (args.resume or args.init_weights):
+    if args.fresh_start and (args.resume or args.init_weights or args.init_from_motion or args.init_from_bridge):
         raise ValueError('--fresh_start cannot load --resume or --init_weights')
     if args.resume and args.init_weights: raise ValueError('Choose resume OR init_weights')
     if task_cfg is not None and args.horizon >= task_cfg.episode_steps:
@@ -115,10 +147,14 @@ if args.pi_batch * args.horizon < args.critic_minibatches:
     parser.error("Empty critic minibatches: increase pi_batch*horizon")
 
 from supermimic.reference_selection import select_reference_files
+from supermimic.motion_prior_data import load_manifest
 motion_files = []
+data_contract=None
 if task_cfg is None:
     try:
-        motion_files = select_reference_files(args.motion_dir, args.clips)
+        if args.reference_manifest:
+            motion_files,data_contract=load_manifest(args.reference_manifest,args.manifest_split)
+        else: motion_files = select_reference_files(args.motion_dir, args.clips)
     except (FileNotFoundError, ValueError) as exc:
         parser.error(str(exc))
 else:
@@ -140,6 +176,7 @@ from supermimic.mdp import CRITIC_EXTRA, INV_DIM, MDP, OBS_DIM, RewardCfg, invar
 from supermimic.motion import MotionLib
 import supermimic.networks as networks
 from supermimic.networks import Critic, Policy, WorldModel
+from supermimic.transfer import (physical_contract,policy_contract,assert_policy_checkpoint,initialize_from_motion)
 from supermimic.s54 import (default_joint_pos_list, NUM_J, checkpoint_contract, assert_checkpoint)
 
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -149,9 +186,8 @@ random.seed(args.seed); np.random.seed(args.seed)
 from supermimic.curriculum import Curriculum, TASKS
 from supermimic.curriculum_runtime import atomic_save, rng_state, restore_rng, emit, evaluate
 curriculum = Curriculum(json.load(open(args.curriculum_config))) if args.curriculum_config else None
-if curriculum:
-    signal.signal(signal.SIGTERM, request_stop)
-    signal.signal(signal.SIGINT, request_stop)
+signal.signal(signal.SIGTERM, request_stop)
+signal.signal(signal.SIGINT, request_stop)
 networks.AMP_DTYPE = torch.bfloat16 if args.amp == "bf16" else None
 dev = "cuda:0"
 args.reward_config = asdict(RewardCfg() if task_cfg is None else task_cfg)
@@ -164,6 +200,16 @@ default_q = torch.tensor(default_joint_pos_list(), device=dev)
 goals = GoalSource(motion, kin, goal_spec, foot_config,
                    command_mode='alternating' if task_cfg is None else task_cfg.command_mode)
 mdp = (MDP(kin, motion, default_q) if task_cfg is None else FootTrackingMDP(kin, default_q, goals, task_cfg))
+if args.goal_mode=='reference_foot':
+    from supermimic.reference_foot import ReferenceFootGoalSource,PairedMotionMDP
+    goals=ReferenceFootGoalSource(motion,kin,goal_spec,foot_config)
+    mdp=PairedMotionMDP(kin,motion,default_q,goals,RewardCfg())
+if args.prior_config:
+    if task_cfg is None: raise ValueError('Dynamic prior adapter currently requires independent Foot RL')
+    from supermimic.upper_prior import PriorFootMDP,resolve_prior
+    prior_cfg=resolve_prior(args.prior_config)
+    args.prior_config=asdict(prior_cfg)
+    mdp=PriorFootMDP(kin,default_q,goals,task_cfg,prior_cfg)
 if curriculum:
     goals.curriculum = curriculum
     goals.command_duration = task_cfg.episode_steps * .02 + goal_spec.frames * goal_spec.dt + 1
@@ -177,12 +223,22 @@ GOAL_DIM = goal_spec.dim
 CRITIC_IN = mdp.critic_dim + GOAL_DIM
 
 wm = WorldModel().to(dev)
-pi = Policy(OBS_DIM, GOAL_DIM, hist=Hh).to(dev)
+if args.goal_mode=='reference_foot':
+    from supermimic.networks import DualEncoderPolicy
+    pi=DualEncoderPolicy(hist=Hh).to(dev)
+else:
+    pi = Policy(OBS_DIM, GOAL_DIM, hist=Hh,obs_adapter=args.obs_adapter).to(dev)
 critic = Critic(CRITIC_IN).to(dev)
 opt_wm = torch.optim.Adam(wm.parameters(), lr=args.lr)
 opt_pi = torch.optim.Adam(pi.parameters(), lr=actor_lr, betas=(0.9, 0.95))
 opt_v = torch.optim.Adam(critic.parameters(), lr=critic_lr)
 start_it, wall_offset, sim_steps = 0, 0.0, 0
+supervision_steps=0
+physics_metadata=physical_contract()
+transfer_report=None
+git_sha=subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip()
+launch_metadata=json.loads((log_path/'launch.json').read_text()) if (log_path/'launch.json').exists() else {}
+source_snapshot=launch_metadata.get('source_snapshot')
 if args.resume:
     ck = torch.load(args.resume, map_location=dev, weights_only=False)
     assert_checkpoint(ck)
@@ -193,9 +249,14 @@ if args.resume:
               'network dimensions and physical task unchanged',flush=True)
     goal_spec.assert_checkpoint(ck, foot_config)
     assert_task_checkpoint(ck, mdp)
+    assert_policy_checkpoint(ck,Hh,args.obs_adapter,not args.freeze_decoder)
+    if ck.get('physical_contract',physics_metadata)!=physics_metadata: raise ValueError('Resume physics contract mismatch')
+    if ck.get('data_contract',data_contract)!=data_contract: raise ValueError('Resume data manifest mismatch')
     if "critic" not in ck: raise ValueError("Resume requires last.pt with critic and optimizers")
     wm.load_state_dict(ck["wm"]), pi.load_state_dict(ck["pi"]), critic.load_state_dict(ck["critic"])
     opt_wm.load_state_dict(ck["opt_wm"]), opt_pi.load_state_dict(ck["opt_pi"]), opt_v.load_state_dict(ck["opt_v"])
+    transfer_report=ck.get('transfer_report')
+    supervision_steps=ck.get('stage_stats',{}).get('supervision_steps',0)
     if curriculum:
         if 'curriculum' not in ck: raise ValueError('Full curriculum resume requires curriculum/RNG state')
         curriculum.load_state_dict(ck['curriculum'])
@@ -211,10 +272,31 @@ if args.init_weights:
     assert_checkpoint(transfer)
     goal_spec.assert_checkpoint(transfer)  # representation must match; sampling/task may change explicitly
     if transfer['args']['hist'] != args.hist: raise ValueError('Transfer requires matching Actor history')
+    if transfer.get('policy_contract',{}).get('obs_adapter','identity')!=args.obs_adapter:
+        raise ValueError('Compatible Actor transfer requires matching observation semantics')
+    if transfer.get('physical_contract',physics_metadata)!=physics_metadata:raise ValueError('Actor transfer physics mismatch')
     wm.load_state_dict(transfer['wm']); pi.load_state_dict(transfer['pi'])
     pi.goal_norm.mean.zero_(); pi.goal_norm.var.fill_(1); pi.goal_norm.count.zero_()
     print('TRANSFER: WM+Actor (goal normalization reset); fresh Critic/optimizers/replay/curriculum. Source iteration',
           transfer['iteration'], flush=True)
+
+if args.init_from_motion:
+    transfer=torch.load(args.init_from_motion,map_location=dev,weights_only=False)
+    transfer_report=initialize_from_motion(transfer,wm,pi,hist=Hh,components=args.transfer_components)
+    transfer_report['source_path']=str(Path(args.init_from_motion).resolve())
+if args.init_from_bridge:
+    from supermimic.transfer import initialize_from_bridge
+    transfer=torch.load(args.init_from_bridge,map_location=dev,weights_only=False)
+    transfer_report=initialize_from_bridge(transfer,wm,pi,hist=Hh)
+    transfer_report['source_path']=str(Path(args.init_from_bridge).resolve())
+if transfer_report:
+    (log_path/'transfer_report.json').write_text(json.dumps(transfer_report,indent=2))
+    print('Cross-task initialization:',json.dumps({k:v for k,v in transfer_report.items() if k!='mapping'}),flush=True)
+if args.freeze_decoder:
+    for parameter in pi.dec.parameters(): parameter.requires_grad_(False)
+if args.goal_mode=='reference_foot':
+    for parameter in pi.motion_enc.parameters():parameter.requires_grad_(False)
+actor_parameters=tuple(p for p in pi.parameters() if p.requires_grad)
 
 args_temp=log_path/'args.json.tmp'
 args_temp.write_text(json.dumps(vars(args),indent=2))
@@ -321,6 +403,7 @@ PROFILE = bool(int(os.environ.get("SM_PROFILE", "0")))
 
 
 def policy_update(audit_gradients=False):
+    global supervision_steps
     if PROFILE:
         torch.cuda.synchronize(); tq0 = time.time()
     s, h = sample_valid_starts(args.pi_batch)
@@ -332,9 +415,13 @@ def policy_update(audit_gradients=False):
     with torch.no_grad():
         o_hist = goals.obs(mdp, unflatten_state(h["s"]), h["a_prev"], h["xi"], h["f"], command)
     o_hist = mdp.add_noise(o_hist)
+    wm.zero_grad(set_to_none=True)  # Actor gradients may traverse WM inputs, never its parameters.
     set_requires_grad(wm, False)
     set_requires_grad(critic, False)
     B = args.pi_batch
+    audit_freeze=args.check_foot_gradients or audit_gradients or args.goal_mode=='reference_foot'
+    wm_versions=tuple(p._version for p in wm.parameters()) if audit_freeze else None
+    decoder_versions=tuple(p._version for p in pi.dec.parameters()) if audit_freeze and args.freeze_decoder else None
     g0 = goals.goal(S, f, ep_step, command)
     g = g0
     S0 = S
@@ -365,16 +452,22 @@ def policy_update(audit_gradients=False):
         bootstrap = (args.gamma**HZ) * c * bound_bootstrap(raw_v,value_upper)
         J = J + bootstrap
     loss = -J.mean()
+    latent_loss=torch.zeros((),device=dev)
+    if args.paired_latent_weight:
+        with torch.no_grad(): target_latent=pi.encode_motion(motion.goal(f_all,K))
+        latent_loss=(pi.encode(flat(Gs))-target_latent).square().mean()
+        loss=loss+args.paired_latent_weight*latent_loss
+        supervision_steps+=HZ*B
     foot_gn = torch.zeros((), device=dev)
     if mdp.is_foot and (args.check_foot_gradients or audit_gradients):
         # Exclude direct action costs, posture, base terms, critic and survival derivatives.
         foot_loss = -(disc*c_t.detach()*foot_reward.view(HZ,B)).sum(0).mean()
-        fg = torch.autograd.grad(foot_loss,tuple(pi.parameters()),retain_graph=True,allow_unused=True)
+        fg = torch.autograd.grad(foot_loss,actor_parameters,retain_graph=True,allow_unused=True)
         foot_gn = torch.stack([g.detach().float().square().sum() for g in fg if g is not None]).sum().sqrt()
         if not torch.isfinite(foot_gn): raise FloatingPointError('Nonfinite pure foot Actor gradient')
     gradient_diagnostics={}
     if audit_gradients:
-        params=tuple(pi.parameters())
+        params=actor_parameters
         rg=torch.autograd.grad(-reward_J.mean(),params,retain_graph=True,allow_unused=True)
         bg=(torch.autograd.grad(-bootstrap.mean(),params,retain_graph=True,allow_unused=True)
             if bootstrap.requires_grad else tuple(None for _ in params))
@@ -384,6 +477,16 @@ def policy_update(audit_gradients=False):
         dot=sum(((x.detach().float()*y.detach().float()).sum() for x,y in zip(rg,bg) if x is not None and y is not None),torch.zeros((),device=dev))
         gradient_diagnostics=dict(actor_reward_gradnorm=rn,actor_bootstrap_gradnorm=bn,
             actor_grad_cosine=dot/(rn*bn).clamp_min(1e-20),pure_foot_gradnorm=foot_gn)
+        if mdp.is_foot:
+            _,heads=mdp.reward(S_all,f_all,flat(As),flat(Aps),True,command=command_all,ep_step=flat(Steps))
+            objectives={k:v for k,v in heads.items() if k.endswith('_contribution')}
+            objectives.update(base_height=heads['base_height']*task_cfg.w_base_height*.02,
+                              base_upright=heads['base_upright']*task_cfg.w_upright*.02,
+                              foot=heads['foot_objective'])
+            for key,values in objectives.items():
+                objective=-(disc*c_t.detach()*values.view(HZ,B)).sum(0).mean()
+                gradients=torch.autograd.grad(objective,params,retain_graph=True,allow_unused=True)
+                gradient_diagnostics['term_'+key+'_actor_gradnorm']=grad_norm(gradients)
     if PROFILE:
         torch.cuda.synchronize(); tq1 = time.time()
     opt_pi.zero_grad(set_to_none=True)
@@ -395,6 +498,12 @@ def policy_update(audit_gradients=False):
     nn.utils.clip_grad_value_(pi.parameters(), 0.1)
     if torch.isfinite(gn):
         opt_pi.step()
+    if audit_freeze:
+        if tuple(p._version for p in wm.parameters())!=wm_versions or any(p.grad is not None for p in wm.parameters()):
+            raise RuntimeError('Actor update mutated WM parameters/gradients')
+        if decoder_versions is not None and (tuple(p._version for p in pi.dec.parameters())!=decoder_versions
+                or any(p.grad is not None for p in pi.dec.parameters())):
+            raise RuntimeError('Frozen Decoder changed during Encoder adaptation')
     set_requires_grad(wm, True)
     set_requires_grad(critic, True)
     # ---------------- critic: GAE(lambda) targets over the imagined transitions ----------------
@@ -454,7 +563,7 @@ def policy_update(audit_gradients=False):
     if PROFILE:
         torch.cuda.synchronize()
         print(f"[prof] imagine fwd {1e3*(tq1-tq0):.0f} ms | bwd {1e3*(tq2-tq1):.0f} ms | critic {1e3*(time.time()-tq2):.0f} ms", flush=True)
-    diagnostics=dict(**gradient_diagnostics,critic_real_samples=torch.tensor(float(real_count),device=dev),
+    diagnostics=dict(**gradient_diagnostics,paired_latent_loss=latent_loss.detach(),critic_real_samples=torch.tensor(float(real_count),device=dev),
         **({'critic_real_mc_loss':torch.stack(real_loss_log).mean()} if real_loss_log else {}),critic_raw_value_mean=raw_v.detach().mean(),critic_raw_value_max=raw_v.detach().max(),
         critic_target_mean=target_mean,critic_target_max=target_max,
         actor_bootstrap_mean=bootstrap.detach().mean(),actor_reward_return_mean=reward_J.detach().mean(),
@@ -486,6 +595,13 @@ with launch_simulation(sim_cfg, args):
             a = pi(obs_hist, g)
             a = bound_action(a + args.action_noise * torch.randn_like(a))
             out = env.step(a)
+            if args.goal_mode=='reference_foot' and not torch.equal(out['command'].start_frame+out['ep_step'],out['f']):
+                raise RuntimeError('Paired reference frame and immutable command clock diverged')
+            if args.reward_term_logging:
+                record=dict(sim_steps=sim_steps+args.num_envs,terms={
+                    k:dict(mean=float(v.float().mean()),std=float(v.float().std(unbiased=False)))
+                    for k,v in out['terms'].items()})
+                with (log_path/'reward_terms.jsonl').open('a') as sink: sink.write(json.dumps(record)+'\n')
             if not torch.isfinite(out["s1"]).all(): raise FloatingPointError("Nonfinite Newton state; refusing to poison normalization/replay")
             buffer.add(out)
             if curriculum: curriculum.observe(out['command'],out['ep_step'])
@@ -496,7 +612,7 @@ with launch_simulation(sim_cfg, args):
             stats["r"].append(out["r"].mean() / reward_scale)
             stats["head_error"].append(out['terms']['head_position_error'].mean())
             stats["head_penalty"].append(out['terms']['head_penalty'].mean() / reward_scale)
-            if mdp.is_foot and args.check_foot_gradients:
+            if goals.is_foot and (args.check_foot_gradients or args.goal_mode=='reference_foot'):
                 restored = goals.goal(S0,out['f'],out['ep_step'],out['command'])
                 recomputed = mdp.reward(S1,out['f']+1,out['a'],out['a_prev'],
                                         command=out['command'],ep_step=out['ep_step']+1)
@@ -523,7 +639,15 @@ with launch_simulation(sim_cfg, args):
 
     def save_checkpoint(label=None):
         ckpt = {"robot_contract": checkpoint_contract(), "goal_contract": goal_spec.contract(),
-                "task_contract": mdp.contract() if mdp.is_foot else None,
+                "checkpoint_schema_version":2,
+                "task_contract": mdp.contract(),
+                "physical_contract":physics_metadata,"policy_contract":policy_contract(Hh,args.obs_adapter,not args.freeze_decoder),
+                "data_contract":data_contract,"git_sha":git_sha,"transfer_report":transfer_report,
+                "source_snapshot":source_snapshot,
+                "stage_stats":dict(stage='bridge' if args.goal_mode=='reference_foot' else 'stage1' if args.goal_mode=='motion' else 'stage2',
+                    current_stage_real_steps=sim_steps,upstream_real_steps=transfer_report.get('source_total_real_steps',transfer_report.get('source_sim_steps',0)) if transfer_report else 0,
+                    upstream_wall_seconds=transfer_report.get('source_total_wall_seconds',0.) if transfer_report else 0.,
+                    supervision_steps=supervision_steps),
                 "wm":wm.state_dict(), "pi":pi.state_dict(), "critic":critic.state_dict(),
                 "opt_wm":opt_wm.state_dict(), "opt_pi":opt_pi.state_dict(), "opt_v":opt_v.state_dict(),
                 "iteration":current_it, "wall_time":elapsed(), "sim_steps":sim_steps, "args":vars(args),
@@ -568,7 +692,7 @@ with launch_simulation(sim_cfg, args):
     try:
         collect(args.warmup_steps, stats)
         for it in range(start_it, args.iterations):
-            if STOP_REQUESTED or (curriculum and elapsed() >= curriculum.cfg['budget_seconds']-45):
+            if STOP_REQUESTED or (args.wall_seconds is not None and elapsed()>=args.wall_seconds) or (curriculum and elapsed() >= curriculum.cfg['budget_seconds']-45):
                 print('Safe stop requested / wall-clock budget reserve reached',flush=True); break
             lr = lr_at(it)
             for o,scale in ((opt_wm,1.),(opt_pi,actor_lr/args.lr),(opt_v,critic_lr/args.lr)):
@@ -612,6 +736,10 @@ with launch_simulation(sim_cfg, args):
                        sum(float(x) for x in stats['done'])]  # fmt: skip
                 log_f.write(",".join(f"{x:.6g}" if isinstance(x, float) else str(x) for x in row) + "\n")
                 log_f.flush()
+                if diag_agg:
+                    with (log_path/'gradient_terms.jsonl').open('a') as sink:
+                        sink.write(json.dumps(dict(iteration=it+1,**{k:mean(v) for k,v in diag_agg.items()}))+'\n')
+                    if not curriculum:diag_agg={}
                 print(f"it {it + 1} | {wall_h:.3f} h | wm {row[3]:.4f} e8 {row[4]:.4f} | pi {row[5]:.3f} v {row[6]:.4f} imag_r {row[7]:.3f} surv {row[9]:.3f} "
                       f"| sim_r {row[10]:.3f} ep_len {row[11]:.1f} ep_ret {row[12]:.3f} term {term_frac:.2f} | head {head_rms_deg:.1f}deg | actor_grad {row[8]:.3g} foot_grad {row[18]:.3g} | {ips:.2f} it/s", flush=True)  # fmt: skip
                 stats = {k: [] for k in stats}
@@ -655,14 +783,14 @@ with launch_simulation(sim_cfg, args):
                 if due and current_it % args.log_every == 0 and allowance>=evaluation_minimum and remaining>120 and not STOP_REQUESTED:
                     # Full evaluation only after a successful fast gate, at most on stage transitions.
                     report=evaluate(env,pi,goals,mdp,curriculum,Hh,full,
-                                    deadline=time.monotonic()+allowance,rich=final_due,critic=critic)
+                                    deadline=time.monotonic()+allowance,rich=final_due,critic=critic,wm=wm)
                     obs_hist.zero_()
                     if final_due and full: curriculum.final_evaluated=True
                     curriculum.eval_spent+=report['wall_seconds']; curriculum.last_eval=elapsed()
                     stage_before=curriculum.stage
                     complete=not any(r['status'] in ('budget_skipped','incomplete') or r.get('incomplete_rate',0)>0 for r in report['rows'])
                     curriculum.eval_min_seconds=report['minimum_next_eval_seconds']
-                    changed=curriculum.update(report['metrics'],elapsed(),allow_promotion=full,bucket_metrics=report['bucket_metrics']) if complete else False
+                    changed=curriculum.update(report['metrics'],elapsed(),allow_promotion=full,bucket_metrics=report['bucket_metrics'],wm_metrics=report.get('wm_metrics')) if complete else False
                     (log_path/f'eval_{current_it:06d}.json').write_text(json.dumps(report,indent=2))
                     scalars={f'Evaluation/{task}/{key}':value for task,m in report['metrics'].items() for key,value in m.items()}
                     for i,row in enumerate(report['rows']):
@@ -698,7 +826,7 @@ with launch_simulation(sim_cfg, args):
             allowance=min(180.,elapsed()*curriculum.cfg['eval_fraction']-curriculum.eval_spent)
             if remaining>allowance+60 and allowance>=35:
                 final_report=evaluate(env,pi,goals,mdp,curriculum,Hh,full=True,
-                                      deadline=time.monotonic()+allowance,critic=critic)
+                                      deadline=time.monotonic()+allowance,critic=critic,wm=wm)
                 curriculum.eval_spent+=final_report['wall_seconds']
                 (log_path/'eval_final.json').write_text(json.dumps(final_report,indent=2))
     finally:

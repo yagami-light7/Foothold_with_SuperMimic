@@ -138,7 +138,7 @@ def paired_predictions(wm, mdp, command, trace, device, horizons=(1, 4, 8), stri
     previous = torch.as_tensor(trace['a_prev'], device=device)
     steps = torch.as_tensor(trace['command_step'], device=device)
     xi = torch.as_tensor(trace['xi'], device=device)[envs]
-    cmd = command.index(envs)
+    cmd = command.index(envs) if command is not None else None
     S = unflatten_state(states[starts, envs])
     previous_action = previous[starts, envs]
     rsum = torch.zeros(len(windows), device=device); psum = torch.zeros_like(rsum)
@@ -149,8 +149,13 @@ def paired_predictions(wm, mdp, command, trace, device, horizons=(1, 4, 8), stri
         S = wm.step(S, action, normalize_xi(xi))
         true = unflatten_state(states[starts+j, envs])
         tick = steps[starts+j, envs]
-        actual_r = mdp.reward(true, None, action, previous_action, command=cmd, ep_step=tick)
-        pred_r = mdp.reward(S, None, action, previous_action, command=cmd, ep_step=tick)
+        frame=None
+        if not mdp.is_foot:
+            if cmd is not None and hasattr(cmd,'start_frame'): frame=cmd.start_frame+tick
+            elif 'reference_frame' in trace: frame=torch.as_tensor(trace['reference_frame'],device=device)[starts+j,envs]
+            else: raise ValueError('Motion prediction check requires saved reference frame indices')
+        actual_r = mdp.reward(true, frame, action, previous_action, command=cmd, ep_step=tick)
+        pred_r = mdp.reward(S, frame, action, previous_action, command=cmd, ep_step=tick)
         saved_r = torch.as_tensor(trace['reward'], device=device)[starts+j-1, envs]
         sync = max(sync, float((saved_r-actual_r).abs().max()))
         rsum += actual_r; psum += pred_r
@@ -161,9 +166,16 @@ def paired_predictions(wm, mdp, command, trace, device, horizons=(1, 4, 8), stri
         delta = [S[k]-true[k] for k in (0, 2, 3, 4, 5)]
         angle = so3_log(true[1].transpose(-1, -2)@S[1])
         height = delta[0][:, 2]
+        pitch_error=(torch.asin((-S[1][:,2,0]).clamp(-1,1))-torch.asin((-true[1][:,2,0]).clamp(-1,1)))*180/np.pi
+        if hasattr(mdp,'foot_indices'): foot_indices=mdp.foot_indices
+        else:
+            from .s54 import FOOT_BODY_NAMES
+            foot_indices=[mdp.kin.tracked_names.index(n) for n in FOOT_BODY_NAMES]
+        feet_error=mdp.kin.forward(*S)[0][:,foot_indices]-mdp.kin.forward(*true)[0][:,foot_indices]
         reward_bias = (psum-rsum)/(j*mdp.max_step_reward)
         def rmse(x): return float(x.square().mean().sqrt())
         result = dict(windows=len(windows), base_height_rmse_m=rmse(height),
+                      root_pitch_rmse_deg=rmse(pitch_error),feet_position_rmse_m=rmse(feet_error.norm(dim=-1)),
                       base_height_bias_m=float(height.mean()), orientation_rmse_deg=rmse(angle.norm(dim=-1))*180/np.pi,
                       base_height_abs_error_p95_m=float(height.abs().quantile(.95)),
                       base_height_positive_bias_fraction=float((height>0).float().mean()),
