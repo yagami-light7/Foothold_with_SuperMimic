@@ -1,0 +1,31 @@
+{
+  "checkpoint": "/home/rm/workspace/ljy/Foothold_with_SuperMimic/logs/s54_curriculum_fresh_auditfix_20261104_032902/best_standing.pt",
+  "iteration": 35480,
+  "trained_stage": 0,
+  "command": {
+    "task": "standing",
+    "length": 0.0,
+    "frequency": 0.0,
+    "yaw_rate": 0.0
+  },
+  "controller": "saved_actor",
+  "reset_noise": true,
+  "seed": 9541,
+  "episodes": [
+    {
+      "episode": 1,
+      "seed": 9541,
+      "reason": "timeout",
+      "seconds": 10.0,
+      "physical_termination": false,
+      "timeout": true,
+      "normalized_sim_reward": 0.6887940249056556,
+      "foot_rmse_m": 0.022011062685331397,
+      "mean_speed_m_s": 0.02544438884232659,
+      "yaw_rate_mae": 0.03866615650577296,
+      "tracking_success": "not_scored_by_viewer"
+    }
+  ],
+  "video_frames": 500,
+  "gif_frames": 100
+}

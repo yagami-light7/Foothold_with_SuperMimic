@@ -18,6 +18,8 @@ FIELDS = {
     "f": ((), torch.long),
     "ep_step": ((), torch.int32),
     "done": ((), torch.bool),
+    "term": ((), torch.bool),
+    "timeout": ((), torch.bool),
 }
 
 
@@ -72,9 +74,12 @@ class ReplayBuffer:
         rows = self._row(ages)
         e = env.unsqueeze(-1).expand_as(rows)
         out = {key: self.data[key][rows, e] for key in ("s", "s1", "a", "xi", "done")}
-        # transition j is valid if no episode ended at transitions 0..j-1
-        d = out["done"].float()
-        mask = torch.cumprod(torch.cat((torch.ones(B, 1, device=self.device), 1 - d[:, :-1]), -1), -1)
+        # Explicit evaluation/manual resets can occur without a terminal row in
+        # replay. Integer episode ticks must also be consecutive; otherwise the
+        # WM would learn an impossible teleport across the reset boundary.
+        ticks = self.data['ep_step'][rows, e]
+        continuous = (~out['done'][:, :-1]) & (ticks[:, 1:] == ticks[:, :-1] + 1)
+        mask = torch.cumprod(torch.cat((torch.ones(B, 1, device=self.device), continuous.float()), -1), -1)
         out["mask"] = mask
         return out
 
@@ -95,3 +100,32 @@ class ReplayBuffer:
         start = {k: self.data[k][row, env] for k in keys}
         hist_d = {k: self.data[k][hrows, henv] for k in keys}
         return start, hist_d
+
+    def sample_mc_returns(self, B: int, window: int, gamma: float, recent: int):
+        """Observed discounted returns ending at a physical termination only.
+
+        Timeouts, replay edges and explicit reset gaps are censored, not assigned
+        a zero terminal value. Targets are recent behavior-policy returns; this
+        is an auxiliary value calibration source, not exact on-policy targets.
+        """
+        low = max(0, self.size - recent) if recent > 0 else 0
+        age = torch.randint(low, self.size, (B,), device=self.device)
+        env = torch.randint(0, self.N, (B,), device=self.device)
+        ages = age[:, None] + torch.arange(window, device=self.device)[None]
+        valid = ages < self.size
+        rows = self._row(ages.clamp_max(self.size - 1))
+        ee = env[:, None].expand_as(rows)
+        ticks = self.data['ep_step'][rows, ee]
+        done = self.data['done'][rows, ee]
+        continuous = valid[:, 1:] & (~done[:, :-1]) & (ticks[:, 1:] == ticks[:, :-1] + 1)
+        alive = torch.cumprod(torch.cat((torch.ones(B, 1, device=self.device), continuous.float()), 1), 1) * valid
+        physical = self.data['term'][rows, ee] & alive.bool()
+        found = physical.any(1)
+        discounts = gamma ** torch.arange(window, device=self.device, dtype=torch.float32)
+        returns = (self.data['r'][rows, ee] * alive * discounts[None]).sum(1)
+        first = self._row(age)
+        keys = ('s', 'a_prev', 'xi', 'f', 'ep_step')
+        if 'command_id' in self.fields: keys += ('command_id',)
+        out = {k: self.data[k][first[found], env[found]] for k in keys}
+        out['mc_return'] = returns[found].detach()
+        return out

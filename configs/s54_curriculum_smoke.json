@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "seed": 5401,
+  "budget_seconds": 180,
+  "checkpoint_seconds": 900,
+  "eval_seconds": 900,
+  "eval_fraction": 0.05,
+  "stage_hours": [
+    0.8,
+    1.6,
+    2.0,
+    1.2,
+    1.6,
+    0.8
+  ],
+  "weights": [
+    [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0.2,
+      0.8,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0.1,
+      0.5,
+      0.32,
+      0.08,
+      0,
+      0
+    ],
+    [
+      0.1,
+      0.18,
+      0.1,
+      0.02,
+      0.6,
+      0
+    ],
+    [
+      0.1,
+      0.22,
+      0.15,
+      0.03,
+      0.2,
+      0.3
+    ],
+    [
+      0.1,
+      0.2,
+      0.15,
+      0.05,
+      0.2,
+      0.3
+    ]
+  ],
+  "length_bins": [
+    [
+      0.02,
+      0.08
+    ],
+    [
+      0.08,
+      0.2
+    ],
+    [
+      0.2,
+      0.4
+    ]
+  ],
+  "frequency_bins": [
+    [
+      0.25,
+      0.8
+    ],
+    [
+      0.8,
+      1.3
+    ],
+    [
+      1.3,
+      2.0
+    ]
+  ],
+  "yaw_limits": [
+    0,
+    0,
+    0,
+    0.25,
+    0.4,
+    0.5
+  ],
+  "segment_seconds": 4.0,
+  "switch_probability": 0.35,
+  "max_speed": 0.45,
+  "max_swing_speed": 1.8,
+  "max_swing_accel": 12.0,
+  "max_separation": 0.65,
+  "max_yaw_step": 0.25,
+  "swing_fraction": 0.72,
+  "min_swing": 0.32,
+  "min_support": 0.12,
+  "clearance": 0.04,
+  "success_threshold": 0.85,
+  "standing_threshold": 0.95,
+  "rmse_threshold": 0.045,
+  "consecutive_passes": 2,
+  "min_stage_seconds": 600,
+  "keep_checkpoints": 3
+}

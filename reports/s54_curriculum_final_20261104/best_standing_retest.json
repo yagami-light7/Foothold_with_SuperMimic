@@ -1,0 +1,83 @@
+{
+  "minimum_next_eval_seconds": 10.0,
+  "bucket_metrics": {
+    "standing_low": {
+      "success_rate": 0.75,
+      "foot_rmse": 0.020687926560640335
+    }
+  },
+  "kind": "full",
+  "rows": [
+    {
+      "command": {
+        "task": "standing",
+        "length": 0.0,
+        "frequency": 0.0,
+        "yaw_rate": 0.0
+      },
+      "status": "evaluated",
+      "duration": 10.0,
+      "evaluation_complete": true,
+      "episode_lengths": [
+        500,
+        500,
+        500,
+        500,
+        500,
+        500,
+        500,
+        500
+      ],
+      "command_wall_seconds": 30.938683835993288,
+      "success_rate": 0.75,
+      "success_rate_lower_bound": 0.75,
+      "foot_rmse": 0.020687926560640335,
+      "physical_termination_rate": 0.0,
+      "timeout_rate": 1.0,
+      "goal_tracking_failure_rate": 0.25,
+      "incomplete_rate": 0.0,
+      "yaw_rate_error": 0.03917093575000763,
+      "speed_error": 0.02222285605967045,
+      "actual_speed": 0.02222285605967045,
+      "actual_yaw_rate": 0.017157163470983505,
+      "touchdown_error": 0.0,
+      "touchdown_events": 0,
+      "actual_contact_status": "last_substep_solver_contacts",
+      "contact_mismatch": 0.0,
+      "stance_slip": 0.003666496369987726,
+      "frequency_error": 0.0,
+      "frequency_measurements": 0,
+      "step_length_error": 0.0,
+      "step_length_measurements": 0,
+      "discounted_episode_return": [
+        5.538911819458008,
+        5.376218795776367,
+        5.347653388977051,
+        5.549661636352539,
+        5.518322944641113,
+        5.518775463104248,
+        5.511646747589111,
+        5.5411272048950195
+      ],
+      "critic_initial_values": [
+        4.0625,
+        4.46875,
+        4.5,
+        4.03125,
+        4.15625,
+        4.28125,
+        4.28125,
+        4.21875
+      ],
+      "critic_mc_physical_samples": 0,
+      "critic_mc_physical_bias": null
+    }
+  ],
+  "metrics": {
+    "standing": {
+      "success_rate": 0.75,
+      "foot_rmse": 0.020687926560640335
+    }
+  },
+  "wall_seconds": 30.940061354020145
+}

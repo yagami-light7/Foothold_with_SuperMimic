@@ -10,6 +10,7 @@ from .mdp import OBS_DIM, flatten_state
 from .networks import Policy
 from .rotations import mat_to_quat
 from .s54 import JOINT_NAMES, ROBOT_ID, assert_checkpoint
+from .control import bound_action
 from .motion import CONTROL_DT
 from .standing_diagnostics import evaluation_steps, stop_reasons, NewtonGroundContacts
 from . import networks
@@ -78,6 +79,7 @@ def evaluate_foot(env, checkpoint, goals, mdp, record=None, device='cuda:0', *,
                        else torch.cat((history[:, 1:], obs[:, None]), 1))
             action = (pi(history, goals.goal(S, env.f, env.ep_step, env.command)) if controller == 'policy'
                       else torch.zeros_like(env.a_prev))
+            action = bound_action(action)
             pd_target = env.pd_target(action)
             out = env.step(action)
             returns += torch.where(alive, out['r'], 0.)

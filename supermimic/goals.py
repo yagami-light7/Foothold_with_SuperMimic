@@ -96,9 +96,11 @@ class GoalSource:
     def __init__(self, motion, kin, spec=GoalSpec(), foot_config=AlternatingConfig(), command_mode='alternating'):
         self.motion, self.kin, self.spec, self.foot_config = motion, kin, spec, foot_config
         self.is_foot = spec.mode == 'foot_trajectory'
-        if command_mode not in ('alternating', 'standing'):
+        if command_mode not in ('alternating', 'standing', 'curriculum'):
             raise ValueError('Expected alternating or standing foot commands')
         self.command_mode = command_mode
+        self.curriculum = None
+        self.fixed_command = None
         if self.is_foot:
             # Extract the existing grounding implementation without changing its geometry.
             from .foot_geometry import FootGeometry
@@ -115,6 +117,9 @@ class GoalSource:
         feet[..., 2] = feet.new_tensor(self.ankle_height)
         heading = mat_to_quat(yaw_mat(S[1]))
         initial_quat = heading[:, None].expand(-1, 2, -1).clone()
+        if self.command_mode == 'curriculum':
+            if self.curriculum is None: raise ValueError('Curriculum sampler is required')
+            return self.curriculum.plan(feet, initial_quat, heading, self.command_duration, self.fixed_command)
         command = sample_alternating(feet, initial_quat, heading, self.foot_config, generator)
         if self.command_mode == 'standing':
             # Reuse the generator's existing zero-length stationary command support.

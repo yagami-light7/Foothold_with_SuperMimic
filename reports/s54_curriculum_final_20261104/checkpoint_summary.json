@@ -1,0 +1,57 @@
+{
+  "best": {
+    "iteration": 35480,
+    "wall_s": 28542.369389336993,
+    "stage": 0,
+    "success": {
+      "standing": 0.875
+    },
+    "best_scores": {
+      "standing": 0.8729283608496189
+    }
+  },
+  "latest": {
+    "iteration": 35747,
+    "wall_s": 28755.005116023996,
+    "stage": 0,
+    "counts": {
+      "standing": 5872655
+    },
+    "executed": {
+      "task_standing": 367095808,
+      "length_00": 367095808,
+      "frequency_00": 367095808,
+      "yaw_+00": 367095808
+    },
+    "failures": 31
+  },
+  "norm_counts": {
+    "wm": {
+      "in_norm.count": 200003584.0,
+      "out_norm.count": 200003584.0
+    },
+    "pi": {
+      "obs_norm.count": 200003584.0,
+      "goal_norm.count": 200003584.0
+    },
+    "critic": {
+      "norm.count": 200000624.0
+    }
+  },
+  "parameter_l2_change_best_to_latest": {
+    "wm": 1.4418961562339825,
+    "pi": 1.5355019642474592,
+    "critic": 1.121328934381334
+  },
+  "latest_optimizer_steps": {
+    "opt_wm": [
+      71494
+    ],
+    "opt_pi": [
+      34747
+    ],
+    "opt_v": [
+      277976
+    ]
+  }
+}

@@ -11,6 +11,7 @@ from pathlib import Path
 import signal
 import subprocess
 import time
+import uuid
 
 
 METRICS = {
@@ -99,11 +100,18 @@ def sync_run(args, swanlab):
             time.sleep(args.poll_seconds)
 
     last_step, active_header = -1, None
+    previous_status = run_dir/'swanlab_sync_status.json'
+    if previous_status.exists():
+        previous=json.loads(previous_status.read_text())
+        if previous.get('mode')==args.mode and previous.get('project')==args.project: last_step=previous.get('last_step',-1)
     finish_state = 'crashed'
     result = {'mode': args.mode, 'project': args.project, 'experiment_name': args.experiment_name or run_dir.name,
               'clips': config.get('clips'), 'last_step': last_step}
-    run_id = os.environ.get('SWANLAB_RUN_ID')
-    resume_mode = os.environ.get('SWANLAB_RESUME', 'must' if run_id else None)
+    id_path=run_dir/'swanlab_run_id'
+    if not id_path.exists():
+        id_path.write_text(os.environ.get('SWANLAB_RUN_ID') or uuid.uuid4().hex[:16])
+    run_id = id_path.read_text().strip()
+    resume_mode = os.environ.get('SWANLAB_RESUME', 'allow' if run_id else None)
     if run_id:
         result.update(run_id=run_id, resume=resume_mode)
 
@@ -136,9 +144,18 @@ def sync_run(args, swanlab):
                 active_header = header
             elif header is not None and header != active_header:
                 raise RuntimeError('A different CSV run was appended; refusing to mix experiments')
+            extra={}
+            extra_path=run_dir/'curriculum_metrics.jsonl'
+            if extra_path.exists():
+                for line in extra_path.read_text().splitlines(keepends=True):
+                    if not line.endswith('\n'): continue
+                    event=json.loads(line)
+                    extra.setdefault(event['iteration'],{}).update(event['values'])
+            max_step=max((int(r['iteration']) for r in rows if r.get('iteration','').isdigit()),default=-1)
             for row in rows:
                 try:
                     step = int(row['iteration'])
+                    if extra_path.exists() and code is None and step == max_step: continue
                     values = {name: float(row[key]) for key, name in METRICS.items()}
                     values.update({name: float(row[key]) for key, name in OPTIONAL_METRICS.items()
                                    if row.get(key) not in (None, '')})
@@ -146,13 +163,15 @@ def sync_run(args, swanlab):
                     continue
                 if step <= last_step or not all(math.isfinite(v) for v in values.values()):
                     continue
+                values.update(extra.get(step,{}))
                 swanlab.log(values, step=step)
                 last_step = step
                 print(f'Recorded iteration {step} ({args.mode})', flush=True)
                 status('running')
             if not args.follow or code is not None:
                 if code not in (None, 0):
-                    raise RuntimeError(f'Training exited with status {code}; final available metrics were recorded')
+                    print(f'Training exited with status {code}; final available metrics were recorded',flush=True)
+                    finish_state='crashed'; status('training_failed',f'Training exit {code}'); break
                 finish_state = 'success'
                 break
             # Manual follow without a launcher completion marker can use the target.
@@ -177,6 +196,8 @@ def sync_run(args, swanlab):
                 raise
         if finish_state == 'success':
             status('finished')
+        elif finish_state == 'crashed' and result.get('status')=='training_failed':
+            status('finished_training_failed')
     print(f'SwanLab sync finished at iteration {last_step}', flush=True)
 
 

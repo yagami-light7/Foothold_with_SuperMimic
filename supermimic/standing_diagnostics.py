@@ -65,6 +65,14 @@ def aggregate_ground_contacts(shape_body, body_labels, shape0, shape1, forces, n
     return counts, force, other
 
 
+def ground_contact_subset(shape_body, body_env, shape0, shape1, env_ids):
+    """Select ground contacts on-device before copying arrays to CPU."""
+    valid = (shape0 >= 0) & (shape1 >= 0)
+    b0, b1 = shape_body[shape0.clamp_min(0)], shape_body[shape1.clamp_min(0)]
+    body = torch.maximum(b0, b1)
+    return valid & ((b0 < 0) != (b1 < 0)) & torch.isin(body_env[body.clamp_min(0)], env_ids)
+
+
 class NewtonGroundContacts:
     """Last solver-substep contacts, not commanded contact masks or frame averages.
 
@@ -83,15 +91,26 @@ class NewtonGroundContacts:
         model = self.backend.get_model()
         self.shape_body = wp.to_torch(model.shape_body).cpu().numpy()
         self.labels = model.body_label
+        self._shape_body = wp.to_torch(model.shape_body).long()
+        body_env = []
+        for label in self.labels:
+            match = re.search(r'/env_(\d+)/', label)
+            body_env.append(int(match.group(1)) if match else -1)
+        self._body_env = torch.tensor(body_env, device=env.device, dtype=torch.long)
 
-    def read(self):
+    def read(self, env_ids=None):
         wp, c = self.wp, self.contacts
         self.backend._solver.update_contacts(c, self.backend.get_state_0())
         count = int(wp.to_torch(c.rigid_contact_count).sum())
+        s0 = wp.to_torch(c.rigid_contact_shape0)[:count].long()
+        s1 = wp.to_torch(c.rigid_contact_shape1)[:count].long()
+        force = wp.to_torch(c.force)[:count]
+        if env_ids is not None:
+            ids = torch.as_tensor(env_ids, device=s0.device, dtype=torch.long)
+            mask = ground_contact_subset(self._shape_body, self._body_env, s0, s1, ids)
+            s0, s1, force = s0[mask], s1[mask], force[mask]
         return aggregate_ground_contacts(self.shape_body, self.labels,
-                wp.to_torch(c.rigid_contact_shape0)[:count].cpu().numpy(),
-                wp.to_torch(c.rigid_contact_shape1)[:count].cpu().numpy(),
-                wp.to_torch(c.force)[:count].cpu().numpy(), self.env.N)
+                s0.cpu().numpy(), s1.cpu().numpy(), force.cpu().numpy(), self.env.N)
 
 
 def valid_windows(lengths, horizon, stride=1):

@@ -26,8 +26,12 @@ class FootstepCommand:
     lengths: torch.Tensor           # (B,), valid prefix, padded events ignored
     heading: torch.Tensor           # (B,4), fixed upright observation reference
 
+    # Optional immutable schedule labels: [start_s,length,landings_per_s,yaw_rate,task_id].
+    # Geometry remains the source of truth for reward/goal; labels are telemetry only.
+    labels: torch.Tensor | None = None
+
     def tensors(self):
-        return {f.name: getattr(self, f.name) for f in fields(self)}
+        return {f.name: getattr(self, f.name) for f in fields(self) if getattr(self,f.name) is not None}
 
     def clone(self):
         return FootstepCommand(**{k: v.detach().clone() for k, v in self.tensors().items()})
@@ -39,7 +43,7 @@ class FootstepCommand:
 
     @staticmethod
     def cat(commands):
-        return FootstepCommand(**{f.name: torch.cat([getattr(c, f.name) for c in commands]) for f in fields(FootstepCommand)})
+        return FootstepCommand(**{f.name: torch.cat([getattr(c, f.name) for c in commands]) for f in fields(FootstepCommand) if getattr(commands[0],f.name) is not None})
 
     def assign(self, indices, command):
         """Update live environment slots only; replay owns detached snapshots."""
@@ -58,6 +62,7 @@ class FootstepCommand:
         expected = dict(initial_pos=(B, 2, 3), initial_quat=(B, 2, 4), foot=(B, M),
                         target_pos=(B, M, 3), target_quat=(B, M, 4), liftoff=(B, M),
                         touchdown=(B, M), height=(B, M), lengths=(B,), heading=(B, 4))
+        if self.labels is not None: expected['labels']=(B,M,5)
         if M < 1:
             raise ValueError('Use at least one padded event, with lengths=0 for stationary commands')
         for k, v in self.tensors().items():

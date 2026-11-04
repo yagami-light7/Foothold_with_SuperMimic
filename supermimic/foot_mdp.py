@@ -55,7 +55,7 @@ class FootTrackingCfg:
     reset_velocity_noise: float = 0.01
 
     def __post_init__(self):
-        if self.command_mode not in ('standing', 'alternating'):
+        if self.command_mode not in ('standing', 'alternating', 'curriculum'):
             raise ValueError('Invalid foot command mode')
         if not isinstance(self.episode_steps, int) or self.episode_steps < 2:
             raise ValueError('episode_steps must be an integer >= 2')
@@ -118,7 +118,7 @@ class FootTrackingMDP(MDP):
         self.max_step_reward = positive * CONTROL_DT
 
     def contract(self):
-        return dict(version=1, mode='foot_tracking', config=asdict(self.cfg), obs_dim=OBS_DIM,
+        return dict(version=2 if self.cfg.command_mode == 'curriculum' else 1, mode='foot_tracking', config=asdict(self.cfg), obs_dim=OBS_DIM,
                     critic_state_dim=self.critic_dim, control_dt=CONTROL_DT,
                     reset='s54_model_neutral_grounded_v1', reward='inverse_quadratic_fk_v1')
 
@@ -150,6 +150,12 @@ class FootTrackingMDP(MDP):
 
     def _base_target(self, ref, command):
         heading = quat_to_mat(command.heading)[..., :2, :2]
+        if self.cfg.command_mode == 'curriculum':
+            # Circular mean of foot headings follows turns across the +/-pi seam.
+            matrices = quat_to_mat(ref.quaternion[:, 0])
+            angle = torch.atan2(matrices[..., 1, 0].sum(-1), matrices[..., 0, 0].sum(-1))
+            co, si = angle.cos(), angle.sin()
+            heading = torch.stack((co,-si,si,co),-1).reshape(-1,2,2)
         return ref.position[:, 0, :, :2].mean(-2)+(heading@self.root_xy_offset[:, None]).squeeze(-1)
 
     def reward(self, S, f, a, a_prev, terms=False, *, command=None, ep_step=None):
