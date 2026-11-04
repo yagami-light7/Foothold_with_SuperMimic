@@ -1,0 +1,9 @@
+{
+  "declared_before_validation":true,
+  "hardware":"query actual nvidia-smi; historical 4060 results are not local 3090 measurements",
+  "wm":{"num_envs":16,"max_iterations":80,"max_process_seconds":300,"actor_critic_and_actor_norm":"frozen","gate_horizon":8,"height_rmse_m":0.01,"pitch_rmse_deg":1.0,"foot_fk_rmse_m":0.015,"normalized_paired_reward_mae":0.02,"protocol":"same saved Newton states, recorded actions, commands and ticks before/after; worst independent seed"},
+  "standing":{"durations_s":[2,5,10],"seeds":[54,55,56],"reset_noise":true,"success":"all timeouts AND posture/tracking/contact/slip gates; physical term takes precedence","pitch_roll_max_deg":10,"height_deviation_max_m":0.05,"foot_rmse_m":0.035,"foot_orientation_rmse_deg":10,"loaded_slip_m_s":0.02,"loaded_foot_sample_fraction_min":0.8},
+  "teacher":{"max_iterations":200,"max_training_real_transitions":10048,"max_process_seconds":300,"train_clip":"walk1_subject1","evaluation_offsets_s":[0,30,60],"durations_s":[5,10],"seeds":[54,55,56],"all_timeouts":true,"body_position_world_rmse_m":0.08,"body_orientation_world_rmse_deg":15,"root_pitch_roll_max_deg":10,"root_orientation_tracking_rmse_deg":10,"root_height_tracking_max_m":0.05,"arm_pose_rmse_rad":0.35,"arm_velocity_rmse_rad_s":1.5,"joint_pose_rmse_rad":0.35,"joint_limit_violation_fraction":0,"measured_contact_accuracy":0.8,"loaded_stance_slip_m_s":0.05,"arm_motion_std_ratio_range":[0.5,2.0],"independent_walking_holdout_required":true,"missing_standing_turning":"report as missing; no teacher qualification for these capabilities"},
+  "formal_training_authorized":false,
+  "swanlab":{"project":"Foothold_with_SuperMimic","formal_name":"{A..G}_{timestamp}_seed{seed}_{standing|walking}","offline_persistence_and_final_sync_required":true,"E":"optional, not implemented; do not fabricate experiment"}
+}

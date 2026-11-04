@@ -23,13 +23,13 @@ BPTT/GAE/优化器算法均未调整。没有启动训练，也没有生成训�
 | `supermimic/train.py` | 采集和 BPTT 共用 Goal 来源，按模式构建网络和 checkpoint 契约 |
 | `supermimic/evaluate.py` | 从配置恢复 Goal 模式、固定采样种子、保存命令与时钟 |
 | `supermimic/networks.py` | 更新 Goal Encoder 说明；网络结构不变 |
-| `run_train.sh` | Goal 模式、时间间隔、采样配置 CLI 透传 |
-| `configs/s54_foot_trajectory.json` | 平地交替步态的默认测试采样范围 |
-| `tools/test_foot_trajectory.py` | 数值、Replay、网络及无优化器更新的 BPTT 验证 |
-| `tools/view_s54_foot_trajectory.py` | Newton 批量 smoke 和 GL 参考轨迹/落脚点录制 |
-| `tools/s54_grounding.py` | 重导出复用的 `FootGeometry`，保留原导入接口 |
-| `tools/test_s54_launcher.py` | 足部模式启动参数的 dry-run 回归 |
-| `tools/test_env_s54.py` | 通过环境兼容入口访问 Newton 管理器 |
+| `tools/train/run_train.sh` | Goal 模式、时间间隔、采样配置 CLI 透传 |
+| `configs/s54/foot_tracking/s54_foot_trajectory.json` | 平地交替步态的默认测试采样范围 |
+| `tools/tests/test_foot_trajectory.py` | 数值、Replay、网络及无优化器更新的 BPTT 验证 |
+| `tools/visualization/view_s54_foot_trajectory.py` | Newton 批量 smoke 和 GL 参考轨迹/落脚点录制 |
+| `tools/data/s54_grounding.py` | 重导出复用的 `FootGeometry`，保留原导入接口 |
+| `tools/tests/test_s54_launcher.py` | 足部模式启动参数的 dry-run 回归 |
+| `tools/validation/test_env_s54.py` | 通过环境兼容入口访问 Newton 管理器 |
 
 ```text
 reset 的 S54 FK → 平地接触位姿 → 每个 episode 采样一次 FootstepCommand
@@ -121,33 +121,33 @@ Replay 与此前一样不写入 checkpoint；resume 后重新填充。当前 Pyt
 cd /mnt/sage_data/workspace/supermimic_s54_main
 S54_PYTHON=/mnt/sage_data/workspace/IsaacLab_3_0/.venv/bin/python
 
-PYTHONDONTWRITEBYTECODE=1 OPENBLAS_NUM_THREADS=1 "$S54_PYTHON" tools/test_foot_trajectory.py
-PYTHONDONTWRITEBYTECODE=1 python3 tools/test_s54_launcher.py
-PYTHONDONTWRITEBYTECODE=1 OPENBLAS_NUM_THREADS=1 "$S54_PYTHON" tools/test_s54_cpu.py \
+PYTHONDONTWRITEBYTECODE=1 OPENBLAS_NUM_THREADS=1 "$S54_PYTHON" tools/tests/test_foot_trajectory.py
+PYTHONDONTWRITEBYTECODE=1 python3 tools/tests/test_s54_launcher.py
+PYTHONDONTWRITEBYTECODE=1 OPENBLAS_NUM_THREADS=1 "$S54_PYTHON" tools/tests/test_s54_cpu.py \
   --samples 32 --skip_core --motion_dir data/retarget_data/reference_startup_fixed \
   --out results/s54/foot_motion_regression.json
 
 # 原 Motion 环境回归，同样不启动训练。
 PYTHONDONTWRITEBYTECODE=1 WARP_CACHE_PATH="$PWD/.cache/warp" "$S54_PYTHON" \
-  tools/test_env_s54.py --num_envs 1 --steps 60 --viz none \
+  tools/validation/test_env_s54.py --num_envs 1 --steps 60 --viz none \
   --motion_dir data/retarget_data/reference_startup_fixed \
   --out results/s54/foot_motion_newton_regression.json
 
 # 在宿主机可访问 GPU 的终端运行；不启动训练。
 PYTHONDONTWRITEBYTECODE=1 WARP_CACHE_PATH="$PWD/.cache/warp" "$S54_PYTHON" \
-  tools/view_s54_foot_trajectory.py --headless --viz none --num_envs 4 --steps 100 \
+  tools/visualization/view_s54_foot_trajectory.py --headless --viz none --num_envs 4 --steps 100 \
   --out results/s54/foot_trajectory_newton_4env.json
 
 # Newton GL 离屏录制。去掉 --headless 可打开桌面预览。
 PYTHONDONTWRITEBYTECODE=1 WARP_CACHE_PATH="$PWD/.cache/warp" "$S54_PYTHON" \
-  tools/view_s54_foot_trajectory.py --headless --viz newton_gl --steps 100 \
+  tools/visualization/view_s54_foot_trajectory.py --headless --viz newton_gl --steps 100 \
   --video results/s54/foot_trajectory_newton.mp4 \
   --out results/s54/foot_trajectory_newton_visual.json
 
 # 只检查未来训练参数，不创建训练运行。
-bash run_train.sh --dry-run train s54_foot_interface --clips dance1_subject1 \
+bash tools/train/run_train.sh --dry-run train s54_foot_interface --clips dance1_subject1 \
   --goal-mode foot_trajectory --goal-dt 0.1 \
-  --foot-config configs/s54_foot_trajectory.json --no-swanlab
+  --foot-config configs/s54/foot_tracking/s54_foot_trajectory.json --no-swanlab
 ```
 
 可视化：蓝色为左脚、橙色为右脚；小点显示未来两秒路径，方框显示落脚踝部位姿，

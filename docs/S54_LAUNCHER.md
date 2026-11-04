@@ -1,11 +1,11 @@
 # S54 训练启动器、动作筛选与 SwanLab
 
-根目录 `run_train.sh` 包含完整启动逻辑；原 `tools/train_s54.sh` 已移至根目录并替换旧入口。
+根目录 `tools/train/run_train.sh` 包含完整启动逻辑；原 `tools/train_s54.sh` 已移至根目录并替换旧入口。
 保留 Isaac Lab 3.0 Kit-less、Newton/MJWarp、PyTorch World Model/BPTT 路线。
 
 ## 配置
 
-编辑 `run_train.sh` 顶部的变量：
+编辑 `tools/train/run_train.sh` 顶部的变量：
 
 | 配置 | 默认值 | 含义 |
 | --- | --- | --- |
@@ -44,30 +44,30 @@ python3 -m venv .venv-swanlab
 
 ```bash
 # 查看本次参数和选择的动作，不启动训练或访问云端。
-bash run_train.sh --dry-run train s54_dance_cloud --clips dance1_subject1
+bash tools/train/run_train.sh --dry-run train s54_dance_cloud --clips dance1_subject1
 
 # 训练指定动作，并同步到云端。
-bash run_train.sh train s54_dance_cloud --clips dance1_subject1
+bash tools/train/run_train.sh train s54_dance_cloud --clips dance1_subject1
 
 # 多动作；每段都需要已经成功生成 Reference。
-bash run_train.sh train s54_dance_walk --clips dance1_subject1 walk1_subject1
+bash tools/train/run_train.sh train s54_dance_walk --clips dance1_subject1 walk1_subject1
 
 # 选择目录顶层的全部合格 CSV。
-bash run_train.sh train s54_all_clips --all-clips
+bash tools/train/run_train.sh train s54_all_clips --all-clips
 
 # 指定云端项目、团队空间和实验名称。
-bash run_train.sh train s54_team_run --clips 'dance*' \
+bash tools/train/run_train.sh train s54_team_run --clips 'dance*' \
   --swanlab-project SuperMimic --swanlab-workspace TEAM --swanlab-name 'S54 Dance'
 
 # 30 iteration smoke / 从已有 Checkpoint 续训到脚本配置的总 iteration。
-bash run_train.sh smoke s54_cloud_smoke --clips dance1_subject1
-bash run_train.sh resume s54_cloud_resume logs/s54_dance_cloud/last.pt --clips dance1_subject1
+bash tools/train/run_train.sh smoke s54_cloud_smoke --clips dance1_subject1
+bash tools/train/run_train.sh resume s54_cloud_resume logs/s54_dance_cloud/last.pt --clips dance1_subject1
 ```
 
 从已完成的 10000 次继续到总计 20000 次（追加 10000 次，其他超参数不变）：
 
 ```bash
-bash run_train.sh resume s54_motion_20k logs/s54_motion/last.pt \
+bash tools/train/run_train.sh resume s54_motion_20k logs/s54_motion/last.pt \
   --iterations 20000 --clips dance1_subject1 aiming1_subject1
 ```
 
@@ -86,7 +86,7 @@ bash run_train.sh resume s54_motion_20k logs/s54_motion/last.pt \
 
 启动器核对项目挂载后，会自动启动处于 `exited` 或 `created` 状态的现有 S54 容器，
 然后检查 GPU 和 SwanLab。运行中的容器会直接复用。
-若当前终端尚未继承 docker 组，可用 `sg docker -c 'bash run_train.sh ...'`。
+若当前终端尚未继承 docker 组，可用 `sg docker -c 'bash tools/train/run_train.sh ...'`。
 每个实验必须使用新的 `s54_*` 名称，避免覆盖已有日志与 Checkpoint。
 
 ## 日志与同步
@@ -116,16 +116,16 @@ bash run_train.sh resume s54_motion_20k logs/s54_motion/last.pt \
 如需手动补传已有训练日志，以下命令上传一次当前快照：
 
 ```bash
-.venv-swanlab/bin/python tools/sync_swanlab.py \
+.venv-swanlab/bin/python tools/ops/sync_swanlab.py \
   --run_dir logs/s54_dance_cloud --project SuperMimic
 ```
 
 ## 验证
 
 ```bash
-bash -n run_train.sh tools/run_s54_job.sh
-PYTHONDONTWRITEBYTECODE=1 python3 tools/test_s54_launcher.py
-.venv-swanlab/bin/python tools/sync_swanlab.py --check --mode offline
+bash -n tools/train/run_train.sh tools/train/run_s54_job.sh
+PYTHONDONTWRITEBYTECODE=1 python3 tools/tests/test_s54_launcher.py
+.venv-swanlab/bin/python tools/ops/sync_swanlab.py --check --mode offline
 ```
 
 回归覆盖动作选择与目录隔离、Dry run、训练退出码、CSV 部分写入、重复 step、

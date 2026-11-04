@@ -100,7 +100,7 @@ ITERATIONS、WM_ONLY_ITERS、CKPT_EVERY、LOG_EVERY、LR、SEED、MOTION_DIR环�
 sg docker -c 'docker exec supermimic_s54 python supermimic/evaluate.py \
   --run_dir logs/s54_4060 --motion_dir data/retarget_data/reference \
   --ckpt logs/s54_4060/ckpt_200000.pt --record logs/s54_4060/traj_200000.npz'
-sg docker -c 'docker exec -e MUJOCO_GL=egl supermimic_s54 python tools/render.py \
+sg docker -c 'docker exec -e MUJOCO_GL=egl supermimic_s54 python tools/visualization/render.py \
   logs/s54_4060/traj_200000.npz logs/s54_4060/dance_200000.mp4 \
   --clips dance1_subject1 --seconds 10 --width 960 --height 540 --fps 30'
 ```

@@ -69,7 +69,8 @@ def resolve_goal_config(args):
     spec = GoalSpec(args.goal_mode, args.goal_frames, args.goal_dt)
     value = args.foot_config
     if isinstance(value, str):
-        with open(value) as stream:
+        from .config_paths import resolve_config_path
+        with open(resolve_config_path(value)) as stream:
             value = json.load(stream)
     cfg = AlternatingConfig(**(value or {}))
     # JSON-compatible form is also what checkpoint comparisons see on resume.

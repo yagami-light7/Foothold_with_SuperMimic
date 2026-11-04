@@ -1,0 +1,37 @@
+"""Check that state() reflects a reset immediately (no stale data)."""
+
+# Support both direct execution and python -m from the repository layout.
+from pathlib import Path as _ToolPath
+import sys as _tool_sys
+_tool_root = str(_ToolPath(__file__).resolve().parents[2])
+if _tool_root not in _tool_sys.path:
+    _tool_sys.path.insert(0, _tool_root)
+
+import argparse, os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+from isaaclab.app import add_launcher_args, launch_simulation
+parser = argparse.ArgumentParser(); add_launcher_args(parser); args = parser.parse_args()
+import torch
+from supermimic.env import TrackingSim, make_sim
+from supermimic.kinematics import S54Kinematics
+from supermimic.mdp import MDP
+from supermimic.motion import MotionLib
+from supermimic.s54 import default_joint_pos_list, NUM_J, XI_DIM
+dev = "cuda:0"
+kin = S54Kinematics(dev); motion = MotionLib.from_dir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data", "retarget_data", "reference"), kin, dev)
+mdp = MDP(kin, motion, torch.tensor(default_joint_pos_list(), device=dev))
+sim_cfg = make_sim(dev, args)
+with launch_simulation(sim_cfg, args):
+    env = TrackingSim(sim_cfg, 1, motion, mdp, eval_mode=True)
+    ids = torch.arange(1, device=dev)
+    for _ in range(30):
+        env.step(torch.zeros(1, NUM_J, device=dev))
+    fr = motion.clip_start[ids % len(motion.names)] + 200
+    env.reset(ids, fr)
+    S = env.state(); ref = motion.ref_state(fr)
+    print("no update:", [round((a - b).abs().max().item(), 4) for a, b in zip(S, ref)])
+    env.scene.update(0.0)
+    S = env.state()
+    print("after update(0):", [round((a - b).abs().max().item(), 4) for a, b in zip(S, ref)])
+    out = env.step(torch.zeros(1, NUM_J, device=dev))
+    print("step s vs ref:", [round((a - b).abs().max().item(), 4) for a, b in zip(env.mdp.__class__.__mro__ and __import__('supermimic.mdp', fromlist=['x']).unflatten_state(out['s']), ref)])

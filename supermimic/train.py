@@ -58,6 +58,7 @@ parser.add_argument("--warmup_steps", type=int, default=32, help="sim steps befo
 parser.add_argument("--wm_only_iters", type=int, default=10, help="world-model-only iterations at the start")
 parser.add_argument("--lr_decay_iters", type=int, default=250_000)
 parser.add_argument("--ckpt_every", type=int, default=30)
+parser.add_argument('--keep_checkpoints',type=int,default=None,help='Optional maximum number of periodic ckpt_*.pt files; named checkpoints retained')
 parser.add_argument("--log_every", type=int, default=10)
 parser.add_argument("--motion_dir", type=str, default=os.path.join(REPO, "data", "retarget_data", "reference_startup_fixed"))
 parser.add_argument("--clips", nargs="+", help="Clip names or quoted glob patterns; omit to train all top-level CSVs")
@@ -74,6 +75,7 @@ parser.add_argument('--fresh_start', action='store_true', help='Assert fresh mod
 parser.add_argument('--init_weights', help='Explicit transfer of compatible WM/Actor weights; fresh optimizers/critic')
 parser.add_argument('--init_from_motion', help='Cross-task Stage 1 initialization; never a resume')
 parser.add_argument('--init_from_bridge', help='Initialize Quintic Foot RL from an optional paired Motion-reward bridge')
+parser.add_argument('--init_stage2_wm',help='D/F: override Bridge WM with common Stage 1 WM for fair Stage 2 comparison')
 parser.add_argument('--transfer_components', choices=['wm','wm_decoder'],default='wm_decoder')
 parser.add_argument('--obs_adapter', choices=['identity','mask_reference_orientation'],default='identity')
 parser.add_argument('--freeze_decoder',action='store_true')
@@ -82,11 +84,16 @@ parser.add_argument('--reference_manifest',help='Hashed clip-level train/held-ou
 parser.add_argument('--manifest_split',choices=['train','heldout'],default='train')
 parser.add_argument('--prior_config',help='Optional upper-body prior config; default off')
 parser.add_argument('--wall_seconds',type=float,help='Safe wall-clock stop, including initialization; finite bounded experiments')
+parser.add_argument('--wm_calibration',action='store_true',help='WM-only paired control: freeze Actor normalization and save initial models')
 parser.add_argument('--reward_term_logging',action='store_true',help='Persist per-term mean/std and weighted prior contributions locally')
 parser.add_argument('--paired_latent_weight',type=float,default=0.,help='Optional same-clip latent alignment; never applies to random Quintic goals')
 add_goal_args(parser)
 add_launcher_args(parser)
 args = parser.parse_args()
+from supermimic.config_paths import resolve_config_path
+for config_key in ('foot_task_config','foot_config','prior_config','curriculum_config'):
+    config_value=getattr(args,config_key,None)
+    if isinstance(config_value,str):setattr(args,config_key,str(resolve_config_path(config_value)))
 try:
     goal_spec, foot_config = resolve_goal_config(args)
     if args.goal_mode != 'foot_trajectory' and (args.foot_task_config or args.check_foot_gradients):
@@ -96,6 +103,7 @@ try:
         raise ValueError('Paired bridge uses Motion reward/reset and its own reference-foot goal')
     if args.init_from_motion and args.goal_mode=='motion': raise ValueError('init_from_motion is a cross-task Foot initializer')
     if args.init_from_bridge and args.goal_mode!='foot_trajectory': raise ValueError('Bridge initialization targets Quintic Foot RL')
+    if args.init_stage2_wm and not args.init_from_bridge:raise ValueError('Stage 2 WM override requires explicit Bridge initialization')
     if sum(bool(x) for x in (args.resume,args.init_weights,args.init_from_motion,args.init_from_bridge))>1:
         raise ValueError('Choose exactly one resume/initialization source')
     if args.freeze_decoder and args.train_decoder: raise ValueError('Conflicting Decoder update flags')
@@ -112,6 +120,9 @@ try:
     if not math.isfinite(args.paired_latent_weight) or args.paired_latent_weight<0 or (args.paired_latent_weight and args.goal_mode!='reference_foot'):
         raise ValueError('Latent alignment requires paired reference data and a nonnegative weight')
     if args.wall_seconds is not None and (not math.isfinite(args.wall_seconds) or args.wall_seconds<=0): raise ValueError('Invalid wall_seconds')
+    if args.keep_checkpoints is not None and args.keep_checkpoints<1:raise ValueError('keep_checkpoints must be positive')
+    if args.wm_calibration and args.wm_only_iters<args.iterations:
+        raise ValueError('WM calibration must not update Actor/Critic')
     if args.curriculum_config and (task_cfg is None or task_cfg.command_mode != 'curriculum'):
         raise ValueError('Curriculum requires command_mode=curriculum foot task')
     if task_cfg is not None and task_cfg.command_mode == 'curriculum' and not args.curriculum_config:
@@ -234,6 +245,9 @@ opt_pi = torch.optim.Adam(pi.parameters(), lr=actor_lr, betas=(0.9, 0.95))
 opt_v = torch.optim.Adam(critic.parameters(), lr=critic_lr)
 start_it, wall_offset, sim_steps = 0, 0.0, 0
 supervision_steps=0
+actor_updates=0
+imagined_motion_reward_steps=0
+imagined_foot_reward_steps=0
 physics_metadata=physical_contract()
 transfer_report=None
 git_sha=subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip()
@@ -257,6 +271,9 @@ if args.resume:
     opt_wm.load_state_dict(ck["opt_wm"]), opt_pi.load_state_dict(ck["opt_pi"]), opt_v.load_state_dict(ck["opt_v"])
     transfer_report=ck.get('transfer_report')
     supervision_steps=ck.get('stage_stats',{}).get('supervision_steps',0)
+    actor_updates=ck.get('stage_stats',{}).get('actor_updates',0)
+    imagined_motion_reward_steps=ck.get('stage_stats',{}).get('imagined_motion_reward_steps',0)
+    imagined_foot_reward_steps=ck.get('stage_stats',{}).get('imagined_foot_reward_steps',0)
     if curriculum:
         if 'curriculum' not in ck: raise ValueError('Full curriculum resume requires curriculum/RNG state')
         curriculum.load_state_dict(ck['curriculum'])
@@ -289,6 +306,13 @@ if args.init_from_bridge:
     transfer=torch.load(args.init_from_bridge,map_location=dev,weights_only=False)
     transfer_report=initialize_from_bridge(transfer,wm,pi,hist=Hh)
     transfer_report['source_path']=str(Path(args.init_from_bridge).resolve())
+    if args.init_stage2_wm:
+        common=torch.load(args.init_stage2_wm,map_location=dev,weights_only=False)
+        common_report=initialize_from_motion(common,wm,pi,hist=Hh,components='wm')
+        transfer_report['stage2_wm_override']=dict(source_path=str(Path(args.init_stage2_wm).resolve()),
+            source_iteration=common['iteration'],reason='Common Stage1 WM across B/C/D/F/G; discard Bridge-adapted WM')
+        transfer_report['mapping']=[row for row in transfer_report['mapping'] if not str(row.get('target','')).startswith('wm.')]+[
+            dict(row,reason='Common Stage1 WM override after Bridge initialization') for row in common_report['mapping'] if str(row.get('target','')).startswith('wm.')]
 if transfer_report:
     (log_path/'transfer_report.json').write_text(json.dumps(transfer_report,indent=2))
     print('Cross-task initialization:',json.dumps({k:v for k,v in transfer_report.items() if k!='mapping'}),flush=True)
@@ -579,6 +603,11 @@ with launch_simulation(sim_cfg, args):
     obs_hist = torch.zeros(args.num_envs, Hh, OBS_DIM, device=dev)
 
     collection_frames=0; collection_seconds=0.
+    calibration_coverage=dict(transitions=0,after_1_2s=0,pitch_min_deg=0.,pitch_max_deg=0.,
+        max_abs_action=0.,loaded_foot_samples=0,contact_edge_samples=0)
+    if args.wm_calibration:
+        from supermimic.standing_diagnostics import NewtonGroundContacts
+        calibration_contacts=NewtonGroundContacts(env)
 
     @torch.no_grad()
     def collect(n_steps: int, stats: dict):
@@ -590,11 +619,23 @@ with launch_simulation(sim_cfg, args):
             fresh = env.ep_step == 0
             obs_hist = torch.where(fresh[:, None, None], o.unsqueeze(1).expand_as(obs_hist), torch.cat((obs_hist[:, 1:], o.unsqueeze(1)), 1))
             g = goals.goal(S, env.f, env.ep_step, env.command)
-            pi.obs_norm.update(o)
-            pi.goal_norm.update(g)
+            if not args.wm_calibration:
+                pi.obs_norm.update(o)
+                pi.goal_norm.update(g)
             a = pi(obs_hist, g)
             a = bound_action(a + args.action_noise * torch.randn_like(a))
             out = env.step(a)
+            if args.wm_calibration:
+                observed=unflatten_state(out['s1'])
+                pitch=torch.asin((-observed[1][:,2,0]).clamp(-1,1))*180/math.pi
+                counts,forces,_=calibration_contacts.read()
+                calibration_coverage['transitions']+=args.num_envs
+                calibration_coverage['after_1_2s']+=int((out['ep_step']>=60).sum())
+                calibration_coverage['pitch_min_deg']=min(calibration_coverage['pitch_min_deg'],float(pitch.min()))
+                calibration_coverage['pitch_max_deg']=max(calibration_coverage['pitch_max_deg'],float(pitch.max()))
+                calibration_coverage['max_abs_action']=max(calibration_coverage['max_abs_action'],float(a.abs().max()))
+                calibration_coverage['loaded_foot_samples']+=int((forces[:,:,2]>1).sum())
+                calibration_coverage['contact_edge_samples']+=int(((counts==0)|(counts<=2)).any(-1).sum())
             if args.goal_mode=='reference_foot' and not torch.equal(out['command'].start_frame+out['ep_step'],out['f']):
                 raise RuntimeError('Paired reference frame and immutable command clock diverged')
             if args.reward_term_logging:
@@ -647,7 +688,9 @@ with launch_simulation(sim_cfg, args):
                 "stage_stats":dict(stage='bridge' if args.goal_mode=='reference_foot' else 'stage1' if args.goal_mode=='motion' else 'stage2',
                     current_stage_real_steps=sim_steps,upstream_real_steps=transfer_report.get('source_total_real_steps',transfer_report.get('source_sim_steps',0)) if transfer_report else 0,
                     upstream_wall_seconds=transfer_report.get('source_total_wall_seconds',0.) if transfer_report else 0.,
-                    supervision_steps=supervision_steps),
+                    supervision_steps=supervision_steps,actor_updates=actor_updates,
+                    imagined_motion_reward_steps=imagined_motion_reward_steps,
+                    imagined_foot_reward_steps=imagined_foot_reward_steps),
                 "wm":wm.state_dict(), "pi":pi.state_dict(), "critic":critic.state_dict(),
                 "opt_wm":opt_wm.state_dict(), "opt_pi":opt_pi.state_dict(), "opt_v":opt_v.state_dict(),
                 "iteration":current_it, "wall_time":elapsed(), "sim_steps":sim_steps, "args":vars(args),
@@ -671,12 +714,16 @@ with launch_simulation(sim_cfg, args):
         atomic_save(ckpt,log_path/f'ckpt_{current_it:06d}.pt')
         if curriculum:
             for path in sorted(log_path.glob('ckpt_*.pt'))[:-curriculum.cfg['keep_checkpoints']]: path.unlink()
+        elif args.keep_checkpoints is not None:
+            for path in sorted(log_path.glob('ckpt_*.pt'))[:-args.keep_checkpoints]:path.unlink()
         free,total=torch.cuda.mem_get_info()
         (log_path/'runtime_stats.json').write_text(json.dumps(dict(iteration=current_it,gpu=torch.cuda.get_device_name(),
             torch_peak_allocated_MiB=torch.cuda.max_memory_allocated()/2**20,
             torch_peak_reserved_MiB=torch.cuda.max_memory_reserved()/2**20,
             device_used_at_checkpoint_MiB=(total-free)/2**20,device_total_MiB=total/2**20,
             wall_seconds=elapsed(),note='Torch peaks exclude Warp; device snapshot includes Warp'),indent=2))
+        if args.wm_calibration:
+            (log_path/'calibration_coverage.json').write_text(json.dumps(calibration_coverage,indent=2))
 
     stats = {"r": [], "head_error": [], "head_penalty": [], "ep_len": [], "ep_ret": [], "term": [], "done": [], 'goal_sync': [], 'reward_sync': []}
     # Replay is deliberately not checkpointed. Refill it on resume as well as on
@@ -690,9 +737,10 @@ with launch_simulation(sim_cfg, args):
     agg = {"wm": [], "wm8": [], "pi": [], "v": [], "ir": [], "gn": [], "surv": [], 'fgn': []}
     diag_agg={}
     try:
+        if args.wm_calibration:save_checkpoint('calibration_before')
         collect(args.warmup_steps, stats)
         for it in range(start_it, args.iterations):
-            if STOP_REQUESTED or (args.wall_seconds is not None and elapsed()>=args.wall_seconds) or (curriculum and elapsed() >= curriculum.cfg['budget_seconds']-45):
+            if STOP_REQUESTED or (args.wall_seconds is not None and time.monotonic()-PROCESS_START>=args.wall_seconds) or (curriculum and elapsed() >= curriculum.cfg['budget_seconds']-45):
                 print('Safe stop requested / wall-clock budget reserve reached',flush=True); break
             lr = lr_at(it)
             for o,scale in ((opt_wm,1.),(opt_pi,actor_lr/args.lr),(opt_v,critic_lr/args.lr)):
@@ -715,6 +763,9 @@ with launch_simulation(sim_cfg, args):
             if it >= max(args.wm_only_iters,recovery_until):
                 audit_gradients=args.gradient_audit_every>0 and (it+1)%args.gradient_audit_every==0
                 pl, vl, ir, gn, surv, fgn, diagnostics = policy_update(audit_gradients)
+                actor_updates+=1
+                if mdp.is_foot:imagined_foot_reward_steps+=args.pi_batch*HZ
+                else:imagined_motion_reward_steps+=args.pi_batch*HZ
                 for key,value in diagnostics.items(): diag_agg.setdefault(key,[]).append(value)
                 if prof:
                     torch.cuda.synchronize(); tp3 = time.time()
@@ -739,7 +790,16 @@ with launch_simulation(sim_cfg, args):
                 if diag_agg:
                     with (log_path/'gradient_terms.jsonl').open('a') as sink:
                         sink.write(json.dumps(dict(iteration=it+1,**{k:mean(v) for k,v in diag_agg.items()}))+'\n')
-                    if not curriculum:diag_agg={}
+                    if not curriculum:
+                        emit(log_path,it+1,{
+                            **{f'Optimization/{k}':mean(v) for k,v in diag_agg.items()},
+                            'Stage/ActorUpdates':actor_updates,
+                            'Stage/RealTransitions':sim_steps,
+                            'Stage/ImaginedMotionRewardTransitions':imagined_motion_reward_steps,
+                            'Stage/ImaginedFootRewardTransitions':imagined_foot_reward_steps,
+                            'Performance/CollectionFPS':collection_frames/max(collection_seconds,1e-9),
+                            'Performance/PeakTorchMiB':torch.cuda.max_memory_allocated()/2**20})
+                        diag_agg={}
                 print(f"it {it + 1} | {wall_h:.3f} h | wm {row[3]:.4f} e8 {row[4]:.4f} | pi {row[5]:.3f} v {row[6]:.4f} imag_r {row[7]:.3f} surv {row[9]:.3f} "
                       f"| sim_r {row[10]:.3f} ep_len {row[11]:.1f} ep_ret {row[12]:.3f} term {term_frac:.2f} | head {head_rms_deg:.1f}deg | actor_grad {row[8]:.3g} foot_grad {row[18]:.3g} | {ips:.2f} it/s", flush=True)  # fmt: skip
                 stats = {k: [] for k in stats}
@@ -816,9 +876,11 @@ with launch_simulation(sim_cfg, args):
                         print(f'Curriculum transition C{stage_before} -> C{curriculum.stage}',flush=True)
                 if elapsed()-curriculum.last_save>=curriculum.cfg['checkpoint_seconds']:
                     curriculum.last_save=elapsed(); save_checkpoint()
-            if curriculum and current_it == args.wm_only_iters:
-                save_checkpoint('wm_calibrated')
-                print(f'WM-only phase complete at iteration {current_it}; saved wm_calibrated.pt; Actor/Critic updates begin next iteration',flush=True)
+            if current_it == args.wm_only_iters:
+                label='wm_warmup_complete' if args.goal_mode=='motion' else 'wm_calibrated'
+                save_checkpoint(label)
+                print(f'WM-only phase complete at iteration {current_it}; saved {label}.pt; '
+                      'Actor/Critic updates begin next iteration; prediction accuracy requires independent evaluation',flush=True)
             elif current_it % args.ckpt_every == 0 or current_it == args.iterations:
                 save_checkpoint()
         if curriculum and not STOP_REQUESTED:

@@ -21,21 +21,21 @@
 | M4 30 iteration 训练 | PASS | 真实 Newton rollout + WM/BPTT/Critic；finite 日志与 ckpt_000030.pt/last.pt，check_s54_run.py 通过 |
 | M5 checkpoint evaluation / npz / Policy视频 | PASS | norm_return=0.0006181039，失败1/1；39帧真实轨迹（含terminal）、150帧/5秒/960×540对比视频 |
 | M5 Reference 预览/双模型渲染构建 | PASS | Reference-only 5秒/150帧/480×360视频；另实测双S54模型离屏渲染，非 Policy视频 |
-| Python/shell 静态检查 | PASS | `python -m compileall -q supermimic tools`; `bash -n docker/run_container.sh run_train.sh tools/*.sh` |
+| Python/shell 静态检查 | PASS | `python -m compileall -q supermimic tools`; `bash -n docker/run_container.sh tools/train/run_train.sh tools/*.sh` |
 
 重跑命令与完整宿主机/容器流程见 [README_S54.md](../README_S54.md)。
-顺序入口 `sudo docker exec supermimic_s54 bash tools/run_s54_smoke.sh` 在第一个失败阶段停止。
+顺序入口 `sudo docker exec supermimic_s54 bash tools/validation/run_s54_smoke.sh` 在第一个失败阶段停止。
 
 实际 CPU 命令：
 
 ```bash
-python tools/copy_s54_sources.py --gmr /mnt/sage_data/workspace/Leju-GMR
-python tools/inspect_s54_model.py
-python tools/prepare_s54_motion.py --expected_frames 3945
-python tools/prepare_s54_asset.py
-OPENBLAS_NUM_THREADS=1 python tools/test_s54_cpu.py
-PYTHONPATH=.cache/usd_python python tools/check_s54_usd.py --usd data/s54_usd/biped_s54.usd --out results/s54/old_usd_alignment.json
-MUJOCO_GL=osmesa OPENBLAS_NUM_THREADS=1 python tools/preview_s54_reference.py
+python tools/data/copy_s54_sources.py --gmr /mnt/sage_data/workspace/Leju-GMR
+python tools/validation/inspect_s54_model.py
+python tools/data/prepare_s54_motion.py --expected_frames 3945
+python tools/data/prepare_s54_asset.py
+OPENBLAS_NUM_THREADS=1 python tools/tests/test_s54_cpu.py
+PYTHONPATH=.cache/usd_python python tools/validation/check_s54_usd.py --usd data/s54_usd/biped_s54.usd --out results/s54/old_usd_alignment.json
+MUJOCO_GL=osmesa OPENBLAS_NUM_THREADS=1 python tools/visualization/preview_s54_reference.py
 ```
 
 最后的旧 USD 检查预期 exit 1，详见 JSON；其它上述 CPU 命令成功。
@@ -270,27 +270,27 @@ train_log.csv最后一行（对应最近10次聚合）：
 - `supermimic/robot.py`
 - `supermimic/s54.py`
 - `supermimic/train.py`
-- `tools/bench.py`
-- `tools/check_s54_run.py`
-- `tools/check_s54_usd.py`
-- `tools/copy_s54_sources.py`
-- `tools/download_data.sh`
-- `tools/inspect_s54_model.py`
-- `tools/mjcf_to_usd.py`
-- `tools/prepare_s54_asset.py`
-- `tools/prepare_s54_motion.py`
-- `tools/preview_s54_reference.py`
-- `tools/render.py`
-- `tools/run_s54_smoke.sh`
-- `tools/sync_swanlab.py`
-- `tools/test_env.py`
-- `tools/test_env_s54.py`
-- `tools/test_reset.py`
-- `tools/test_s54_cpu.py`
-- `tools/test_spawn.py`
-- `tools/urdf_to_mjcf.py`
+- `tools/benchmarks/bench.py`
+- `tools/validation/check_s54_run.py`
+- `tools/validation/check_s54_usd.py`
+- `tools/data/copy_s54_sources.py`
+- `tools/setup/download_data.sh`
+- `tools/validation/inspect_s54_model.py`
+- `tools/data/mjcf_to_usd.py`
+- `tools/data/prepare_s54_asset.py`
+- `tools/data/prepare_s54_motion.py`
+- `tools/visualization/preview_s54_reference.py`
+- `tools/visualization/render.py`
+- `tools/validation/run_s54_smoke.sh`
+- `tools/ops/sync_swanlab.py`
+- `tools/validation/test_env.py`
+- `tools/validation/test_env_s54.py`
+- `tools/validation/test_reset.py`
+- `tools/tests/test_s54_cpu.py`
+- `tools/validation/test_spawn.py`
+- `tools/data/urdf_to_mjcf.py`
 - `docker/run_container.sh`
-- `run_train.sh`
+- `tools/train/run_train.sh`
 - `README.md`
 - `README_S54.md`
 
@@ -321,7 +321,7 @@ NUM_J=29/TRACKED=14契约断言及reward角速度std=3.14保留。完整搜索�
 
 ```bash
 sg docker -c 'CONTAINER_NAME=supermimic_s54 bash docker/run_container.sh 0 32g'
-sg docker -c 'docker exec supermimic_s54 bash tools/run_s54_smoke.sh' > results/s54/end_to_end.log 2>&1
+sg docker -c 'docker exec supermimic_s54 bash tools/validation/run_s54_smoke.sh' > results/s54/end_to_end.log 2>&1
 ```
 
 导入脚本另修复重复运行时 importer 自动追加 `_1` 目录、误验证旧文件的问题：

@@ -77,7 +77,8 @@ class FootTrackingCfg:
 
 def resolve_foot_task(value=None):
     if isinstance(value, str):
-        with open(value) as stream:
+        from .config_paths import resolve_config_path
+        with open(resolve_config_path(value)) as stream:
             value = json.load(stream)
     return FootTrackingCfg(**(value or {}))
 

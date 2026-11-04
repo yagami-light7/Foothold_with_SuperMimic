@@ -1,6 +1,6 @@
 # S54 Critic 发散诊断与恢复（2026-11-04）
 
-> 当前执行方案已改为：从零开始、WM-only 1000 iterations、4096环境大并行。直接运行 `bash tools/run_s54_curriculum_8h.sh fresh`，完整配置及实测见 [S54_FRESH_3090.md](S54_FRESH_3090.md)。下文的迁移/恢复方案保留为历史记录。
+> 当前执行方案已改为：从零开始、WM-only 1000 iterations、4096环境大并行。直接运行 `bash tools/train/run_s54_curriculum_8h.sh fresh`，完整配置及实测见 [S54_FRESH_3090.md](S54_FRESH_3090.md)。下文的迁移/恢复方案保留为历史记录。
 
 原实验：`logs/s54_curriculum_20261104_014110`。已在 iteration **1852** 用 SIGTERM 安全保存退出，exit code 0；不是完成训练或站立成功。停止时累计约 **1071 秒**，仍在 C0。原实验与 SwanLab 历史保留。不要直接用原 `latest.pt` 当作健康策略恢复。
 
@@ -40,7 +40,7 @@ CPU checkpoint 探针（非真实 Newton 验证）发现：
 
 已将 iter1000、1575、1580 的完整 checkpoint 用独立 hard link 保留到原运行 `diagnostics/`，不受最近3份清理影响。`best_standing.pt` 的0%成功候选不代表健康策略。
 
-`tools/prepare_s54_recovery.py` 生成：
+`tools/data/prepare_s54_recovery.py` 生成：
 
 `logs/s54_curriculum_20261104_014110/diagnostics/recovery_from1000.pt`
 
@@ -52,7 +52,7 @@ CPU checkpoint 探针（非真实 Newton 验证）发现：
 
 ```bash
 RUN="s54_curriculum_recovery_$(TZ=Asia/Shanghai date +%Y%m%d_%H%M%S)"
-bash tools/run_s54_curriculum_8h.sh start "$RUN" \
+bash tools/train/run_s54_curriculum_8h.sh start "$RUN" \
   --resume logs/s54_curriculum_value_guard_smoke_20261104/latest.pt \
   --actor_lr 0.00001 --critic_lr 0.00001 \
   --wm_batches 4 --recovery_wm_iters 100

@@ -36,12 +36,12 @@ Foot 模式的 `MotionLib` 实例为 `None`；保留的 `CONTROL_DT` 导入只�
 | `supermimic/env.py` | 独立 reset/timeout，按当前命令与下一执行步计算奖励；原 Motion 分支继续保留 |
 | `supermimic/train.py` | 按任务构造 MDP/Critic、传递命令和整数时钟、纯足部梯度及同步诊断、任务 checkpoint 契约 |
 | `supermimic/foot_evaluate.py`（新增）、`evaluate.py` | 独立无噪声 Foot 评估、foot NPZ、恢复任务配置，原 Motion 指标保持原口径 |
-| `configs/s54_standing_balance.json`（新增） | 固定双支撑、100 步 episode、小幅 reset 扰动、不做域随机化 |
-| `run_train.sh` | Foot MDP 配置透传；Foot 模式跳过 Motion 选择 |
-| `tools/run_s54_standing_smoke.sh`（新增） | 强制限制 8 环境、40 次迭代的本机测试入口，保存 stdout |
-| `tools/test_foot_tracking.py`（新增） | 奖励响应、落脚边界、可微 FK、编译图、checkpoint 与学得 WM 梯度检查 |
-| `tools/test_foot_tracking_newton.py`（新增） | 无 Motion 的实际 Newton 时钟/Replay/FK 检查 |
-| `tools/test_s54_launcher.py` | 无 Motion 目录的 Standing 参数 dry-run 回归 |
+| `configs/s54/standing/s54_standing_balance.json`（新增） | 固定双支撑、100 步 episode、小幅 reset 扰动、不做域随机化 |
+| `tools/train/run_train.sh` | Foot MDP 配置透传；Foot 模式跳过 Motion 选择 |
+| `tools/train/run_s54_standing_smoke.sh`（新增） | 强制限制 8 环境、40 次迭代的本机测试入口，保存 stdout |
+| `tools/tests/test_foot_tracking.py`（新增） | 奖励响应、落脚边界、可微 FK、编译图、checkpoint 与学得 WM 梯度检查 |
+| `tools/validation/test_foot_tracking_newton.py`（新增） | 无 Motion 的实际 Newton 时钟/Replay/FK 检查 |
+| `tools/tests/test_s54_launcher.py` | 无 Motion 目录的 Standing 参数 dry-run 回归 |
 | 本文、`README_S54.md`、`S54_FOOT_TRAJECTORY.md` | 当前状态、复现命令与历史接口阶段的区分 |
 
 World Model 的状态、输入、输出、网络和监督损失未更改。BPTT return、survival、Critic bootstrap、GAE、
@@ -151,19 +151,19 @@ Actor 梯度为原代码报告的**裁剪前**范数，优化器仍按原规则�
 cd /mnt/sage_data/workspace/supermimic_s54_main
 S54_PYTHON=/mnt/sage_data/workspace/IsaacLab_3_0/.venv/bin/python
 
-PYTHONDONTWRITEBYTECODE=1 OPENBLAS_NUM_THREADS=1 "$S54_PYTHON" tools/test_foot_tracking.py
-PYTHONDONTWRITEBYTECODE=1 OPENBLAS_NUM_THREADS=1 "$S54_PYTHON" tools/test_foot_trajectory.py
-PYTHONDONTWRITEBYTECODE=1 python3 tools/test_s54_launcher.py
+PYTHONDONTWRITEBYTECODE=1 OPENBLAS_NUM_THREADS=1 "$S54_PYTHON" tools/tests/test_foot_tracking.py
+PYTHONDONTWRITEBYTECODE=1 OPENBLAS_NUM_THREADS=1 "$S54_PYTHON" tools/tests/test_foot_trajectory.py
+PYTHONDONTWRITEBYTECODE=1 python3 tools/tests/test_s54_launcher.py
 
 PYTHONDONTWRITEBYTECODE=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=4 \
-  WARP_CACHE_PATH="$PWD/.cache/warp" "$S54_PYTHON" tools/test_foot_tracking_newton.py \
+  WARP_CACHE_PATH="$PWD/.cache/warp" "$S54_PYTHON" tools/validation/test_foot_tracking_newton.py \
   --num_envs 4 --steps 120 --command_mode alternating --viz none
 
 # 有意限制为 8 env / 40 iterations，必须用新的运行名。
-bash tools/run_s54_standing_smoke.sh s54_standing_check_new
+bash tools/train/run_s54_standing_smoke.sh s54_standing_check_new
 
 # 已有最终 checkpoint 的纯足部梯度审计（CPU，不进行训练）。
-PYTHONDONTWRITEBYTECODE=1 OPENBLAS_NUM_THREADS=1 "$S54_PYTHON" tools/test_foot_tracking.py \
+PYTHONDONTWRITEBYTECODE=1 OPENBLAS_NUM_THREADS=1 "$S54_PYTHON" tools/tests/test_foot_tracking.py \
   --checkpoint logs/s54_standing_smoke_final_20261103/last.pt \
   --out results/s54/standing_final_gradient.json
 
@@ -176,8 +176,8 @@ PYTHONDONTWRITEBYTECODE=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=4 \
   --record results/s54/standing_final_eval.npz
 
 # 只检查通用启动器参数，不启动其默认大配置。
-bash run_train.sh --dry-run train s54_standing_preview --goal-mode foot_trajectory \
-  --foot-task-config configs/s54_standing_balance.json --check-foot-gradients --no-swanlab
+bash tools/train/run_train.sh --dry-run train s54_standing_preview --goal-mode foot_trajectory \
+  --foot-task-config configs/s54/standing/s54_standing_balance.json --check-foot-gradients --no-swanlab
 ```
 
 本轮产物：

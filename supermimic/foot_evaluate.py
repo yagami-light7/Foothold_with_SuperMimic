@@ -18,12 +18,15 @@ from . import networks
 
 @torch.no_grad()
 def evaluate_foot(env, checkpoint, goals, mdp, record=None, device='cuda:0', *,
-                  duration_s=None, seed=None, reset_noise=False, controller='policy', diagnostics=False):
+                  duration_s=None, seed=None, reset_noise=False, controller='policy', diagnostics=False,
+                  ankle_offset_rad=0.):
     assert_checkpoint(checkpoint)
     goals.spec.assert_checkpoint(checkpoint, goals.foot_config)
     assert_task_checkpoint(checkpoint, mdp)
-    if controller not in ('policy', 'default_pd'):
+    if controller not in ('policy', 'default_pd', 'ankle_pd'):
         raise ValueError('Unknown controller')
+    if not np.isfinite(ankle_offset_rad) or abs(ankle_offset_rad)>.08:
+        raise ValueError('Diagnostic ankle offset must be finite and <=0.08rad')
     cfg = checkpoint['args']; hist_len = cfg['hist']
     networks.AMP_DTYPE = torch.bfloat16 if cfg.get('amp') == 'bf16' else None
     pi = Policy(OBS_DIM, goals.spec.dim, hist=hist_len,obs_adapter=cfg.get('obs_adapter','identity')).to(device)
@@ -79,6 +82,9 @@ def evaluate_foot(env, checkpoint, goals, mdp, record=None, device='cuda:0', *,
                        else torch.cat((history[:, 1:], obs[:, None]), 1))
             action = (pi(history, goals.goal(S, env.f, env.ep_step, env.command)) if controller == 'policy'
                       else torch.zeros_like(env.a_prev))
+            if controller=='ankle_pd':
+                for name in ('leg_l5_joint','leg_r5_joint'):
+                    j=JOINT_NAMES.index(name);action[:,j]=ankle_offset_rad/env.alpha[j]
             action = bound_action(action)
             pd_target = env.pd_target(action)
             out = env.step(action)
@@ -98,6 +104,7 @@ def evaluate_foot(env, checkpoint, goals, mdp, record=None, device='cuda:0', *,
         normal = returns / (horizon * mdp.max_step_reward)
         names = [f'{mdp.cfg.command_mode}_{i}' for i in range(env.N)]
         result = dict(task=mdp.cfg.command_mode, controller=controller, seed=seed, reset_noise=reset_noise,
+                      diagnostic_ankle_offset_rad=ankle_offset_rad if controller=='ankle_pd' else None,
                       duration_s=horizon*CONTROL_DT, evaluation_steps=horizon,
                       norm_return=float(normal.mean()), norm_return_framew=float(normal.mean()),
                       n_failed=int(env.failed_eval.sum()), n_timeout=reasons.count('timeout'),

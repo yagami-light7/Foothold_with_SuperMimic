@@ -39,11 +39,11 @@ Loader 要求该 metadata，拒绝 G1、混入的 raw、损坏或未重新验证
 
 ```bash
 cd /mnt/sage_data/workspace/supermimic_s54
-python tools/copy_s54_sources.py --gmr /mnt/sage_data/workspace/Leju-GMR
-python tools/inspect_s54_model.py
-python tools/prepare_s54_motion.py --expected_frames 3945
-python tools/prepare_s54_asset.py
-OPENBLAS_NUM_THREADS=1 python tools/test_s54_cpu.py
+python tools/data/copy_s54_sources.py --gmr /mnt/sage_data/workspace/Leju-GMR
+python tools/validation/inspect_s54_model.py
+python tools/data/prepare_s54_motion.py --expected_frames 3945
+python tools/data/prepare_s54_asset.py
+OPENBLAS_NUM_THREADS=1 python tools/tests/test_s54_cpu.py
 ```
 
 CPU 依赖为 numpy、scipy、torch、mujoco；不导入 Isaac Lab。
@@ -54,7 +54,7 @@ USD 静态检查需 `pxr`（复用镜像内已有依赖即可）。当前会话�
 
 ```bash
 python -m pip install --target .cache/usd_python usd-core
-PYTHONPATH=.cache/usd_python python tools/check_s54_usd.py \
+PYTHONPATH=.cache/usd_python python tools/validation/check_s54_usd.py \
   --usd data/s54_usd/biped_s54.usd --out results/s54/old_usd_alignment.json
 # 该旧资产预期 exit 1；新资产必须 exit 0
 ```
@@ -74,7 +74,7 @@ sudo env CONTAINER_NAME=supermimic_s54 DOCKER_IMAGE=supermimic:latest \
 sudo docker inspect --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}' supermimic_s54
 sudo docker exec supermimic_s54 python -c 'import torch; print(torch.cuda.get_device_name(0))'
 # 顺序执行 M0、CPU、USD、1 env、16 env、30 iterations、evaluation、视频；失败立即停止
-sudo docker exec supermimic_s54 bash tools/run_s54_smoke.sh
+sudo docker exec supermimic_s54 bash tools/validation/run_s54_smoke.sh
 ```
 
 容器应把本新 repo 挂载到 `/workspace/supermimic`。不要进入旧容器执行这些命令。
@@ -84,10 +84,10 @@ sudo docker exec supermimic_s54 bash tools/run_s54_smoke.sh
 分步执行资产和环境检查：
 
 ```bash
-sudo docker exec supermimic_s54 python tools/mjcf_to_usd.py
-sudo docker exec supermimic_s54 python tools/check_s54_usd.py
-sudo docker exec supermimic_s54 python tools/test_env_s54.py --num_envs 1
-sudo docker exec supermimic_s54 python tools/test_env_s54.py --num_envs 16
+sudo docker exec supermimic_s54 python tools/data/mjcf_to_usd.py
+sudo docker exec supermimic_s54 python tools/validation/check_s54_usd.py
+sudo docker exec supermimic_s54 python tools/validation/test_env_s54.py --num_envs 1
+sudo docker exec supermimic_s54 python tools/validation/test_env_s54.py --num_envs 16
 ```
 
 Kit-less importer 注册其 schema，输出 `data/s54_newton_usd/s54_sim/s54_sim.usda`，
@@ -108,7 +108,7 @@ sudo docker exec -w /workspace/supermimic supermimic_s54 python supermimic/train
   --amp bf16 --no_compile
 sudo docker exec supermimic_s54 tail -f logs/s54_smoke/stdout.log
 # 训练结束后运行；明确检查 checkpoint 身份和日志有限性
-sudo docker exec supermimic_s54 python tools/check_s54_run.py
+sudo docker exec supermimic_s54 python tools/validation/check_s54_run.py
 ```
 
 `--no_compile` 只关闭编译以缩短 smoke 启动，保持原 WM loss、BPTT imagined rollout、critic bootstrap。
@@ -123,8 +123,8 @@ sudo docker exec supermimic_s54 python tools/check_s54_run.py
 sudo docker exec supermimic_s54 python supermimic/evaluate.py \
   --run_dir logs/s54_smoke --motion_dir data/retarget_data/reference_startup_fixed \
   --ckpt logs/s54_smoke/ckpt_000030.pt --record logs/s54_smoke/traj_30.npz
-sudo docker exec supermimic_s54 python tools/check_s54_run.py --require_eval
-sudo docker exec -e MUJOCO_GL=egl supermimic_s54 python tools/render.py \
+sudo docker exec supermimic_s54 python tools/validation/check_s54_run.py --require_eval
+sudo docker exec -e MUJOCO_GL=egl supermimic_s54 python tools/visualization/render.py \
   logs/s54_smoke/traj_30.npz logs/s54_smoke/dance_30.mp4 \
   --clips dance1_subject1 --start 0 --seconds 5 --width 960 --height 540 --fps 30
 ```
@@ -134,7 +134,7 @@ sudo docker exec -e MUJOCO_GL=egl supermimic_s54 python tools/render.py \
 npz 带机器人/关节/控制步长/四元数约定，renderer 拒绝错误 contract。
 视频关节按 MJCF 名称赋值，Reference 和 Policy 均为 S54，支持 clip/start/seconds/resolution/fps。
 渲染默认使用灰白外壳、灰色关节与黑色末端的 Policy、青色半透明 Reference、蓝灰天空和深灰棋盘地面，并降低高光。
-配色仅应用于渲染器内存中的模型副本；重新运行 `tools/render.py` 即可导出新配色视频。
+配色仅应用于渲染器内存中的模型副本；重新运行 `tools/visualization/render.py` 即可导出新配色视频。
 默认 ghost 的 xy 与 heading 对齐策略匹配 tracking reward；`--global_ghost` 可看全局漂移。
 评估保存真实 terminal state；终止后 Policy 姿态冻结并标记 terminated，Reference 继续播放，
 不伪造后续存活帧。
@@ -143,7 +143,7 @@ npz 带机器人/关节/控制步长/四元数约定，renderer 拒绝错误 con
 Reference 独立预览可在当前 CPU 环境重跑：
 
 ```bash
-MUJOCO_GL=osmesa OPENBLAS_NUM_THREADS=1 python tools/preview_s54_reference.py
+MUJOCO_GL=osmesa OPENBLAS_NUM_THREADS=1 python tools/visualization/preview_s54_reference.py
 ffprobe -v error -show_entries stream=nb_frames,duration,width,height -of json \
   results/s54/reference_preview.mp4
 ```
@@ -159,18 +159,18 @@ S54 动作数据统一放在 `data/retarget_data/`，77 段原始人体 BVH 位�
 
 ```bash
 # 生成 dance1 并打开查看；已生成的合格结果直接复用。
-MUJOCO_GL=glfw OPENBLAS_NUM_THREADS=1 /data/conda_envs/leju_gmr/bin/python tools/generate_s54_reference.py \
+MUJOCO_GL=glfw OPENBLAS_NUM_THREADS=1 /data/conda_envs/leju_gmr/bin/python tools/data/generate_s54_reference.py \
   --clips dance1_subject1 --skip_existing --view
 
 # 其他 clips，顺序处理；也可使用 --clips walk1_subject1 walk2_subject1。
-OPENBLAS_NUM_THREADS=1 /data/conda_envs/leju_gmr/bin/python tools/generate_s54_reference.py \
+OPENBLAS_NUM_THREADS=1 /data/conda_envs/leju_gmr/bin/python tools/data/generate_s54_reference.py \
   --all --exclude dance1_subject1 --skip_existing --continue_on_error
 
 # 生成完成后，再执行验证或渲染。
-OPENBLAS_NUM_THREADS=1 /data/conda_envs/leju_gmr/bin/python tools/validate_s54_upper_body.py \
+OPENBLAS_NUM_THREADS=1 /data/conda_envs/leju_gmr/bin/python tools/validation/validate_s54_upper_body.py \
   --motion_dir data/retarget_data/reference_startup_fixed
 MUJOCO_GL=osmesa OPENBLAS_NUM_THREADS=1 /data/conda_envs/leju_gmr/bin/python \
-  tools/compare_s54_reference.py --candidate_dir data/retarget_data/reference_startup_fixed \
+  tools/validation/compare_s54_reference.py --candidate_dir data/retarget_data/reference_startup_fixed \
   --seconds 15 --out results/s54/upper_body_comparison.mp4
 ```
 
@@ -210,7 +210,7 @@ sudo docker exec supermimic_s54 python supermimic/evaluate.py \
 
 ## 当前训练入口与 SwanLab
 
-统一入口是根目录 `run_train.sh`，超参数、默认 clips 与云端配置直接在该文件顶部修改。
+统一入口是根目录 `tools/train/run_train.sh`，超参数、默认 clips 与云端配置直接在该文件顶部修改。
 默认读取 `data/retarget_data/reference_startup_fixed`，训练 `dance1_subject1`，启用 SwanLab 云端同步。
 当前脚本保留用户设置的 2048 env、10000 iterations、WM batch 1024×16、Policy batch 256。
 使用说明见 [训练启动器](docs/S54_LAUNCHER.md)。旧 [4060训练指南](docs/S54_4060_TRAINING.md)
@@ -219,7 +219,9 @@ sudo docker exec supermimic_s54 python supermimic/evaluate.py \
 ```bash
 # 首次使用 SwanLab 时登录；之后复用宿主机凭据。
 .venv-swanlab/bin/swanlab login
-bash run_train.sh --dry-run train s54_dance_cloud --clips dance1_subject1
-sg docker -c 'bash run_train.sh train s54_dance_cloud --clips dance1_subject1'
+bash tools/train/run_train.sh --dry-run train s54_dance_cloud --clips dance1_subject1
+sg docker -c 'bash tools/train/run_train.sh train s54_dance_cloud --clips dance1_subject1'
 tail -f logs/s54_dance_cloud/swanlab_sync.log
 ```
+
+当前Stage 1 Walking启动命令及参数见 [STAGE1_WALK_TRAINING.md](experiment/STAGE1_WALK_TRAINING.md)。工具分类见 [tools/README.md](../tools/README.md)，配置分类见 [configs/README.md](../configs/README.md)。

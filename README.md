@@ -1,5 +1,7 @@
 # SuperMimic KUAVO S54
 
+S54 当前入口：[Stage 1 Walking训练](docs/experiment/STAGE1_WALK_TRAINING.md) · [工具目录](tools/README.md) · [配置目录](configs/README.md)。
+
 S54 迁移入口：[README_S54.md](README_S54.md)。真实测试状态、关节映射、假设与阻塞见
 [迁移报告](docs/S54_PORTING_REPORT.md)。
 

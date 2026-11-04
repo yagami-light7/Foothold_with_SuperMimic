@@ -139,11 +139,11 @@ Reward 对比使用两侧相同的有限步原始奖励累加，再除以步数�
 | `supermimic/foot_evaluate.py` | 评估时限、种子、reset 扰动、默认 PD 对照、终止原因及完整状态/控制/奖励/接触记录；退出后恢复环境协议配置。 |
 | `supermimic/evaluate.py` | 暴露 Foot 专属评估参数、多 seed、独立结果输出路径；Motion 原入口兼容。 |
 | `supermimic/standing_diagnostics.py` | 实际 Newton ground contact/force 汇总、终止归因、配对窗口、1/4/8 步原单位误差与奖励比较。 |
-| `tools/diagnose_s54_standing.py` | 有界多时限/多种子仿真诊断，输出 JSON/NPZ/CSV/图；支持复用录制数据的 `--analyze_only`。 |
-| `tools/plot_s54_standing_curves.py` | 复用现有训练 CSV 画曲线，无完成 episode 的窗口不画为长度 0。 |
-| `tools/run_s54_standing_controlled.py` | 3090 方案默认 dry-run，分阶段、单 seed、固定迭代和 wall-time 上限；保留 stdout、CSV、checkpoint。 |
-| `configs/s54_standing_3090.json`、`configs/s54_standing_3090_task.json` | 待验证受控配置，训练 episode timeout 改为 500 步（10 s）；Reward 参数不改。 |
-| `tools/test_standing_diagnostics.py` | 接触归属/力符号、同 tick 超时与物理失败优先级、窗口边界、oracle 配对误差、协议还原和训练上限检查。 |
+| `tools/validation/diagnose_s54_standing.py` | 有界多时限/多种子仿真诊断，输出 JSON/NPZ/CSV/图；支持复用录制数据的 `--analyze_only`。 |
+| `tools/visualization/plot_s54_standing_curves.py` | 复用现有训练 CSV 画曲线，无完成 episode 的窗口不画为长度 0。 |
+| `tools/train/run_s54_standing_controlled.py` | 3090 方案默认 dry-run，分阶段、单 seed、固定迭代和 wall-time 上限；保留 stdout、CSV、checkpoint。 |
+| `configs/s54/standing/s54_standing_3090.json`、`configs/s54/standing/s54_standing_3090_task.json` | 待验证受控配置，训练 episode timeout 改为 500 步（10 s）；Reward 参数不改。 |
+| `tools/tests/test_standing_diagnostics.py` | 接触归属/力符号、同 tick 超时与物理失败优先级、窗口边界、oracle 配对误差、协议还原和训练上限检查。 |
 | 本文、README、`docs/S54_FOOT_TRACKING_TRAINING.md` | 诊断结论与入口链接。 |
 
 结果目录：`results/s54/standing_diagnosis/`。原始 NPZ：状态字段 `[T+1,N,...]`，动作、PD target、Reward/各项、term/timeout 为 `[T,N,...]`；每条动作作用于对应 `state[t]→state[t+1]`。保存 `state(71)`、根 pose/线角速度、29 关节 q/qd、前一动作、xi、完整不可变命令、执行 tick、足部 pose、实际接触及 force、首个 episode 长度。死亡环境后续帧不能纳入统计；配对窗口按各自首个终止长度截取。
@@ -195,11 +195,11 @@ export MPLCONFIGDIR=/tmp/s54_matplotlib
 CKPT=logs/s54_standing_smoke_final_20261103/ckpt_000040.pt
 
 # 本轮主要诊断（只仿真和离线推理，不训练）
-"$S54_PYTHON" tools/diagnose_s54_standing.py --checkpoint "$CKPT" \
+"$S54_PYTHON" tools/validation/diagnose_s54_standing.py --checkpoint "$CKPT" \
   --out results/s54/standing_diagnosis --seeds 54 55 56 --durations 2 5 10 --viz none
 
 # 使用已有 NPZ 重画和重算 WM，不重新仿真
-"$S54_PYTHON" tools/diagnose_s54_standing.py --checkpoint "$CKPT" \
+"$S54_PYTHON" tools/validation/diagnose_s54_standing.py --checkpoint "$CKPT" \
   --out results/s54/standing_diagnosis --analyze_only --device cuda:0 --viz none
 
 # 原入口、4 环境、原 2 秒无噪声复现；使用独立 JSON 避免覆盖历史结果
@@ -213,25 +213,25 @@ CKPT=logs/s54_standing_smoke_final_20261103/ckpt_000040.pt
   --ckpt "$CKPT" --num_envs 1 --duration_s 10 --seeds 54 55 56 --reset_noise \
   --out_json results/s54/standing_diagnosis/multiseed_10s.json --viz none
 
-"$S54_PYTHON" tools/test_standing_diagnostics.py
-"$S54_PYTHON" tools/test_foot_tracking.py --out results/s54/standing_diagnosis/mdp_regression.json
-"$S54_PYTHON" tools/test_foot_trajectory.py
-"$S54_PYTHON" tools/test_s54_launcher.py
-"$S54_PYTHON" tools/test_env_s54.py --num_envs 1 --steps 60 \
+"$S54_PYTHON" tools/tests/test_standing_diagnostics.py
+"$S54_PYTHON" tools/tests/test_foot_tracking.py --out results/s54/standing_diagnosis/mdp_regression.json
+"$S54_PYTHON" tools/tests/test_foot_trajectory.py
+"$S54_PYTHON" tools/tests/test_s54_launcher.py
+"$S54_PYTHON" tools/validation/test_env_s54.py --num_envs 1 --steps 60 \
   --motion_dir data/retarget_data/reference_startup_fixed \
   --out results/s54/standing_diagnosis/motion_newton_regression.json --viz none
 
 # 默认仅打印受控配置，不启动训练（本轮仅运行了这种 dry-run）
-"$S54_PYTHON" tools/run_s54_standing_controlled.py --seed 54
+"$S54_PYTHON" tools/train/run_s54_standing_controlled.py --seed 54
 
 # 下一阶段：运行校准。两个阶段分开执行；本轮均 NOT RUN。
-"$S54_PYTHON" tools/run_s54_standing_controlled.py --seed 54 --execute
+"$S54_PYTHON" tools/train/run_s54_standing_controlled.py --seed 54 --execute
 # 检查校准 checkpoint 的 paired diagnostics 后，再显式运行 pilot：
-"$S54_PYTHON" tools/run_s54_standing_controlled.py --phase pilot --seed 54 \
+"$S54_PYTHON" tools/train/run_s54_standing_controlled.py --phase pilot --seed 54 \
   --resume logs/s54_standing_3090_calibration_seed54/last.pt --execute
 
 # 训练曲线绘制；不再运行仿真或训练
-"$S54_PYTHON" tools/plot_s54_standing_curves.py \
+"$S54_PYTHON" tools/visualization/plot_s54_standing_curves.py \
   --runs logs/s54_standing_smoke_20261103 logs/s54_standing_smoke_conservative_20261103 logs/s54_standing_smoke_final_20261103 \
   --evaluations results/s54/standing_diagnosis/evaluation.csv \
   --out results/s54/standing_diagnosis/training_curves.png

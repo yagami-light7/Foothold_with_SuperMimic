@@ -1,5 +1,7 @@
 # 实验记录：LAFAN1 全身运动先验 → 足端插补轨迹控制（S54 + SuperMimic）
 
+> 2026-11-05 目录整理：本文历史命令保留执行时路径；当前训练入口与参数见 [STAGE1_WALK_TRAINING.md](STAGE1_WALK_TRAINING.md)，完整新目录索引见 [tools/README.md](../../tools/README.md)。历史日志、结果和checkpoint未移动。
+
 > 状态：**工程实现及有界 smoke 已完成；Standing Gate 未通过，尚未获得收敛策略**。实际执行记录、命令与限制见第 12 节。  
 > 编制日期：2026-11-04  
 > **修订说明（v2）**：校正 SuperMimic Appendix B 的下游接口训练定义。Stage 1.5 是可选的配对数据桥接实验，默认优先采用 **BPTT 训练 Foot Encoder**；Action MSE 仅作为独立消融，不是原论文的蒸馏损失。保留原始 v1 文件以便对照。  

@@ -24,7 +24,7 @@ class MotionLib:
     def __init__(self, files: list[str], kin: S54Kinematics, device: str, src_fps: float = SOURCE_FPS,
                  require_collision_safe: bool = True, require_kinematic_safe: bool = True):
         if not files:
-            raise ValueError("No S54 reference CSVs found; run tools/generate_s54_reference.py --clips dance1_subject1")
+            raise ValueError("No S54 reference CSVs found; run tools/data/generate_s54_reference.py --clips dance1_subject1")
         if src_fps != SOURCE_FPS:
             raise ValueError("Leju-GMR S54 source is 30 FPS")
         self.device = device
@@ -49,8 +49,8 @@ class MotionLib:
                         or any(certificate.get('checks', {}).get(k) is not True for k in required)
                         or certificate.get('continuous_certificate', {}).get('continuous_joint_interpolation') is not True):
                     raise ValueError(f'Reference lacks a valid self-collision certificate: {f}. '
-                                     'Regenerate with tools/generate_s54_reference.py into reference_startup_fixed, '
-                                     'or repair existing data with tools/repair_s54_collisions.py.')
+                                     'Regenerate with tools/data/generate_s54_reference.py into reference_startup_fixed, '
+                                     'or repair existing data with tools/data/repair_s54_collisions.py.')
             values = np.loadtxt(f, delimiter=",", ndmin=2)
             if require_kinematic_safe:
                 validate_root_motion(values, src_fps, f)

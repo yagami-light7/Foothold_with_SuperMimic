@@ -39,7 +39,9 @@ class PriorConfig:
 
 
 def resolve_prior(value):
-    if isinstance(value,str): value=json.loads(Path(value).read_text())
+    if isinstance(value,str):
+        from .config_paths import resolve_config_path
+        value=json.loads(resolve_config_path(value).read_text())
     return PriorConfig(**(value or {}))
 
 

@@ -55,12 +55,12 @@
 
 ## 当前正式实验与操作命令
 
-正式配置：`configs/s54_curriculum_fresh_3090.json`；实际生效参数：`logs/s54_curriculum_fresh_auditfix_20261104_032902/args.json`。WM-only1000；4096环境；WM4096×2；Actor1024；Horizon8；Replay3072；WM/Actor/Critic LR=5e-5/1e-5/1e-5。未载入旧checkpoint。SwanLab项目 `Foothold_with_SuperMimic`，独立北京时间戳实验：[当前实验](https://swanlab.cn/@yagami_light/Foothold_with_SuperMimic/runs/f05d8c13db6b4235)。关键运行源码的SHA256保存在该run的 `source_sha256.json`。
+正式配置：`configs/s54/curriculum/s54_curriculum_fresh_3090.json`；实际生效参数：`logs/s54_curriculum_fresh_auditfix_20261104_032902/args.json`。WM-only1000；4096环境；WM4096×2；Actor1024；Horizon8；Replay3072；WM/Actor/Critic LR=5e-5/1e-5/1e-5。未载入旧checkpoint。SwanLab项目 `Foothold_with_SuperMimic`，独立北京时间戳实验：[当前实验](https://swanlab.cn/@yagami_light/Foothold_with_SuperMimic/runs/f05d8c13db6b4235)。关键运行源码的SHA256保存在该run的 `source_sha256.json`。
 
 ```bash
 RUN=s54_curriculum_fresh_auditfix_20261104_032902
 # 查看训练、课程与退出状态
-bash tools/run_s54_curriculum_8h.sh status "$RUN"
+bash tools/train/run_s54_curriculum_8h.sh status "$RUN"
 tail -n 20 -F "logs/$RUN/stdout.log"
 cat "logs/$RUN/args.json"
 cat "logs/$RUN/supervision_status.json"
@@ -70,11 +70,11 @@ tmux attach -t "$RUN"
 # 新窗口实时显示日志
 tmux new-window -t "$RUN" -n logs "tail -n 20 -F '$PWD/logs/$RUN/stdout.log'"
 # 安全停止；等train.exitcode出现后才可恢复
-bash tools/run_s54_curriculum_8h.sh stop "$RUN"
-bash tools/run_s54_curriculum_8h.sh resume "$RUN"
+bash tools/train/run_s54_curriculum_8h.sh stop "$RUN"
+bash tools/train/run_s54_curriculum_8h.sh resume "$RUN"
 ```
 
-上面stop/resume为管理命令，不需要现在执行。已有正式实验正在运行时，不要再执行fresh重复启动；另开全新实验的通用命令是 `bash tools/run_s54_curriculum_8h.sh fresh`。
+上面stop/resume为管理命令，不需要现在执行。已有正式实验正在运行时，不要再执行fresh重复启动；另开全新实验的通用命令是 `bash tools/train/run_s54_curriculum_8h.sh fresh`。
 
 训练、上传、监督器分别运行在 `$RUN`、`${RUN}_upload`、`${RUN}_audit` tmux中，退出SSH不受影响。监督器从启动时连续运行30分钟，发现NaN/Inf，或连续3条Critic MSE>1e6，或连续3条MSE>1000且真实奖励<0且已完成Episode<.5秒，则安全停训。它不因单次WM/Critic峰值停止，不擅自改脚本或循环重启。观察结果写入 `supervision_status.json`，不是声称有人一直在线盯屏。
 

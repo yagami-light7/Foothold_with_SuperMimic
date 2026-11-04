@@ -55,7 +55,7 @@ class TrackingSim:
     def __init__(self, sim_cfg, num_envs: int, motion: MotionLib, mdp: MDP, gamma: float = 0.99, eval_mode: bool = False,
                  max_episode_steps: int | None = None, reset_noise: bool = True, goals: GoalSource | None = None):
         if not USD_PATH.is_file():
-            raise FileNotFoundError(f"Generate S54 USD first: python tools/mjcf_to_usd.py ({USD_PATH})")
+            raise FileNotFoundError(f"Generate S54 USD first: python tools/data/mjcf_to_usd.py ({USD_PATH})")
         manifest = json.loads((USD_PATH.parents[1]/"contract.json").read_text())
         if any(manifest.get(k) != v for k,v in checkpoint_contract().items()):
             raise ValueError("USD/source robot contract mismatch")

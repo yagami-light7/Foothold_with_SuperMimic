@@ -1,6 +1,6 @@
 # S54 Foot Tracking：8 小时课程训练部署报告
 
-> 当前执行方案已改为：从零开始、WM-only 1000 iterations、4096环境大并行。直接运行 `bash tools/run_s54_curriculum_8h.sh fresh`，完整配置及实测见 [S54_FRESH_3090.md](S54_FRESH_3090.md)。下文的迁移/恢复方案保留为历史记录。
+> 当前执行方案已改为：从零开始、WM-only 1000 iterations、4096环境大并行。直接运行 `bash tools/train/run_s54_curriculum_8h.sh fresh`，完整配置及实测见 [S54_FRESH_3090.md](S54_FRESH_3090.md)。下文的迁移/恢复方案保留为历史记录。
 
 初次交付为训练基础设施、短测及可执行计划。后续按用户授权进行稳定性审查并重新启动正式实验，当前运行与修复证据见 [S54_TRAINING_AUDIT.md](S54_TRAINING_AUDIT.md)，**尚未证明策略学会长期站立或行走**。2026-11-04，RTX 3090 24 GB。SwanLab 项目组统一为 **`Foothold_with_SuperMimic`**，新实验及默认本地目录按北京时间 `YYYYMMDD_HHMMSS` 分类。
 
@@ -36,7 +36,7 @@
 - 配置化过滤：Lf<=0.45 m/s；脚间距离<=0.65 m；每次 yaw 增量<=0.25 rad；保守同脚位移 d≈2L+0.24|yaw_rate/f|；quintic 峰值速度 1.875d/T<=1.8 m/s，水平/竖直峰值加速度 max(5.774d,23.095h)/T²<=12 m/s²。
 - 切换候选额外检查下一左右两步的**实际已计划端点间位移**，避免慢长步突然切换成高频短步导致过快摆动；不通过则保持当前命令并记录 `transition_envelope` 拒绝，不能偷偷截断落脚目标。
 
-CPU joint-limited FK fitting 对独立网格取 13 个时刻、150 次优化，允许 pelvis 高度 [-0.08,+0.02] m 调整；包络内 25 个候选拟合误差最大约 2.0 cm。**这是必要的几何近似检查，不含自碰撞、摩擦锥、力矩、支撑平衡或连续 IK 可行性证明，不能当成动态可达域。** 原始结果：`results/s54/curriculum_reach.json`，重跑 `tools/audit_s54_curriculum_reach.py`。
+CPU joint-limited FK fitting 对独立网格取 13 个时刻、150 次优化，允许 pelvis 高度 [-0.08,+0.02] m 调整；包络内 25 个候选拟合误差最大约 2.0 cm。**这是必要的几何近似检查，不含自碰撞、摩擦锥、力矩、支撑平衡或连续 IK 可行性证明，不能当成动态可达域。** 原始结果：`results/s54/curriculum_reach.json`，重跑 `tools/validation/audit_s54_curriculum_reach.py`。
 
 明确拒绝的测试组合包括：
 
@@ -102,7 +102,7 @@ CPU joint-limited FK fitting 对独立网格取 13 个时刻、150 次优化，�
 
 选择 512/256/64；PyTorch 峰值 allocated≈916MiB，设备快照含 Warp≈1.64GiB。短测并未填满 Replay，满 buffer tensor 底座约 250 MiB，命令/优化器/仿真另计，预计数 GiB 内，但 C5 频繁重置及命令存储峰值尚未实测。不要把 24GiB 当作增大 batch 的理由。低利用率说明 eager FK/BPTT/逐步调度及 Python 命令管理有明显开销；本次未重构核心算法，未试更长 Horizon。
 
-基准：`tools/benchmark_s54_curriculum.py`，结果 `results/s54/curriculum_benchmark.json`。启动器拒绝已有 compute 进程、空闲显存不足 16GiB，且使用进程继承的全局 flock；不杀其他任务。环境无法保证其他用户在本任务启动后不加入负载，训练时有 GPU 监控日志。
+基准：`tools/benchmarks/benchmark_s54_curriculum.py`，结果 `results/s54/curriculum_benchmark.json`。启动器拒绝已有 compute 进程、空闲显存不足 16GiB，且使用进程继承的全局 flock；不杀其他任务。环境无法保证其他用户在本任务启动后不加入负载，训练时有 GPU 监控日志。
 
 ## 5. Checkpoint / 评估 / SwanLab
 
@@ -144,41 +144,41 @@ SwanLab 项目 **Foothold_with_SuperMimic**；时间戳实验名和 run ID 写�
 .venv-swanlab/bin/swanlab login
 
 # 建议的正式训练（自动打印本次 RUN 名；不是旧Standing全量resume）
-bash tools/run_s54_curriculum_8h.sh start \
+bash tools/train/run_s54_curriculum_8h.sh start \
   --init_weights logs/s54_standing_3090_calibration_seed54/last.pt
 
 # 也可显式提供时间戳run名，便于后续管理
 RUN="s54_curriculum_$(TZ=Asia/Shanghai date +%Y%m%d_%H%M%S)"
-bash tools/run_s54_curriculum_8h.sh start "$RUN" \
+bash tools/train/run_s54_curriculum_8h.sh start "$RUN" \
   --init_weights logs/s54_standing_3090_calibration_seed54/last.pt
 
-bash tools/run_s54_curriculum_8h.sh status "$RUN"
+bash tools/train/run_s54_curriculum_8h.sh status "$RUN"
 tail -f "logs/$RUN/stdout.log"
 tmux list-sessions
-bash tools/run_s54_curriculum_8h.sh attach "$RUN"
+bash tools/train/run_s54_curriculum_8h.sh attach "$RUN"
 # Ctrl-b 然后 d 离开；SSH退出不影响训练或上传
 # 重连SSH后：tmux attach -t "$RUN"
 
 # 安全停止：验证PID仍属于这个run，再发SIGTERM；等待退出码和latest
-bash tools/run_s54_curriculum_8h.sh stop "$RUN"
+bash tools/train/run_s54_curriculum_8h.sh stop "$RUN"
 cat "logs/$RUN/train.exitcode"
 
 # 同一目录、同一SwanLab实验ID、相同配置恢复；累计计算8小时预算
-bash tools/run_s54_curriculum_8h.sh resume "$RUN"
+bash tools/train/run_s54_curriculum_8h.sh resume "$RUN"
 
 # 查看独立上传日志及最终结果
  tail -f "logs/$RUN/swanlab_sync.log"
  cat "logs/$RUN/swanlab_sync_status.json" "logs/$RUN/final_sync.exitcode"
 # 上传进程异常退出，可单独在tmux重启，不启动GPU
  tmux new-session -d -s "${RUN}_upload" \
-  "bash tools/run_s54_curriculum_8h.sh _sync '$RUN' >> 'logs/$RUN/swanlab_sync.log' 2>&1"
+  "bash tools/train/run_s54_curriculum_8h.sh _sync '$RUN' >> 'logs/$RUN/swanlab_sync.log' 2>&1"
 ```
 
 独立评估必须先确认 GPU compute 空闲，只运行一个进程：
 
 ```bash
 nvidia-smi
-/home/rm/workspace/IsaacLab_3_0/.venv/bin/python tools/evaluate_s54_curriculum.py \
+/home/rm/workspace/IsaacLab_3_0/.venv/bin/python tools/validation/evaluate_s54_curriculum.py \
   --checkpoint "logs/$RUN/latest.pt" --num_envs 8 --full \
   --out results/s54/curriculum_full.json --viz none
 ```
@@ -186,11 +186,11 @@ nvidia-smi
 开发短测、CPU回归：
 
 ```bash
-bash tools/run_s54_curriculum_8h.sh smoke \
-  --curriculum_config configs/s54_curriculum_smoke.json \
+bash tools/train/run_s54_curriculum_8h.sh smoke \
+  --curriculum_config configs/s54/curriculum/s54_curriculum_smoke.json \
   --init_weights logs/s54_standing_3090_calibration_seed54/last.pt
 /home/rm/workspace/IsaacLab_3_0/.venv/bin/python -m unittest \
-  tools.test_curriculum tools.test_curriculum_replay tools.test_curriculum_evaluation
+  tools.tests.test_curriculum tools.tests.test_curriculum_replay tools.tests.test_curriculum_evaluation
 ```
 
 启动器本身不依赖Docker；要换机器只设置 S54_PYTHON/SWANLAB_PYTHON，验证IsaacLab/Newton和机器人资产契约后再短测。resume自定义训练参数时必须重新提供相同覆盖参数（特别是smoke的num_envs、buffer、batch和curriculum_config），不能用正式配置盲目恢复smoke。
@@ -203,12 +203,12 @@ bash tools/run_s54_curriculum_8h.sh smoke \
 
 正式启动 `s54_curriculum_20261104_014110` 在 iteration 1 因 `status_temp` 未定义退出。根因是最后补充运行状态输出时缩进错误：变量在 `log_every` 条件内定义，写文件与 telemetry emit 却在条件外执行。之前 `log_every=1` 的短测不能覆盖非日志迭代。已将状态写入、原子 replace、emit 一起放回日志条件内，同时修复了同路径的 `gpu_stats` 潜在未定义访问。
 
-新增 `tools/test_curriculum_logging.py` 直接从 train.py AST 提取并执行实际分支，覆盖首个非日志 iteration 1、日志 iteration 20、随后非日志 iteration 21，以及 nvidia-smi 查询失败。3 项测试通过。故障运行的完整 latest.pt 已验证可读取，保存于 iteration 1、C0、累计约 29.7s；不需要重新迁移权重或重新建 SwanLab 实验。
+新增 `tools/tests/test_curriculum_logging.py` 直接从 train.py AST 提取并执行实际分支，覆盖首个非日志 iteration 1、日志 iteration 20、随后非日志 iteration 21，以及 nvidia-smi 查询失败。3 项测试通过。故障运行的完整 latest.pt 已验证可读取，保存于 iteration 1、C0、累计约 29.7s；不需要重新迁移权重或重新建 SwanLab 实验。
 
 恢复原正式运行：
 
 ```bash
-bash tools/run_s54_curriculum_8h.sh resume s54_curriculum_20261104_014110
+bash tools/train/run_s54_curriculum_8h.sh resume s54_curriculum_20261104_014110
 tail -f logs/s54_curriculum_20261104_014110/stdout.log
 ```
 
