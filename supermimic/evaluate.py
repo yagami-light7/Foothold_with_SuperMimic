@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import glob
 import json
+import math
 import os
 import sys
 import time
@@ -30,7 +31,8 @@ parser.add_argument("--motion_dir", type=str, default=None, help="defaults to th
 parser.add_argument("--clips", nargs="+", help="defaults to the clips recorded in args.json")
 parser.add_argument("--every", type=int, default=1, help="evaluate every n-th checkpoint")
 parser.add_argument('--num_envs',type=int,default=4,help='Independent foot evaluation episodes; Motion still uses one env/clip')
-parser.add_argument('--duration_s', type=float, help='Foot evaluation time limit, independent of checkpoint task contract')
+parser.add_argument('--duration_s', type=float, help='Evaluation time limit; Motion also ends at clip end or physical termination')
+parser.add_argument('--start_seconds',type=float,default=0.,help='Motion reference offset; reset the policy to this frame')
 parser.add_argument('--seeds', nargs='+', type=int, help='Foot evaluation seeds; use --reset_noise to test distinct initial states')
 parser.add_argument('--reset_noise', action='store_true', help='Foot eval: configured reset perturbations only; no observation/action noise')
 parser.add_argument('--diagnostics', action='store_true', help='Foot records: actual Newton ground contacts and forces')
@@ -43,8 +45,16 @@ saved_config = json.loads(open(os.path.join(args.run_dir, 'args.json')).read())
 args.motion_dir = args.motion_dir or saved_config.get('motion_dir') or os.path.join(REPO, 'data/retarget_data/reference_startup_fixed')
 from supermimic.reference_selection import select_reference_files
 foot_run = saved_config.get('goal_mode','motion') == 'foot_trajectory'
-if not foot_run and (args.duration_s is not None or args.seeds or args.reset_noise or args.diagnostics or args.controller != 'policy'):
-    parser.error('Duration, seed and controller protocol options currently apply to Foot evaluation only')
+if not foot_run and (args.seeds or args.reset_noise or args.diagnostics or args.controller != 'policy'):
+    parser.error('Seed and controller protocol options currently apply to Foot evaluation only')
+if not foot_run and args.duration_s is not None:
+    if (not math.isfinite(args.duration_s) or args.duration_s<=0 or
+            abs(round(args.duration_s/.02)*.02-args.duration_s)>1e-8):
+        parser.error('Motion duration must be positive and aligned to the 0.02s control step')
+if (not math.isfinite(args.start_seconds) or args.start_seconds<0 or
+        abs(round(args.start_seconds/.02)*.02-args.start_seconds)>1e-8):
+    parser.error('Reference start must be nonnegative and aligned to the 0.02s control step')
+if foot_run and args.start_seconds:parser.error('Reference start applies to Motion evaluation only')
 motion_files = []
 if not foot_run:
     try:
@@ -65,7 +75,7 @@ import supermimic.networks as networks
 from supermimic.env import TrackingSim, make_sim
 from supermimic.kinematics import S54Kinematics
 from supermimic.mdp import MAX_STEP_REWARD, OBS_DIM, MDP, RewardCfg
-from supermimic.motion import MotionLib
+from supermimic.motion import MotionLib, CONTROL_DT
 from supermimic.networks import Policy
 from supermimic.s54 import default_joint_pos_list, JOINT_NAMES, ROBOT_ID, assert_checkpoint
 from supermimic.goals import GoalSource, GoalSpec
@@ -131,9 +141,13 @@ def evaluate(env: TrackingSim, ck: dict, record: str | None = None) -> dict:
     # Re-evaluating a checkpoint uses the same sampled foot commands.
     torch.manual_seed(a_.get('seed', 0))
     ids = torch.arange(C, device=dev)
+    env.max_episode_steps=round(args.duration_s/CONTROL_DT) if args.duration_s is not None else 10**9
     env.done_eval[:] = False
     env.failed_eval[:] = False
-    env.reset(ids, motion.clip_start.clone())
+    start_offset=round(args.start_seconds/CONTROL_DT)
+    starts=motion.clip_start+start_offset
+    if (starts>=motion.clip_end).any():raise ValueError('Reference start must leave at least one valid control step in every clip')
+    env.reset(ids, starts)
     recorded_commands = ({'command_' + k: v.cpu().numpy() for k, v in env.command.tensors().items()}
                          if goals.is_foot and record else {})
     clip_end = motion.clip_end.clone()
@@ -141,10 +155,18 @@ def evaluate(env: TrackingSim, ck: dict, record: str | None = None) -> dict:
     head_penalty_ret = torch.zeros_like(ret)
     head_error_sum = torch.zeros_like(ret)
     steps = torch.zeros(C, device=dev)
+    physical=torch.zeros(C,dtype=torch.bool,device=dev)
+    timeouts=torch.zeros_like(physical)
+    target_steps=motion.clip_len-1-start_offset
+    if args.duration_s is not None:target_steps=target_steps.clamp_max(env.max_episode_steps)
     hist = None
     traj = {"root_p": [], "root_quat": [], "q": [], "f": [], "alive": []}
     if goals.is_foot:
         traj['command_step'] = []
+    rollout_started=time.monotonic();next_progress=rollout_started+5.
+    target_max=int(target_steps.max())
+    print(f'[Newton] rollout started: {target_max} steps / {target_max*CONTROL_DT:.2f}s target; '
+          'physical termination may end it earlier',flush=True)
     while not bool(env.done_eval.all()):
         env.f = torch.minimum(env.f, clip_end - 1)  # done clips may keep stepping while others finish
         S = env.state()
@@ -160,24 +182,40 @@ def evaluate(env: TrackingSim, ck: dict, record: str | None = None) -> dict:
             if goals.is_foot:
                 traj['command_step'].append(env.ep_step.cpu().clone())
         out = env.step(a)
+        physical|=alive & out['term']
+        timeouts|=alive & out['timeout'] & ~out['term']
         ret += torch.where(alive, out["r"], 0.0)
         head_penalty_ret += torch.where(alive, out['terms']['head_penalty'], 0.0)
         head_error_sum += torch.where(alive, out['terms']['head_position_error'], 0.0)
         steps += alive.float()
-    norm = ret / ((motion.clip_len - 1).float() * MAX_STEP_REWARD)
+        now=time.monotonic()
+        if now>=next_progress:
+            completed=int(steps.max());wall=now-rollout_started;fps=completed/max(wall,1e-9)
+            print(f'[Newton] {completed}/{target_max} steps | sim {completed*CONTROL_DT:.2f}/'
+                  f'{target_max*CONTROL_DT:.2f}s | {100*completed/target_max:.1f}% | '
+                  f'{fps:.1f} steps/s | ETA {(target_max-completed)/max(fps,1e-9):.0f}s',flush=True)
+            next_progress=now+5.
+    print(f'[Newton] complete: {int(steps.max())} steps; physical={int(physical.sum())}, '
+          f'timeout={int(timeouts.sum())}; wall={time.monotonic()-rollout_started:.1f}s',flush=True)
+    norm = ret / (target_steps.float() * MAX_STEP_REWARD)
     # Removing just the new head cost preserves a common reward diagnostic;
     # the actual rollout and all terminations remain unchanged.
-    no_head_cost = (ret - head_penalty_ret) / ((motion.clip_len - 1).float() * MAX_STEP_REWARD)
+    no_head_cost = (ret - head_penalty_ret) / (target_steps.float() * MAX_STEP_REWARD)
     head_rms = (head_error_sum / (2 * steps.clamp_min(1))).sqrt() * (180 / np.pi)
     res = {
         "norm_return": norm.mean().item(),
-        "norm_return_framew": (ret.sum() / ((motion.clip_len - 1).sum() * MAX_STEP_REWARD)).item(),
+        "norm_return_framew": (ret.sum() / (target_steps.sum() * MAX_STEP_REWARD)).item(),
         "n_failed": int(env.failed_eval.sum().item()),
         "failed": [motion.names[i] for i in env.failed_eval.nonzero().flatten().tolist()],
         "per_clip": {motion.names[i]: round(norm[i].item(), 4) for i in range(C)},
         "norm_return_without_head_penalty": no_head_cost.mean().item(),
         "per_clip_without_head_penalty": {motion.names[i]: round(no_head_cost[i].item(), 4) for i in range(C)},
         "head_rms_error_deg": {motion.names[i]: head_rms[i].item() for i in range(C)},
+        "n_timeout":int(timeouts.sum()),
+        "requested_duration_s":args.duration_s,
+        "reference_start_seconds":args.start_seconds,
+        "per_clip_steps":{motion.names[i]:int(steps[i]) for i in range(C)},
+        "mean_episode_length":float(steps.mean()),
     }
     if record:
         # Preserve the actual terminal state, including a single-clip early failure.
@@ -189,9 +227,13 @@ def evaluate(env: TrackingSim, ck: dict, record: str | None = None) -> dict:
         if goals.is_foot:
             traj['command_step'].append(env.ep_step.cpu().clone())
         os.makedirs(os.path.dirname(os.path.abspath(record)), exist_ok=True)
-        np.savez_compressed(record, robot=ROBOT_ID, joint_names=np.array(JOINT_NAMES), control_dt=0.02, quat="wxyz", names=np.array(motion.names), goal_contract=json.dumps(goal_spec.contract()), **recorded_commands, **{k: torch.stack(v).numpy() for k, v in traj.items()},
+        stop_reasons=np.array(['physical_termination' if physical[i] else 'timeout' if timeouts[i] else 'unknown' for i in range(C)])
+        np.savez_compressed(record, robot=ROBOT_ID, joint_names=np.array(JOINT_NAMES), control_dt=0.02, quat="wxyz", names=np.array(motion.names), goal_contract=json.dumps(goal_spec.contract()),
+                            episode_lengths=steps.long().cpu().numpy(),stop_reasons=stop_reasons,physical_termination=physical.cpu().numpy(),timeout=timeouts.cpu().numpy(),
+                            **recorded_commands, **{k: torch.stack(v).numpy() for k, v in traj.items()},
                             ref_root_p=motion.root_p.cpu().numpy(), ref_root_R=motion.root_R.cpu().numpy(), ref_q=motion.q.cpu().numpy(),
-                            clip_start=motion.clip_start.cpu().numpy(), clip_len=motion.clip_len.cpu().numpy())  # fmt: skip
+                            clip_start=starts.cpu().numpy(), clip_len=(motion.clip_len-start_offset).cpu().numpy(),
+                            source_checkpoint=str(args.ckpt or ''),reference_start_seconds=args.start_seconds)  # fmt: skip
     return res
 
 
@@ -199,7 +241,7 @@ sim_cfg = make_sim(dev, args)
 with launch_simulation(sim_cfg, args):
     env = TrackingSim(sim_cfg, C, motion, mdp, eval_mode=True, goals=goals)
     if args.ckpt:
-        ck = torch.load(args.ckpt, map_location=dev)
+        ck = torch.load(args.ckpt, map_location=dev,weights_only=False)
         res = evaluate(env, ck, args.record)
         result_path = args.out_json or args.ckpt.replace('.pt', '_eval.json')
         os.makedirs(os.path.dirname(os.path.abspath(result_path)), exist_ok=True)
@@ -218,7 +260,7 @@ with launch_simulation(sim_cfg, args):
         todo = [c for c in todo if (int(os.path.basename(c)[5:11]) // 2000) % args.every == 0]
         for c in todo:
             it = int(os.path.basename(c)[5:11])
-            ck = torch.load(c, map_location=dev)
+            ck = torch.load(c, map_location=dev,weights_only=False)
             t0 = time.time()
             res = evaluate(env, ck)
             line = f"{it},{ck['wall_time'] / 3600:.4f},{ck['saved_at']},{time.strftime('%Y-%m-%d %H:%M:%S')},{res['norm_return']:.4f},{res['norm_return_framew']:.4f},{res['n_failed']},{'|'.join(res['failed'])}\n"
