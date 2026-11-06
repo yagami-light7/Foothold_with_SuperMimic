@@ -37,6 +37,13 @@ if [[ "$MODE" == _sync ]]; then
       # Drain durable SDK caches too, including logs from a disconnected SDK session.
       for cache in "$DIR"/swanlab/run-*; do
         [[ -d "$cache" ]] || continue
+        # Failed authentication creates a directory before any replayable
+        # record file. Keep it for diagnosis; it contains no metrics to drain.
+        records=("$cache"/run-*.swanlab)
+        if [[ ! -f "${records[0]}" ]]; then
+          echo "Skipping uninitialized SDK directory (no record file): $cache" >&2
+          continue
+        fi
         "$SWANLAB_PYTHON" -m swanlab sync "$cache" --project Foothold_with_SuperMimic --id "$(cat "$DIR/swanlab_run_id")" || status=$?
       done
       echo "$status" > "$DIR/final_sync.exitcode"

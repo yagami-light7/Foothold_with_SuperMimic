@@ -11,6 +11,7 @@ import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
+from unittest.mock import Mock, patch
 import json
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -66,6 +67,77 @@ class BoundedTests(unittest.TestCase):
         self.assertEqual(profile['wall_seconds'],7200)
         with self.assertRaises(ValueError):runner.command_for(self.args(stage='stage1',source=None,profile=args.profile))
         with self.assertRaisesRegex(ValueError,'only applies'):runner.command_for(self.args(stage1_train=True))
+
+    def test_short_abc_is_explicit_and_rejects_other_objectives(self):
+        profile='configs/motion_prior/stage2/abc_short_3090.json'
+        with self.assertRaises(ValueError):runner.command_for(self.args(profile=profile))
+        for overrides in (dict(stage='stage1'),dict(stage='bridge'),dict(group='D'),dict(task='curriculum')):
+            with self.assertRaisesRegex(ValueError,'fixed-task'):
+                runner.command_for(self.args(profile=profile,stage2_short=True,**overrides))
+        with self.assertRaisesRegex(ValueError,'without Bridge/Prior'):
+            runner.command_for(self.args(stage2_short=True))  # calibration profile must remain WM-only
+
+    def test_short_abc_shares_all_training_knobs_except_initialization(self):
+        profiles=[]
+        for group in 'ABC':
+            cmd,profile=runner.command_for(self.args(group=group,source=None if group=='A' else 'teacher.pt',
+                task='walking',profile='configs/motion_prior/stage2/abc_short_3090.json',stage2_short=True))
+            options={};i=3
+            while i<len(cmd):
+                key=cmd[i];value=True
+                if i+1<len(cmd) and not cmd[i+1].startswith('--'):
+                    value=cmd[i+1];i+=1
+                options[key]=value;i+=1
+            self.assertNotIn('--wall_seconds',options)
+            self.assertIsNone(profile['wall_seconds'])
+            self.assertEqual(options['--wm_only_iters'],'1000')
+            self.assertEqual(options['--iterations'],'2000')
+            for key,value in dict(num_envs='1024',horizon='32',wm_window='8',wm_batch='1024',wm_batches='16',
+                                  pi_batch='256',hist='10',goal_frames='10',goal_dt='0.1',gamma='0.99',utd='0.4').items():
+                self.assertEqual(options['--'+key],value)
+            self.assertTrue(options['--freeze_decoder'])
+            if group=='A':self.assertNotIn('--init_from_motion',options)
+            else:self.assertEqual(options.pop('--transfer_components'),'wm' if group=='B' else 'wm_decoder')
+            options.pop('--init_from_motion',None)
+            profiles.append(options)
+        self.assertEqual(profiles[0],profiles[1]);self.assertEqual(profiles[1],profiles[2])
+        t=profile['train']
+        self.assertEqual(t['num_envs']*(t['warmup_steps']+int(t['iterations']/t['utd'])),5251072)
+        self.assertEqual(t['iterations']-t['wm_only_iters'],1000)
+
+    def test_unlimited_training_wait_has_no_timeout(self):
+        process=Mock();process.wait.return_value=0
+        self.assertEqual(runner.wait_for_training(process,123.,None),0)
+        process.wait.assert_called_once_with()
+
+    def test_unlimited_training_keeps_manual_safe_stop(self):
+        process=Mock();process.pid=12345;process.wait.side_effect=[KeyboardInterrupt(),0]
+        with patch.object(runner.os,'killpg') as kill:
+            self.assertEqual(runner.wait_for_training(process,123.,None),130)
+        kill.assert_called_once_with(12345,runner.signal.SIGTERM)
+        self.assertEqual(process.wait.call_args_list[-1].kwargs,dict(timeout=30))
+
+    def test_small_validation_modes_still_require_finite_budget(self):
+        profile=json.loads((ROOT/'configs/motion_prior/validation/calibration_bounded.json').read_text())
+        profile['wall_seconds']=None
+        source=Mock();source.read_text.return_value=json.dumps(profile)
+        with patch.object(runner,'resolve_config_path',return_value=source):
+            with self.assertRaisesRegex(ValueError,'only supported'):
+                runner.command_for(self.args())
+
+    def test_finite_training_wait_keeps_existing_shutdown_reserve(self):
+        process=Mock();process.wait.return_value=0
+        with patch.object(runner.time,'monotonic',return_value=100.):
+            self.assertEqual(runner.wait_for_training(process,0.,300.),0)
+        process.wait.assert_called_once_with(timeout=185.)
+
+    def test_finite_training_timeout_requests_checkpoint_save(self):
+        process=Mock();process.pid=12345
+        process.wait.side_effect=[runner.subprocess.TimeoutExpired('train',185.),0]
+        with patch.object(runner.time,'monotonic',side_effect=[100.,285.]),patch.object(runner.os,'killpg') as kill:
+            self.assertEqual(runner.wait_for_training(process,0.,300.),124)
+        kill.assert_called_once_with(12345,runner.signal.SIGTERM)
+        self.assertEqual(process.wait.call_args_list[-1].kwargs,dict(timeout=15.))
 
     def test_teacher_timeout_alone_and_dance_holdout_never_qualify(self):
         protocol=json.loads((ROOT/'configs/motion_prior/validation/pre_ablation_gates.json').read_text())

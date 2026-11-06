@@ -2,7 +2,9 @@
 
 The default keeps the original 16-env/200-iteration/300-second limits.
 --stage1-train permits a separate, time-limited Motion training profile.
-Stage 2 ablation limits remain unchanged. SwanLab upload is optional.
+--stage2-short explicitly permits an iteration-limited A/B/C comparison, with
+wall_seconds=null to disable training deadlines. The small smoke limits remain
+the default. SwanLab upload is optional.
 """
 
 # Support both direct execution and python -m from the repository layout.
@@ -17,6 +19,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -30,6 +33,7 @@ import uuid
 
 ROOT=Path(__file__).resolve().parents[2]
 from supermimic.config_paths import resolve_config_path
+from tools.ops.swanlab_jobs import tmux_proxy_options
 
 
 def default_python():
@@ -61,17 +65,43 @@ def snapshot_source(target):
     return dict(manifest=str(manifest.relative_to(ROOT)),sha256=hashlib.sha256(manifest.read_bytes()).hexdigest())
 
 
+def wait_for_training(process, started, wall_seconds):
+    """A null training budget has no wait timeout; signals still save/stop safely."""
+    deadline = None if wall_seconds is None else started+wall_seconds
+    try:
+        return process.wait() if deadline is None else process.wait(timeout=max(.01,deadline-15-time.monotonic()))
+    except (subprocess.TimeoutExpired,KeyboardInterrupt) as exc:
+        try:os.killpg(process.pid,signal.SIGTERM)
+        except ProcessLookupError:pass
+        try:process.wait(timeout=30 if deadline is None else max(.01,deadline-time.monotonic()))
+        except subprocess.TimeoutExpired:
+            try:os.killpg(process.pid,signal.SIGKILL)
+            except ProcessLookupError:pass
+            process.wait()
+        return 124 if isinstance(exc,subprocess.TimeoutExpired) else 130
+
+
 def command_for(a):
     profile=json.loads(resolve_config_path(ROOT/a.profile).read_text());train=dict(profile['train'])
     extended=getattr(a,'stage1_train',False)
+    short=getattr(a,'stage2_short',False)
     if extended and a.stage!='stage1':raise ValueError('--stage1-train only applies to Motion Stage 1')
-    max_envs,max_iters,max_wall=(1024,20000,7200) if extended else (16,200,300)
+    if short and (extended or a.stage!='stage2' or a.group not in 'ABC' or a.task=='curriculum'):
+        raise ValueError('--stage2-short only applies to fixed-task Stage 2 A/B/C')
+    if short and any(train.get(k) for k in ('prior_config','curriculum_config','paired_latent_weight','wm_calibration','train_decoder','no_critic')):
+        raise ValueError('Short A/B/C uses the same frozen-Decoder Foot RL objective, without Bridge/Prior')
+    max_envs,max_iters,max_wall=(1024,20000,7200) if extended else (1024,5000,1800) if short else (16,200,300)
     if train['hist']!=10 or not 1<=train['num_envs']<=max_envs or not 1<=train['iterations']<=max_iters:
         raise ValueError(f'Profile requires hist=10, <={max_envs} envs and <={max_iters} iterations')
     wall=profile['wall_seconds']
-    if not 0<wall<=max_wall: raise ValueError(f'This mode is limited to {max_wall} seconds')
-    # The process budget includes initialization, checkpoint saving and shutdown.
-    train_wall=max(1,wall-30)
+    if wall is None:
+        if not short:raise ValueError('wall_seconds=null is only supported by explicit Stage 2 A/B/C mode')
+        train_wall=None
+    else:
+        if not isinstance(wall,(int,float)) or not math.isfinite(wall) or not 0<wall<=max_wall:
+            raise ValueError(f'This mode is limited to {max_wall} seconds, or null for explicit A/B/C')
+        # Finite budgets include initialization, checkpoint saving and shutdown.
+        train_wall=max(1,wall-30)
     if not re.fullmatch(r's54_[A-Za-z0-9_.-]+',a.run): raise ValueError('Use a fresh s54_* run name')
     if a.stage=='stage1':
         if a.source: raise ValueError('Stage 1 starts fresh')
@@ -80,7 +110,7 @@ def command_for(a):
         train.update(goal_mode='motion',reference_manifest=a.manifest,manifest_split='train')
     else:
         train.update(goal_mode='foot_trajectory',foot_task_config=f'configs/motion_prior/stage2/stage2_{a.task}.json',
-                     foot_config='configs/motion_prior/stage2/conservative_footsteps.json',goal_dt=.1,
+                     foot_config='configs/motion_prior/stage2/conservative_footsteps.json',goal_dt=train.get('goal_dt',.1),
                      obs_adapter='mask_reference_orientation',freeze_decoder=True,check_foot_gradients=True)
         if a.stage=='bridge':
             train.update(goal_mode='reference_foot',reference_manifest=a.manifest,manifest_split='train')
@@ -101,7 +131,9 @@ def command_for(a):
         if a.group in ('F','G'):train['prior_config']='configs/motion_prior/prior/prior_matched.json'
         if a.stage=='stage2' and a.task=='curriculum':
             train.update(foot_task_config='configs/motion_prior/stage2/stage2_curriculum_task.json',curriculum_config='configs/motion_prior/stage2/curriculum_bounded.json')
-    train.update(seed=a.seed,log_dir='logs/'+a.run,wall_seconds=train_wall,goal_frames=10,viz='none')
+    train.update(seed=a.seed,log_dir='logs/'+a.run,goal_frames=10,viz='none')
+    if train_wall is None:train.pop('wall_seconds',None)
+    else:train['wall_seconds']=train_wall
     if a.resume:
         if a.source:raise ValueError('Resume is separate from cross-task initialization')
         saved=json.loads((ROOT/a.resume).parent.joinpath('args.json').read_text())
@@ -135,6 +167,7 @@ def main():
     p.add_argument('--python',default=default_python())
     p.add_argument('--execute',action='store_true');p.add_argument('--dry-run',action='store_true')
     p.add_argument('--stage1-train',action='store_true',help='Explicit Stage 1 only: <=1024 envs, <=20000 iterations, <=2h process budget')
+    p.add_argument('--stage2-short',action='store_true',help='Explicit fixed-task A/B/C: <=1024 envs, <=5000 iterations; wall_seconds=null disables training deadlines')
     p.add_argument('--stream-log',action='store_true',help='Mirror the persisted stdout/stderr to the attached terminal')
     p.add_argument('--experiment-name',help='SwanLab name; stable ID is generated and retained independently')
     p.add_argument('--swanlab-mode',choices=['offline','online'],help='Optional independent tmux uploader; local CSV/JSON always persist')
@@ -185,17 +218,12 @@ def main():
             job=shlex.join(['env','SWANLAB_MODE='+a.swanlab_mode,
                 'SWANLAB_PYTHON='+os.environ.get('SWANLAB_PYTHON',str(ROOT/'.venv-swanlab/bin/python')),
                 'bash','tools/train/run_s54_curriculum_8h.sh','_sync',a.run])+' >> '+shlex.quote(str(target/'swanlab_sync.log'))+' 2>&1'
-            try:subprocess.run(['tmux','new-session','-d','-s',a.run+'_upload','-c',str(ROOT),job],cwd=ROOT,env=uploader_env,check=True,timeout=5)
+            try:subprocess.run(['tmux','new-session','-d','-s',a.run+'_upload','-c',str(ROOT),
+                               *tmux_proxy_options(uploader_env),job],cwd=ROOT,env=uploader_env,check=True,timeout=5)
             except (OSError,subprocess.SubprocessError) as exc:
                 (target/'uploader_launch_error.txt').write_text(str(exc)+'\n')
                 print('Uploader launch failed; local metrics retained:',exc,file=sys.stderr,flush=True)
-        deadline=started+profile['wall_seconds']
-        try:code=process.wait(timeout=max(.01,deadline-15-time.monotonic()))
-        except (subprocess.TimeoutExpired,KeyboardInterrupt):
-            os.killpg(process.pid,signal.SIGTERM)
-            try:process.wait(timeout=max(.01,deadline-time.monotonic()))
-            except subprocess.TimeoutExpired:os.killpg(process.pid,signal.SIGKILL);process.wait()
-            code=124
+        code=wait_for_training(process,started,profile['wall_seconds'])
         if viewer is not None:
             try:viewer.wait(timeout=3)
             except subprocess.TimeoutExpired:viewer.terminate();viewer.wait()
