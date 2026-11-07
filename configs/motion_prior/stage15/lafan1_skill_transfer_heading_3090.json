@@ -1,0 +1,70 @@
+{
+  "teacher": "logs/s54_joint_ab1_20261106_025912_seed54/last.pt",
+  "teacher_sha256": "ef5671d4e223ab004c1f69837fffca6f461ca1c2c661c111b5afc2f82e6e5544",
+  "reference_manifest": "results/s54/motion_prior_stage0_verified/manifest.json",
+  "seed": 54,
+  "hist": 10,
+  "horizon": 32,
+  "wm_window": 8,
+  "goal_frames": 10,
+  "goal_dt": 0.02,
+  "amp": "bf16",
+  "phase_a_iterations": 4000,
+  "phase_a_batch": 512,
+  "phase_a_lr": 0.0003,
+  "phase_a_budget_s": 600,
+  "phase_b_iterations": 800,
+  "phase_b_budget_s": 1800,
+  "num_envs": 256,
+  "rollout_steps": 5,
+  "buffer_steps": 256,
+  "warmup_steps": 32,
+  "wm_only_iters": 100,
+  "wm_batch": 512,
+  "wm_batches": 4,
+  "pi_batch": 128,
+  "lr_wm": 5e-05,
+  "lr_actor": 1e-05,
+  "lr_critic": 0.0001,
+  "gamma": 0.99,
+  "lam": 0.95,
+  "critic_epochs": 2,
+  "critic_minibatches": 4,
+  "action_noise": 0.02,
+  "checkpoint_every": 200,
+  "evaluation_every": 800,
+  "log_every": 25,
+  "swanlab_project": "Foothold_with_SuperMimic_Core",
+  "swanlab_workspace": "yagami_light",
+  "gate": {
+    "survival_cases": 3,
+    "max_nr_drop": 0.1,
+    "foot_rmse_margin_m": 0.05,
+    "upper_pose_margin_rad": 0.15
+  },
+  "holdout_walking": "NOT AVAILABLE: only dance1_subject1 is a qualified independent clip",
+  "causal_heading": true,
+  "exclude_eval_windows": false,
+  "heading_bias_rad": -0.06616310775279999,
+  "reference_tilt_roll_pitch_rad": [
+    0.006717108655720949,
+    0.059499938040971756
+  ],
+  "root_augmentation_sigmas": [
+    [
+      0.1,
+      0.2
+    ],
+    [
+      0.25,
+      0.5
+    ]
+  ],
+  "experiment_note": "Bounded repair: source Walking clip coverage + causal FootGoal-derived heading; previous temporal-holdout masked run retained",
+  "calibration": {
+    "training_frame_count": 11755,
+    "source": "walk1 training frames only; 1s validation blocks excluded",
+    "fit": "circular mean contact-weighted future foot yaw; mean reference roll/pitch",
+    "seed": 54
+  }
+}
