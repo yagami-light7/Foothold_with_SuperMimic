@@ -1,5 +1,7 @@
 # M3.4 → M4 short training entry
 
+3090 环境迁移、数据复制和宿主机 SwanLab 设置见 [S54_M34_3090.md](S54_M34_3090.md)。
+
 Run from `supermimic_s54_main` on the Docker host:
 
 ```bash
@@ -86,8 +88,11 @@ docker exec supermimic_s54_m34 python tools/m34_rollout.py \
 Use a new output directory each time; diagnostics are never overwritten.
 Actuator-reported torque fields can be implicit-controller estimates and are
 labelled accordingly. They are not presented as measured solver effort.
-SwanLab host credentials/SDK were not found in this checkout; CSV/JSON logs
-are always local and can be uploaded with the existing `tools/sync_swanlab.py`.
+SwanLab is disabled by default. After installing/logging in on the Docker host,
+set `SWANLAB_ENABLED=true` in the environment or the M3.4 launcher's defaults;
+it validates login before GPU work and starts a detached host CSV uploader.
+Set project/workspace/name in `tools/run_s54_m34.sh`, not the legacy `run_train.sh`.
+CSV/JSON logs are always retained locally.
 The uploader defaults to `--core_only`: only whitelisted core hyperparameters
 and WM/Policy/Critic losses, simulator reward, episode return/length/termination,
 Actor gradient norm, throughput and simulated-step count are sent. Full task and

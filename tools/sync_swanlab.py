@@ -82,16 +82,19 @@ def training_exit_code(run_dir, container=None, session=None):
     return None
 
 
-def load_swanlab(mode, authenticate=False):
+def load_swanlab(mode, authenticate=False, core_only=True):
     try:
         import swanlab
     except ImportError as exc:
         raise RuntimeError('Install the host SDK: .venv-swanlab/bin/python -m pip install swanlab') from exc
-    settings = swanlab.Settings(interactive=False, probe=swanlab.Settings.Probe(monitor=False))
+    probe = dict(monitor=False)
+    if core_only:
+        probe.update(hardware=False, runtime=False, requirements=False, conda=False, git=False, swanlab=False)
+    settings = swanlab.Settings(interactive=False, probe=swanlab.Settings.Probe(**probe))
     swanlab.merge_settings(settings)
     if mode == 'online' and authenticate:
         # Uses SWANLAB_API_KEY or the cached host login; never prompts in a job.
-        swanlab.login(timeout=10)
+        swanlab.login()
     return swanlab
 
 
@@ -245,7 +248,7 @@ def main():
     if not args.check and not args.run_dir:
         parser.error('--run_dir is required')
     signal.signal(signal.SIGTERM, stop_sync)
-    swanlab = load_swanlab(args.mode, authenticate=args.check)
+    swanlab = load_swanlab(args.mode, authenticate=args.check, core_only=args.core_only)
     if args.check:
         print(f'PASS: SwanLab SDK ready ({args.mode})' + ('; cloud authentication checked' if args.mode == 'online' else ''))
         return
