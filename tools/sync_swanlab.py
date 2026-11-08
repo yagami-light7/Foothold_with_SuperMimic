@@ -37,6 +37,19 @@ OPTIONAL_METRICS = {
     'head_penalty_norm': 'Head/NormalizedPenalty',
 }
 
+# Core-only uploads deliberately omit paths, clip inventories, reward/task
+# dictionaries, head diagnostics and arbitrary curriculum/gradient telemetry.
+CORE_CONFIG_KEYS = {
+    'goal_mode', 'num_envs', 'iterations', 'buffer_steps', 'warmup_steps', 'utd',
+    'wm_window', 'wm_batch', 'wm_batches', 'wm_only_iters', 'pi_batch', 'horizon',
+    'hist', 'goal_frames', 'goal_dt', 'lr', 'actor_lr', 'critic_lr', 'gamma', 'lam',
+    'action_noise', 'm34_straight_iters', 'm34_eval_every', 'amp', 'seed',
+}
+CORE_METRICS = {key: METRICS[key] for key in (
+    'wm_loss', 'pi_loss', 'v_loss', 'sim_rew', 'ep_ret_norm', 'ep_len',
+    'term_frac', 'pi_gradnorm', 'it_per_s', 'sim_steps',
+)}
+
 
 def read_latest_run(csv_path):
     """Ignore a partially written last line and any older appended CSV runs."""
@@ -126,8 +139,10 @@ def sync_run(args, swanlab):
         temporary.replace(path)
 
     initialized = False
+    core_only = getattr(args, 'core_only', True)
     try:
-        kwargs = dict(project=args.project, name=result['experiment_name'], config=config,
+        uploaded_config = {k: v for k, v in config.items() if k in CORE_CONFIG_KEYS and v is not None} if core_only else config
+        kwargs = dict(project=args.project, name=result['experiment_name'], config=uploaded_config,
                       log_dir=str(run_dir / 'swanlab'), mode=args.mode)
         if args.workspace:
             kwargs['workspace'] = args.workspace
@@ -146,7 +161,7 @@ def sync_run(args, swanlab):
                 raise RuntimeError('A different CSV run was appended; refusing to mix experiments')
             extra={}
             extra_path=run_dir/'curriculum_metrics.jsonl'
-            if extra_path.exists():
+            if not core_only and extra_path.exists():
                 for line in extra_path.read_text().splitlines(keepends=True):
                     if not line.endswith('\n'): continue
                     event=json.loads(line)
@@ -155,10 +170,12 @@ def sync_run(args, swanlab):
             for row in rows:
                 try:
                     step = int(row['iteration'])
-                    if extra_path.exists() and code is None and step == max_step: continue
-                    values = {name: float(row[key]) for key, name in METRICS.items()}
-                    values.update({name: float(row[key]) for key, name in OPTIONAL_METRICS.items()
-                                   if row.get(key) not in (None, '')})
+                    if not core_only and extra_path.exists() and code is None and step == max_step: continue
+                    selected_metrics = CORE_METRICS if core_only else METRICS
+                    values = {name: float(row[key]) for key, name in selected_metrics.items()}
+                    if not core_only:
+                        values.update({name: float(row[key]) for key, name in OPTIONAL_METRICS.items()
+                                       if row.get(key) not in (None, '')})
                 except (KeyError, TypeError, ValueError):
                     continue
                 if step <= last_step or not all(math.isfinite(v) for v in values.values()):
@@ -170,8 +187,7 @@ def sync_run(args, swanlab):
                 status('running')
             if not args.follow or code is not None:
                 if code not in (None, 0):
-                    print(f'Training exited with status {code}; final available metrics were recorded',flush=True)
-                    finish_state='crashed'; status('training_failed',f'Training exit {code}'); break
+                    raise RuntimeError(f'Training exited with status {code}; final available metrics were recorded')
                 finish_state = 'success'
                 break
             # Manual follow without a launcher completion marker can use the target.
@@ -212,6 +228,8 @@ def main():
     parser.add_argument('--workspace')
     parser.add_argument('--experiment_name')
     parser.add_argument('--mode', choices=['online', 'offline'], default='online')
+    parser.add_argument('--core_only', action=argparse.BooleanOptionalAction, default=True,
+                        help='Upload only core hyperparameters/metrics (default); --no-core_only opts into detailed telemetry')
     parser.add_argument('--follow', action='store_true', help='Follow new metrics instead of uploading one snapshot')
     parser.add_argument('--completion_marker', action='store_true', help='Wait for train.exitcode, even after the last metric')
     parser.add_argument('--container', help='Also detect when a Docker training session disappears')

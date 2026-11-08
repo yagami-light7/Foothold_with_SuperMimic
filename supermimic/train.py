@@ -60,6 +60,10 @@ parser.add_argument("--lr_decay_iters", type=int, default=250_000)
 parser.add_argument("--ckpt_every", type=int, default=30)
 parser.add_argument("--log_every", type=int, default=10)
 parser.add_argument("--motion_dir", type=str, default=os.path.join(REPO, "data", "retarget_data", "reference_startup_fixed"))
+parser.add_argument('--m34_dataset', help='M3.4 dataset_export root; strictly train split, native 50 Hz NPZ')
+parser.add_argument('--m34_straight_iters', type=int, default=1000, help='Straight emphasis before equal three-class sampling')
+parser.add_argument('--m34_eval_every', type=int, default=1000, help='Independent frozen train/test Newton eval interval; 0 disables')
+parser.add_argument('--m34_eval_seeds', nargs='+', type=int, default=[0, 1, 2], help='0 nominal; nonzero seeds use reset perturbations')
 parser.add_argument("--clips", nargs="+", help="Clip names or quoted glob patterns; omit to train all top-level CSVs")
 parser.add_argument("--log_dir", type=str, default=os.path.join(REPO, "logs", "s54_smoke"))
 parser.add_argument("--seed", type=int, default=0)
@@ -88,6 +92,8 @@ add_goal_args(parser)
 add_launcher_args(parser)
 args = parser.parse_args()
 try:
+    if args.m34_eval_every < 0 or not args.m34_eval_seeds or len(set(args.m34_eval_seeds)) != len(args.m34_eval_seeds) or any(s < 0 for s in args.m34_eval_seeds):
+        raise ValueError('Invalid M3.4 evaluation interval or seed protocol')
     goal_spec, foot_config = resolve_goal_config(args)
     if args.goal_mode != 'foot_trajectory' and (args.foot_task_config or args.check_foot_gradients):
         raise ValueError('Foot task configuration/gradient checks require --goal_mode foot_trajectory')
@@ -152,12 +158,20 @@ motion_files = []
 data_contract=None
 if task_cfg is None:
     try:
-        if args.reference_manifest:
+        if args.m34_dataset:
+            if args.goal_mode != 'motion' or args.reference_manifest or args.clips or args.m34_straight_iters < 0:
+                raise ValueError('M3.4 requires motion goals, all train clips, and no legacy manifest')
+            from supermimic.m34 import entries, dataset_contract
+            _, _, rows = entries(args.m34_dataset, 'train')
+            motion_files = [str(Path(args.m34_dataset)/r['path']) for r in rows]
+            data_contract = dataset_contract(args.m34_dataset)
+        elif args.reference_manifest:
             motion_files,data_contract=load_manifest(args.reference_manifest,args.manifest_split)
         else: motion_files = select_reference_files(args.motion_dir, args.clips)
     except (FileNotFoundError, ValueError) as exc:
         parser.error(str(exc))
 else:
+    if args.m34_dataset: parser.error('M3.4 uses the original Motion encoder, not a Foot task')
     args.motion_dir = None
     args.foot_task_config = asdict(task_cfg)
 # Record the resolved names, including when all clips or a glob was requested.
@@ -195,7 +209,12 @@ os.makedirs(args.log_dir, exist_ok=True)
 
 
 kin = S54Kinematics(dev)
-motion = MotionLib(motion_files, kin, dev) if task_cfg is None else None
+if args.m34_dataset:
+    from supermimic.m34 import motion_library
+    motion = motion_library(args.m34_dataset, kin, dev, 'train')
+    (log_path/'m34_data_validation.json').write_text(json.dumps(motion.validation, indent=2))
+else:
+    motion = MotionLib(motion_files, kin, dev) if task_cfg is None else None
 default_q = torch.tensor(default_joint_pos_list(), device=dev)
 goals = GoalSource(motion, kin, goal_spec, foot_config,
                    command_mode='alternating' if task_cfg is None else task_cfg.command_mode)
@@ -236,7 +255,10 @@ start_it, wall_offset, sim_steps = 0, 0.0, 0
 supervision_steps=0
 physics_metadata=physical_contract()
 transfer_report=None
-git_sha=subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip()
+git_sha=os.environ.get('S54_SOURCE_GIT_SHA')
+if not git_sha:
+    git_result=subprocess.run(['git','rev-parse','HEAD'],cwd=REPO,text=True,capture_output=True)
+    git_sha=git_result.stdout.strip() if git_result.returncode==0 else 'unavailable-in-container'
 launch_metadata=json.loads((log_path/'launch.json').read_text()) if (log_path/'launch.json').exists() else {}
 source_snapshot=launch_metadata.get('source_snapshot')
 if args.resume:
@@ -575,6 +597,9 @@ def policy_update(audit_gradients=False):
 sim_cfg = make_sim(dev, args)
 with launch_simulation(sim_cfg, args):
     env = TrackingSim(sim_cfg, args.num_envs, motion, mdp, gamma=args.gamma, goals=goals)
+    if args.m34_dataset:
+        env.m34_iteration = start_it
+        env.m34_straight_iters = args.m34_straight_iters
     buffer = ReplayBuffer(args.buffer_steps, args.num_envs, dev, foot_commands=goals.is_foot)
     obs_hist = torch.zeros(args.num_envs, Hh, OBS_DIM, device=dev)
 
@@ -662,7 +687,7 @@ with launch_simulation(sim_cfg, args):
             print('Nonfinite model/normalization state saved separately; previous latest preserved',flush=True)
             return
         atomic_save(ckpt, log_path/'last.pt')
-        if curriculum:
+        if curriculum or args.m34_dataset:
             # latest is an atomic hard-link alias of the full last.pt.
             temp=log_path/'latest.pt.tmp'
             if temp.exists(): temp.unlink()
@@ -692,6 +717,7 @@ with launch_simulation(sim_cfg, args):
     try:
         collect(args.warmup_steps, stats)
         for it in range(start_it, args.iterations):
+            if args.m34_dataset: env.m34_iteration = it
             if STOP_REQUESTED or (args.wall_seconds is not None and elapsed()>=args.wall_seconds) or (curriculum and elapsed() >= curriculum.cfg['budget_seconds']-45):
                 print('Safe stop requested / wall-clock budget reserve reached',flush=True); break
             lr = lr_at(it)
@@ -821,6 +847,26 @@ with launch_simulation(sim_cfg, args):
                 print(f'WM-only phase complete at iteration {current_it}; saved wm_calibrated.pt; Actor/Critic updates begin next iteration',flush=True)
             elif current_it % args.ckpt_every == 0 or current_it == args.iterations:
                 save_checkpoint()
+            if args.m34_dataset and args.m34_eval_every and current_it % args.m34_eval_every == 0:
+                # No restart/refill: replay, optimizer, RNG and simulator state
+                # remain in this process while separate Newton children evaluate.
+                evaluation_dir = log_path/'evals'/f'iter_{current_it:06d}'
+                evaluation_dir.mkdir(parents=True, exist_ok=True)
+                frozen_checkpoint = evaluation_dir/'checkpoint.pt'
+                if not frozen_checkpoint.exists():
+                    save_checkpoint()
+                    # A hard link preserves this exact serialization even when
+                    # last.pt / ckpt_*.pt are atomically replaced on final save.
+                    os.link(log_path/'last.pt', frozen_checkpoint)
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+                from supermimic.m34_evaluation import evaluate_checkpoint
+                print(f'Iteration {current_it}: paused training for independent frozen Newton evaluation', flush=True)
+                evaluation_started = time.time()
+                evaluate_checkpoint(frozen_checkpoint, args.m34_dataset, evaluation_dir, args.m34_eval_seeds)
+                print(f'Iteration {current_it}: evaluation complete; continuing existing replay/optimizers', flush=True)
+                # Exclude evaluation duration from the next throughput window.
+                t_log += time.time()-evaluation_started
         if curriculum and not STOP_REQUESTED:
             remaining=curriculum.cfg['budget_seconds']-elapsed()
             allowance=min(180.,elapsed()*curriculum.cfg['eval_fraction']-curriculum.eval_spent)

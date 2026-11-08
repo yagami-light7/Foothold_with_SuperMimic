@@ -16,7 +16,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / 'tools'))
 from supermimic.reference_selection import select_reference_files
-from sync_swanlab import METRICS, read_latest_run, sync_run
+from sync_swanlab import METRICS, CORE_METRICS, read_latest_run, sync_run
 
 
 HEADER = ['iteration', 'wall_h', 'sim_steps', 'wm_loss', 'wm_err8', 'pi_loss', 'v_loss',
@@ -69,7 +69,7 @@ class SelectionAndSyncTests(unittest.TestCase):
         (self.root / 'args.json').write_text(json.dumps({'iterations': 25, 'clips': ['dance1_subject1']}))
         return argparse.Namespace(run_dir=self.root, container=None, session=None, startup_timeout=1,
                                   poll_seconds=.001, experiment_name='test_run', project='SuperMimic',
-                                  mode='offline', workspace=None, follow=follow, completion_marker=True)
+                                  mode='offline', workspace=None, follow=follow, completion_marker=True, core_only=False)
 
     def test_selection_deduplicates_and_excludes_nested_csvs(self):
         root = self.references()
@@ -250,6 +250,21 @@ class SelectionAndSyncTests(unittest.TestCase):
         self.assertEqual(set(recorder.rows[0][1]), set(METRICS.values()))
         self.assertEqual(recorder.config['config']['clips'], ['dance1_subject1'])
         self.assertEqual(recorder.state, 'success')
+
+    def test_core_only_excludes_diagnostics_and_large_config(self):
+        args = self.sync_args()
+        args.core_only = True
+        (self.root/'args.json').write_text(json.dumps(dict(iterations=25, num_envs=128, lr=.0002,
+            clips=['dance1_subject1'], reward_config={'large': 'local only'}, motion_dir='/private/path',
+            m34_eval_every=1000, actor_lr=None)))
+        lines = training_csv([10]).splitlines()
+        (self.root/'train_log.csv').write_text(lines[0]+',head_rms_deg\n'+lines[1]+',12.5\n')
+        (self.root/'curriculum_metrics.jsonl').write_text(json.dumps(dict(iteration=10,
+            values={'Diagnostic/Bootstrap': 999}))+'\n')
+        recorder = Recorder()
+        sync_run(args, recorder)
+        self.assertEqual(recorder.config['config'], dict(iterations=25, num_envs=128, lr=.0002, m34_eval_every=1000))
+        self.assertEqual(set(recorder.rows[0][1]), set(CORE_METRICS.values()))
 
     def test_resume_keeps_cloud_id_and_uploads_optional_head_metrics(self):
         args = self.sync_args()

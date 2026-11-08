@@ -153,6 +153,15 @@ class TrackingSim:
     # ------------------------------------------------------------------ reset
     def sample_frames(self, n: int) -> tuple[torch.Tensor, torch.Tensor]:
         m = self.motion
+        if getattr(m, 'split', None) == 'train' and not self.eval_mode:
+            from .m34 import balanced_bin_probs
+            probs = balanced_bin_probs(m, self.bin_G, self.G_max,
+                                       getattr(self, 'm34_iteration', 0),
+                                       getattr(self, 'm34_straight_iters', 1000))
+            bins = torch.multinomial(probs, n, replacement=True)
+            start = torch.minimum(m.bin_start[bins], m.clip_end[m.bin_clip[bins]]-1)
+            end = torch.minimum(start+50, m.clip_end[m.bin_clip[bins]])
+            return start+(torch.rand(n, device=self.device)*(end-start)).long(), bins
         soft = torch.softmax(-25.0 * self.bin_G / self.G_max, 0)
         self.bin_w_avg.mul_(0.999).add_(0.001 * soft)
         probs = 0.5 / m.num_bins + 0.4 * soft + 0.1 * self.bin_w_avg / self.bin_w_avg.sum()
