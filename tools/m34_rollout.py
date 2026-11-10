@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 import json
 from pathlib import Path
 import sys
@@ -35,7 +36,7 @@ from supermimic.m34 import motion_library, dataset_contract, sha256
 from supermimic.kinematics import S54Kinematics
 from supermimic.env import TrackingSim, make_sim
 from supermimic.goals import GoalSource, GoalSpec
-from supermimic.mdp import MDP, OBS_DIM, RewardCfg
+from supermimic.mdp import MDP, RewardCfg
 from supermimic.networks import Policy
 from supermimic.control import bound_action
 from supermimic.rotations import quat_to_mat, mat_to_quat, so3_log, so3_exp
@@ -83,7 +84,7 @@ def fk_gate(env, kin, motion):
     if not (errors < limits).all():
         raise RuntimeError(f'Newton FK/velocity gate failed: {errors.tolist()}')
     return dict(status='PASS', reference_poses=len(frames), random_poses=16,
-                all_bodies=30, max_errors=errors.tolist(), physical_contract=physical_contract())
+                all_bodies=30, max_errors=errors.tolist(), physical_contract=physical_contract(obs_dim=env.mdp.obs_dim))
 
 
 @torch.no_grad()
@@ -206,19 +207,26 @@ def main():
             assert_checkpoint(ck)
             if ck['data_contract'] != dataset_contract(args.dataset):
                 raise ValueError('Checkpoint training dataset contract mismatch')
-            if ck['physical_contract'] != physical_contract():
-                raise ValueError('Checkpoint physics contract mismatch')
         config = ck['args'] if ck else {}
         spec = GoalSpec('motion', config.get('goal_frames', 10), config.get('goal_dt', .02))
         if ck: spec.assert_checkpoint(ck)
         goals = GoalSource(motion, kin, spec)
-        mdp = MDP(kin, motion, torch.tensor(default_joint_pos_list(), device=device), RewardCfg(**config.get('reward_config', {})))
+        mdp = MDP(kin, motion, torch.tensor(default_joint_pos_list(), device=device),
+                  RewardCfg(**config.get('reward_config', {})),
+                  observation_mode=config.get('motion_obs_mode', 'legacy_v1'))
+        report.update(obs_dim=mdp.obs_dim, observation_mode=mdp.observation_mode,
+                      reward_config=asdict(mdp.cfg), max_step_reward=mdp.max_step_reward)
+        if ck:
+            from supermimic.foot_mdp import assert_task_checkpoint
+            assert_task_checkpoint(ck, mdp)
+            if ck['physical_contract'] != physical_contract(obs_dim=mdp.obs_dim):
+                raise ValueError('Checkpoint physics/observation contract mismatch')
         pi = None
         history = config.get('hist', 10)
         if ck:
             import supermimic.networks as networks
             networks.AMP_DTYPE = torch.bfloat16 if config.get('amp') == 'bf16' else None
-            pi = Policy(OBS_DIM, spec.dim, hist=history, obs_adapter=config.get('obs_adapter', 'identity')).to(device)
+            pi = Policy(mdp.obs_dim, spec.dim, hist=history, obs_adapter=config.get('obs_adapter', 'identity')).to(device)
             pi.load_state_dict(ck['pi']); pi.eval(); pi.requires_grad_(False)
             report.update(checkpoint=args.checkpoint, checkpoint_sha256=sha256(args.checkpoint), iteration=ck['iteration'])
         sim_cfg = make_sim(device, args)

@@ -53,7 +53,8 @@ class TrackingSim:
     """
 
     def __init__(self, sim_cfg, num_envs: int, motion: MotionLib, mdp: MDP, gamma: float = 0.99, eval_mode: bool = False,
-                 max_episode_steps: int | None = None, reset_noise: bool = True, goals: GoalSource | None = None):
+                 max_episode_steps: int | None = None, reset_noise: bool = True, goals: GoalSource | None = None,
+                 scene_cfg=None, scene_setup=None):
         if not USD_PATH.is_file():
             raise FileNotFoundError(f"Generate S54 USD first: python tools/mjcf_to_usd.py ({USD_PATH})")
         manifest = json.loads((USD_PATH.parents[1]/"contract.json").read_text())
@@ -63,7 +64,10 @@ class TrackingSim:
             raise ValueError("Simulation MJCF changed; regenerate USD")
         self.device = sim_cfg.device
         self.sim = SimulationContext(sim_cfg)
-        self.scene = instantiate(TrackingSceneCfg(num_envs=num_envs, env_spacing=0.0, replicate_physics=True))
+        if scene_setup is not None:
+            scene_setup()
+        self.scene = instantiate(scene_cfg if scene_cfg is not None else
+            TrackingSceneCfg(num_envs=num_envs, env_spacing=0.0, replicate_physics=True))
         self.sim.reset()
         # Isaac Lab 3 renamed this public manager; support the original image too.
         self.physics = self.sim.physics_manager if hasattr(self.sim, 'physics_manager') else self.sim.backend_manager

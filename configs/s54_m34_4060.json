@@ -22,5 +22,23 @@
   "amp": "bf16",
   "wall_seconds": 15000,
   "eval_every": 1000,
-  "eval_seeds": [0, 1, 2]
+  "eval_seeds": [0, 1, 2],
+  "motion_obs_mode": "root_xy_heading_v2",
+  "motion_reward_config": {
+    "w_body_pos": 1.0,
+    "body_pos_std": 0.3,
+    "w_body_ori": 1.0,
+    "body_ori_std": 0.4,
+    "w_body_linvel": 1.0,
+    "w_body_angvel": 1.0,
+    "w_root_pos": 1.0,
+    "root_position_mode": "xy",
+    "root_pos_std": 0.20,
+    "w_root_ori": 0.75,
+    "root_ori_std": 0.30,
+    "w_foot_pos": 0.50,
+    "foot_pos_std": 0.08,
+    "w_foot_ori": 0.25,
+    "foot_ori_std": 0.20
+  }
 }

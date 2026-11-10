@@ -1,0 +1,16 @@
+{
+  "terrain_id": "s54_straight_stairs_4_v1",
+  "type": "straight_stairs",
+  "terrain_size_xy_m": [
+    6.0,
+    2.0
+  ],
+  "outer_border_width_m": 0.5,
+  "num_steps": 4,
+  "step_height_m": 0.1,
+  "step_depth_m": 0.4,
+  "approach_length_m": 1.5,
+  "base_thickness_m": 0.1,
+  "heightmap_resolution_m": 0.02,
+  "seed": 42
+}

@@ -1,0 +1,33 @@
+{
+  "schema": "s54_terrain_asset_v1",
+  "terrain_id": "s54_straight_stairs_4_v1",
+  "frame": "world",
+  "axis": "Z_UP",
+  "units": "m",
+  "mesh_file": "terrain_mesh.npz",
+  "mesh_sha256": "1503c3e9481b92e0a6979631d3fd7748d21f7978954c48dc7cffb8b5cc6a43b2",
+  "heightmap_file": "height_map.npz",
+  "heightmap_sha256": "47e302150a185c93290fe8513f39e93c32398c04cb2803eca50e7d45e8dc677c",
+  "heightmap_layout": "height_m[y_index,x_index]",
+  "heightmap_samples": "cell_centers",
+  "heightmap_edge_policy": "edge_mask => query exact mesh",
+  "terrain_origin_world_m": [
+    -2.25,
+    0.0,
+    0.0
+  ],
+  "mesh_bounds_world_m": [
+    [
+      -3.5,
+      -1.5,
+      -0.1
+    ],
+    [
+      3.5,
+      1.5,
+      0.4
+    ]
+  ],
+  "num_vertices": 72,
+  "num_triangles": 68
+}

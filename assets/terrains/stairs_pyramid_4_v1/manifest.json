@@ -1,0 +1,33 @@
+{
+  "schema": "s54_terrain_asset_v1",
+  "terrain_id": "s54_pyramid_stairs_4_v1",
+  "frame": "world",
+  "axis": "Z_UP",
+  "units": "m",
+  "mesh_file": "terrain_mesh.npz",
+  "mesh_sha256": "e1f49db187d9fc1b732307c0560b44527ead0e3d15e180aecff033a0ef6e988f",
+  "heightmap_file": "height_map.npz",
+  "heightmap_sha256": "20ea44bee6ad74d26abc7e979e5a70d9f1d1d5a902bf754dc0908cf3300fd3eb",
+  "heightmap_layout": "height_m[y_index,x_index]",
+  "heightmap_samples": "cell_centers",
+  "heightmap_edge_policy": "edge_mask => query exact mesh",
+  "terrain_origin_world_m": [
+    0.0,
+    0.0,
+    0.4
+  ],
+  "mesh_bounds_world_m": [
+    [
+      -3.0,
+      -3.0,
+      -0.10000000000000002
+    ],
+    [
+      3.0,
+      3.0,
+      0.4
+    ]
+  ],
+  "num_vertices": 136,
+  "num_triangles": 164
+}

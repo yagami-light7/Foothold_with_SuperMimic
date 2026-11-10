@@ -37,7 +37,7 @@ def train_args(config, run, smoke=False, resume=None):
             '--m34_eval_every', str(0 if smoke else eval_every),
             '--m34_eval_seeds', *map(str, eval_seeds)]
     for k, v in cfg.items():
-        args += ['--'+k, str(v)]
+        args += ['--'+k, json.dumps(v, allow_nan=False) if isinstance(v, dict) else str(v)]
     if resume: args += ['--resume', resume]
     return args
 
@@ -111,6 +111,8 @@ def main():
     p.add_argument('--run', required=True); p.add_argument('--config', required=True); p.add_argument('--resume')
     args = p.parse_args()
     if not args.run.startswith('s54_') or '/' in args.run: p.error('Use a fresh s54_* run name')
+    if args.resume and not Path(args.resume).is_file():
+        p.error(f'Resume checkpoint does not exist: {args.resume}')
     run = Path('logs')/args.run
     run.mkdir(parents=True, exist_ok=True)
     config = json.loads(Path(args.config).read_text())
@@ -123,25 +125,34 @@ def main():
     (run/'launch.json').write_text(json.dumps(dict(source_snapshot=str(source),
         git_sha=os.environ.get('S54_SOURCE_GIT_SHA', 'unavailable-in-container')), indent=2))
     status = dict(status='preflight', started=time.time(), config=args.config)
+    if args.resume:
+        status.update(resume_checkpoint=str(Path(args.resume).resolve()),
+                      preparation='PD and fresh-policy smoke skipped on resume')
     def update(stage):
         status['stage'] = stage
         if status['status'] not in ('completed', 'failed'): status['status'] = 'running'
         (run/'pipeline_status.json').write_text(json.dumps(status, indent=2))
     rollout = [sys.executable, '-u', 'tools/m34_rollout.py', '--dataset', config['dataset']]
     try:
+        update('cuda_preflight'); call(sys.executable, 'tools/check_s54_cuda.py')
         update('cpu_contract_tests'); call(sys.executable, 'tools/test_s54_m34.py')
-        update('pd_baseline')
-        call(*rollout, '--out', run/'pd')
-        for clean_id in ('straight_flat_20', 'turn_flat_11', 'spin_flat_02'):
-            raw_command = [*rollout, '--out', run/('pd_raw_'+clean_id), '--raw_comparison', clean_id]
-            # A raw reference failure is diagnostic, not a reason to reject
-            # the clean train set. m34_rollout retains its error JSON.
-            print('RAW COMPARISON:', clean_id, flush=True)
-            subprocess.run(list(map(str, raw_command)), check=False)
-        call(sys.executable, 'tools/report_s54_m34_pd.py', '--run_dir', run)
-        update('smoke')
-        smoke = Path(str(run)+'_smoke')
-        call(*train_args(config, smoke, smoke=True)); check_smoke(smoke)
+        if args.resume:
+            print(f'Resume from {args.resume}: skipping repeated PD baseline and fresh-policy smoke. '
+                  'The trainer validates checkpoint contracts, restores models/optimizers, '
+                  'refills replay and runs its WM recovery phase.', flush=True)
+        else:
+            update('pd_baseline')
+            call(*rollout, '--out', run/'pd')
+            for clean_id in ('straight_flat_20', 'turn_flat_11', 'spin_flat_02'):
+                raw_command = [*rollout, '--out', run/('pd_raw_'+clean_id), '--raw_comparison', clean_id]
+                # A raw reference failure is diagnostic, not a reason to reject
+                # the clean train set. m34_rollout retains its error JSON.
+                print('RAW COMPARISON:', clean_id, flush=True)
+                subprocess.run(list(map(str, raw_command)), check=False)
+            call(sys.executable, 'tools/report_s54_m34_pd.py', '--run_dir', run)
+            update('smoke')
+            smoke = Path(str(run)+'_smoke')
+            call(*train_args(config, smoke, smoke=True)); check_smoke(smoke)
         update('training')
         call(*train_args(config, run, resume=args.resume))
         # Reuse a completed boundary evaluation instead of evaluating the same
@@ -156,11 +167,12 @@ def main():
         from supermimic.m34_evaluation import evaluate_checkpoint
         evaluations = evaluate_checkpoint(checkpoint, config['dataset'], evaluation_dir, config.get('eval_seeds', [0, 1, 2]))
         update('rendering')
-        pd_rows = json.loads((run/'pd/results.json').read_text())['rows']
-        for mode in ('straight', 'turn', 'spin'):
-            row = next(r for r in pd_rows if r['mode'] == mode)
-            call(sys.executable, 'tools/render_s54_motion_prior.py', '--records', row['record'],
-                 '--labels', f'Newton PD {mode}', '--out', run/f'pd_{mode}.mp4', '--seconds', 2)
+        if not args.resume:
+            pd_rows = json.loads((run/'pd/results.json').read_text())['rows']
+            for mode in ('straight', 'turn', 'spin'):
+                row = next(r for r in pd_rows if r['mode'] == mode)
+                call(sys.executable, 'tools/render_s54_motion_prior.py', '--records', row['record'],
+                     '--labels', f'Newton PD {mode}', '--out', run/f'pd_{mode}.mp4', '--seconds', 2)
         for split, result in evaluations.items():
             for row in result['rows']:
                 if row['seed'] != 0: continue

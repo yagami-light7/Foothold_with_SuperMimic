@@ -26,6 +26,9 @@ if [[ "$MODE" != train && "$MODE" != resume ]]; then
 fi
 [[ "$RUN" =~ ^s54_[A-Za-z0-9_.-]+$ ]] || exit 2
 [[ -f "$CONFIG" && ! -e "logs/$RUN" ]] || { echo 'Missing config or run already exists'; exit 2; }
+if [[ "$MODE" == resume ]]; then
+  [[ -f "${4:-}" ]] || { echo 'Resume checkpoint required'; exit 2; }
+fi
 [[ "$SWANLAB_ENABLED" == true || "$SWANLAB_ENABLED" == false ]] || { echo 'SWANLAB_ENABLED must be true or false'; exit 2; }
 [[ "$SWANLAB_MODE" == online || "$SWANLAB_MODE" == offline ]] || { echo 'SWANLAB_MODE must be online or offline'; exit 2; }
 SYNC_ARGS=(--run_dir "logs/$RUN" --project "$SWANLAB_PROJECT" --mode "$SWANLAB_MODE"
@@ -47,9 +50,12 @@ if [[ "$(docker inspect --format '{{.State.Running}}' "$CONTAINER")" != true ]];
 fi
 BUSY="$(docker exec "$CONTAINER" nvidia-smi --query-compute-apps=pid --format=csv,noheader)"
 [[ ! "$BUSY" =~ [0-9] ]] || { echo "GPU busy: $BUSY"; exit 1; }
+if ! docker exec -w /workspace/supermimic "$CONTAINER" python tools/check_s54_cuda.py; then
+  echo 'CUDA preflight failed; no run directory, tmux job or uploader was created.' >&2
+  exit 1
+fi
 ARGS=(python -u tools/run_s54_m34.py --run "$RUN" --config "$CONFIG")
 if [[ "$MODE" == resume ]]; then
-  [[ -f "${4:-}" ]] || { echo 'Resume checkpoint required'; exit 2; }
   ARGS+=(--resume "$4")
 fi
 printf -v JOB '%q ' bash tools/run_s54_job.sh "logs/$RUN" "${ARGS[@]}"
@@ -68,6 +74,10 @@ if [[ "$SWANLAB_ENABLED" == true ]]; then
 else
   echo 'SwanLab: disabled (set SWANLAB_ENABLED=true to enable)'
 fi
-echo "Started: $RUN (PD -> smoke -> train with periodic frozen train/test eval -> videos/report)"
+if [[ "$MODE" == resume ]]; then
+  echo "Started: $RUN (resume checkpoint -> periodic frozen train/test eval -> videos/report; PD/fresh smoke skipped)"
+else
+  echo "Started: $RUN (PD -> smoke -> train with periodic frozen train/test eval -> videos/report)"
+fi
 echo "Log: logs/$RUN/stdout.log"
 echo "Attach: docker exec -it $CONTAINER tmux attach -t $RUN"

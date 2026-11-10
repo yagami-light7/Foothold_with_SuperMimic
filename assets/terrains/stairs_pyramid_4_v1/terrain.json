@@ -1,0 +1,14 @@
+{
+  "terrain_id": "s54_pyramid_stairs_4_v1",
+  "type": "isaaclab_mesh_pyramid_stairs",
+  "terrain_size_xy_m": [
+    4.0,
+    4.0
+  ],
+  "outer_border_width_m": 1.0,
+  "step_height_m": 0.1,
+  "step_width_m": 0.4,
+  "platform_width_m": 2.0,
+  "heightmap_resolution_m": 0.02,
+  "seed": 42
+}

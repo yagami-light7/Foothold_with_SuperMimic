@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import defaultdict
 import csv
 from datetime import datetime, timezone
 import json
@@ -9,6 +10,7 @@ import math
 import os
 from pathlib import Path
 import signal
+from statistics import mean
 import subprocess
 import time
 import uuid
@@ -37,13 +39,15 @@ OPTIONAL_METRICS = {
     'head_penalty_norm': 'Head/NormalizedPenalty',
 }
 
-# Core-only uploads deliberately omit paths, clip inventories, reward/task
-# dictionaries, head diagnostics and arbitrary curriculum/gradient telemetry.
+# Core-only uploads omit paths, clip inventories, unrelated task dictionaries,
+# head diagnostics and arbitrary curriculum/gradient telemetry. Motion reward
+# weights and observation mode identify this experiment and are retained.
 CORE_CONFIG_KEYS = {
     'goal_mode', 'num_envs', 'iterations', 'buffer_steps', 'warmup_steps', 'utd',
     'wm_window', 'wm_batch', 'wm_batches', 'wm_only_iters', 'pi_batch', 'horizon',
     'hist', 'goal_frames', 'goal_dt', 'lr', 'actor_lr', 'critic_lr', 'gamma', 'lam',
     'action_noise', 'm34_straight_iters', 'm34_eval_every', 'amp', 'seed',
+    'motion_obs_mode', 'obs_dim', 'motion_reward_config',
 }
 CORE_METRICS = {key: METRICS[key] for key in (
     'wm_loss', 'pi_loss', 'v_loss', 'sim_rew', 'ep_ret_norm', 'ep_len',
@@ -67,6 +71,58 @@ def read_latest_run(csv_path):
     return start, list(csv.DictReader(lines[start:]))
 
 
+def aggregate(rows):
+    """Equal reference weighting, averaging seeds within each reference first."""
+    if not rows:
+        raise ValueError('No evaluation rows')
+    clips = defaultdict(list)
+    for row in rows:
+        clips[row['id']].append(row)
+    metrics = {
+        'NormalizedReturn': 'normalized_return', 'SurvivalRate': 'survived',
+        'RootPositionRMSE_m': 'root_position_rmse_m',
+        'RootOrientationRMSE_rad': 'root_orientation_rmse_rad',
+        'JointRMSE_rad': 'joint_rmse_rad', 'FootPositionRMSE_m': 'foot_position_rmse_m',
+        'EpisodeSeconds': 'episode_s',
+    }
+    result = {label: mean(mean(float(r[key]) for r in group) for group in clips.values())
+              for label, key in metrics.items()}
+    result['ReferenceStepWeightedReturn'] = (
+        sum(mean(r['normalized_return'] for r in group) * group[0]['reference_steps']
+            for group in clips.values())
+        / sum(group[0]['reference_steps'] for group in clips.values()))
+    if not all(math.isfinite(value) for value in result.values()):
+        raise ValueError('Nonfinite evaluation metrics')
+    return result
+
+
+def evaluation_metrics(summary):
+    """Scalar metrics only; train/test and nominal/perturbed protocols stay separate."""
+    if summary['status'] != 'completed':
+        raise ValueError('Refusing to upload an incomplete evaluation as completed')
+    values = {}
+    for split, data in summary['splits'].items():
+        if split not in ('train', 'test'):
+            raise ValueError('Unexpected evaluation split')
+        if data['status'] != 'completed' or data['checkpoint_sha256'] != summary['checkpoint_sha256']:
+            raise ValueError('Incomplete or inconsistent frozen evaluation')
+        groups = defaultdict(list)
+        for row in data['rows']:
+            if row['split'] != split:
+                raise ValueError('Mixed train/test rows')
+            protocol = 'Perturbed' if row['reset_noise'] else 'Nominal'
+            groups[protocol].append(row)
+        for protocol, rows in groups.items():
+            prefix = f'Eval/{split.title()}/{protocol}'
+            values.update({f'{prefix}/{key}': value for key, value in aggregate(rows).items()})
+            field = 'id' if split == 'test' else 'mode'
+            for name in sorted({r[field] for r in rows}):
+                selected = aggregate([r for r in rows if r[field] == name])
+                selected_keys = ('NormalizedReturn', 'SurvivalRate', 'RootPositionRMSE_m')
+                values.update({f'{prefix}/{name}/{key}': selected[key] for key in selected_keys})
+    return values
+
+
 def training_exit_code(run_dir, container=None, session=None):
     marker = run_dir / 'train.exitcode'
     if marker.exists():
@@ -83,6 +139,10 @@ def training_exit_code(run_dir, container=None, session=None):
 
 
 def load_swanlab(mode, authenticate=False, core_only=True):
+    # The launcher passes --project explicitly. Recent SDKs reserve this env
+    # name for a structured Settings.Project value, not a plain project name.
+    # Remove it in this uploader process before importing/initializing the SDK.
+    os.environ.pop('SWANLAB_PROJECT', None)
     try:
         import swanlab
     except ImportError as exc:
@@ -116,13 +176,17 @@ def sync_run(args, swanlab):
             time.sleep(args.poll_seconds)
 
     last_step, active_header = -1, None
+    uploaded_evaluations = {}
     previous_status = run_dir/'swanlab_sync_status.json'
     if previous_status.exists():
         previous=json.loads(previous_status.read_text())
-        if previous.get('mode')==args.mode and previous.get('project')==args.project: last_step=previous.get('last_step',-1)
+        if previous.get('mode')==args.mode and previous.get('project')==args.project:
+            last_step=previous.get('last_step',-1)
+            uploaded_evaluations=previous.get('evaluations', {})
     finish_state = 'crashed'
     result = {'mode': args.mode, 'project': args.project, 'experiment_name': args.experiment_name or run_dir.name,
-              'clips': config.get('clips'), 'last_step': last_step}
+              'clips': config.get('clips'), 'last_step': last_step,
+              'evaluations': uploaded_evaluations}
     id_path=run_dir/'swanlab_run_id'
     if not id_path.exists():
         id_path.write_text(os.environ.get('SWANLAB_RUN_ID') or uuid.uuid4().hex[:16])
@@ -187,6 +251,27 @@ def sync_run(args, swanlab):
                 swanlab.log(values, step=step)
                 last_step = step
                 print(f'Recorded iteration {step} ({args.mode})', flush=True)
+                status('running')
+            # Evaluations finish after the training row at the same iteration.
+            # SwanLab tracks steps per metric, so these distinct Eval/* series
+            # can be logged later without delaying the live training curves.
+            for path in sorted((run_dir/'evals').glob('*/summary.json')):
+                name = path.parent.name
+                if not (name.startswith('iter_') or name.startswith('final_')):
+                    continue
+                evaluation_step = int(name.split('_', 1)[1])
+                summary = json.loads(path.read_text())
+                if summary.get('status') != 'completed':
+                    continue
+                key = str(path.relative_to(run_dir))
+                digest = summary['checkpoint_sha256']
+                if key in uploaded_evaluations:
+                    if uploaded_evaluations[key] != digest:
+                        raise ValueError('A previously uploaded frozen evaluation changed checkpoint')
+                    continue
+                swanlab.log(evaluation_metrics(summary), step=evaluation_step)
+                uploaded_evaluations[key] = digest
+                print(f'Recorded frozen evaluation {evaluation_step} ({args.mode})', flush=True)
                 status('running')
             if not args.follow or code is not None:
                 if code not in (None, 0):

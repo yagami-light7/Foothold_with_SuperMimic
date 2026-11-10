@@ -36,6 +36,7 @@ class HostLauncherTests(unittest.TestCase):
             ' fmt=a[a.index("--format")+1]\n'
             f' if "Mounts" in fmt: print(os.environ.get("FAKE_MOUNT",{str(self.root)!r}))\n'
             ' elif "State.Running" in fmt: print("true")\n'
+            'elif a[0]=="exec" and "tools/check_s54_cuda.py" in a: raise SystemExit(int(os.environ.get("FAKE_CUDA_EXIT","0")))\n'
             'elif a[0]=="exec" and "nvidia-smi" in a: print(os.environ.get("FAKE_BUSY",""))\n')
         sdk = self.root/'bin/swan-python'
         sdk.write_text(common+'record("sdk")\n'
@@ -45,8 +46,11 @@ class HostLauncherTests(unittest.TestCase):
         self.env = dict(os.environ, PATH=str(self.root/'bin')+os.pathsep+os.environ['PATH'],
                         SWANLAB_ENABLED='false', SWANLAB_PYTHON=str(sdk), CONTAINER_NAME='s54_m34_test')
 
-    def run_launcher(self, **env):
-        result = subprocess.run(['bash', 'tools/run_s54_m34.sh', 'train', 's54_host_test', 'configs/train.json'],
+    def run_launcher(self, mode='train', checkpoint=None, **env):
+        command = ['bash', 'tools/run_s54_m34.sh', mode, 's54_host_test', 'configs/train.json']
+        if checkpoint is not None:
+            command.append(str(checkpoint))
+        result = subprocess.run(command,
                                 cwd=self.root, env=self.env | env, capture_output=True, text=True)
         return result
 
@@ -89,6 +93,31 @@ class HostLauncherTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse((self.root/'logs/s54_host_test').exists())
                 self.assertFalse(any('tmux' in args for kind, args in self.records() if kind == 'docker'))
+
+    def test_cuda_execution_failure_prevents_job_and_run_creation(self):
+        result = self.run_launcher(FAKE_CUDA_EXIT='17')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('CUDA preflight failed', result.stderr)
+        self.assertFalse((self.root/'logs/s54_host_test').exists())
+        self.assertFalse(any('tmux' in args for kind, args in self.records() if kind == 'docker'))
+        self.assertFalse(any(kind == 'sdk' and '--follow' in args for kind, args in self.records()))
+
+    def test_resume_passes_checkpoint_and_reports_skipped_preparation(self):
+        checkpoint = Path('logs/s54_old/last.pt')
+        (self.root/checkpoint).parent.mkdir(parents=True)
+        (self.root/checkpoint).write_bytes(b'checkpoint path fixture')
+        result = self.run_launcher(mode='resume', checkpoint=checkpoint)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('PD/fresh smoke skipped', result.stdout)
+        job = next(args for kind, args in self.records() if kind == 'docker' and 'tmux' in args)
+        self.assertIn('--resume logs/s54_old/last.pt', job[-1])
+        self.assertEqual((self.root/checkpoint).read_bytes(), b'checkpoint path fixture')
+
+    def test_missing_resume_checkpoint_fails_before_auth_or_docker(self):
+        result = self.run_launcher(mode='resume', checkpoint='missing.pt', SWANLAB_ENABLED='true')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('Resume checkpoint required', result.stdout)
+        self.assertEqual(self.records(), [])
 
     def test_core_sdk_disables_environment_probes_and_uses_supported_login(self):
         captured = []

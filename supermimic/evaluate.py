@@ -64,7 +64,7 @@ import torch
 import supermimic.networks as networks
 from supermimic.env import TrackingSim, make_sim
 from supermimic.kinematics import S54Kinematics
-from supermimic.mdp import MAX_STEP_REWARD, OBS_DIM, MDP, RewardCfg
+from supermimic.mdp import MDP, RewardCfg
 from supermimic.motion import MotionLib
 from supermimic.networks import Policy
 from supermimic.s54 import default_joint_pos_list, JOINT_NAMES, ROBOT_ID, assert_checkpoint
@@ -85,7 +85,9 @@ foot_config = AlternatingConfig(**(saved_config.get('foot_config') or {}))
 task_cfg = resolve_foot_task(saved_config.get('foot_task_config')) if foot_run else None
 goals = GoalSource(motion, kin, goal_spec, foot_config,command_mode=task_cfg.command_mode if foot_run else 'alternating')
 default_q = torch.tensor(default_joint_pos_list(),device=dev)
-mdp = (FootTrackingMDP(kin,default_q,goals,task_cfg) if foot_run else MDP(kin,motion,default_q,RewardCfg(**reward_config)))
+mdp = (FootTrackingMDP(kin,default_q,goals,task_cfg) if foot_run else MDP(
+    kin,motion,default_q,RewardCfg(**reward_config),
+    observation_mode=saved_config.get('motion_obs_mode', 'legacy_v1')))
 if goal_spec.mode=='reference_foot':
     from supermimic.reference_foot import ReferenceFootGoalSource,PairedMotionMDP
     goals=ReferenceFootGoalSource(motion,kin,goal_spec,foot_config)
@@ -125,7 +127,7 @@ def evaluate(env: TrackingSim, ck: dict, record: str | None = None) -> dict:
     if goal_spec.mode=='reference_foot':
         from supermimic.networks import DualEncoderPolicy
         pi=DualEncoderPolicy(hist=Hh).to(dev)
-    else:pi = Policy(OBS_DIM, goal_spec.dim, hist=Hh,obs_adapter=a_.get('obs_adapter','identity')).to(dev)
+    else:pi = Policy(mdp.obs_dim, goal_spec.dim, hist=Hh,obs_adapter=a_.get('obs_adapter','identity')).to(dev)
     pi.load_state_dict(ck["pi"])
     pi.eval()
     # Re-evaluating a checkpoint uses the same sampled foot commands.
@@ -164,14 +166,14 @@ def evaluate(env: TrackingSim, ck: dict, record: str | None = None) -> dict:
         head_penalty_ret += torch.where(alive, out['terms']['head_penalty'], 0.0)
         head_error_sum += torch.where(alive, out['terms']['head_position_error'], 0.0)
         steps += alive.float()
-    norm = ret / ((motion.clip_len - 1).float() * MAX_STEP_REWARD)
+    norm = ret / ((motion.clip_len - 1).float() * mdp.max_step_reward)
     # Removing just the new head cost preserves a common reward diagnostic;
     # the actual rollout and all terminations remain unchanged.
-    no_head_cost = (ret - head_penalty_ret) / ((motion.clip_len - 1).float() * MAX_STEP_REWARD)
+    no_head_cost = (ret - head_penalty_ret) / ((motion.clip_len - 1).float() * mdp.max_step_reward)
     head_rms = (head_error_sum / (2 * steps.clamp_min(1))).sqrt() * (180 / np.pi)
     res = {
         "norm_return": norm.mean().item(),
-        "norm_return_framew": (ret.sum() / ((motion.clip_len - 1).sum() * MAX_STEP_REWARD)).item(),
+        "norm_return_framew": (ret.sum() / ((motion.clip_len - 1).sum() * mdp.max_step_reward)).item(),
         "n_failed": int(env.failed_eval.sum().item()),
         "failed": [motion.names[i] for i in env.failed_eval.nonzero().flatten().tolist()],
         "per_clip": {motion.names[i]: round(norm[i].item(), 4) for i in range(C)},

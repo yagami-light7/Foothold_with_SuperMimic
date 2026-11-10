@@ -16,7 +16,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / 'tools'))
 from supermimic.reference_selection import select_reference_files
-from sync_swanlab import METRICS, CORE_METRICS, read_latest_run, sync_run
+from sync_swanlab import METRICS, CORE_METRICS, load_swanlab, read_latest_run, sync_run
 
 
 HEADER = ['iteration', 'wall_h', 'sim_steps', 'wm_loss', 'wm_err8', 'pi_loss', 'v_loss',
@@ -265,6 +265,56 @@ class SelectionAndSyncTests(unittest.TestCase):
         sync_run(args, recorder)
         self.assertEqual(recorder.config['config'], dict(iterations=25, num_envs=128, lr=.0002, m34_eval_every=1000))
         self.assertEqual(set(recorder.rows[0][1]), set(CORE_METRICS.values()))
+
+    def test_project_env_is_consumed_by_launcher_not_structured_sdk_settings(self):
+        class SDK:
+            class Settings:
+                class Probe:
+                    def __init__(self, **kwargs):
+                        pass
+
+                def __init__(self, **kwargs):
+                    if 'SWANLAB_PROJECT' in os.environ:
+                        raise ValueError('plain project name is not structured Settings JSON')
+
+            @staticmethod
+            def merge_settings(settings):
+                pass
+
+        with patch.dict(os.environ, {'SWANLAB_PROJECT': 'SuperMimic-S54'}), patch.dict(sys.modules, {'swanlab': SDK}):
+            self.assertIs(load_swanlab('offline'), SDK)
+
+    def test_delayed_frozen_eval_upload_and_resume_are_data_only(self):
+        args = self.sync_args(follow=True)
+        args.core_only = True
+        (self.root/'train_log.csv').write_text(training_csv([1000]))
+        summary_path = self.root/'evals/iter_001000/summary.json'
+        summary = dict(status='completed', checkpoint_sha256='frozen', splits={})
+        for split in ('train', 'test'):
+            summary['splits'][split] = dict(status='completed', checkpoint_sha256='frozen', rows=[
+                dict(id=split+'_reference', mode='straight', split=split, seed=0, reset_noise=False,
+                     normalized_return=.8, survived=True, reference_steps=100, episode_s=2.,
+                     root_position_rmse_m=.1, root_orientation_rmse_rad=.2,
+                     joint_rmse_rad=.3, foot_position_rmse_m=.04)])
+
+        def finish_evaluation(_):
+            summary_path.parent.mkdir(parents=True)
+            summary_path.write_text(json.dumps(summary))
+            (self.root/'train.exitcode').write_text('0\n')
+
+        recorder = Recorder()
+        with patch('sync_swanlab.time.sleep', side_effect=finish_evaluation):
+            sync_run(args, recorder)
+        self.assertEqual([step for step, _ in recorder.rows], [1000, 1000])
+        eval_values = recorder.rows[-1][1]
+        self.assertEqual(eval_values['Eval/Test/Nominal/NormalizedReturn'], .8)
+        self.assertEqual(eval_values['Eval/Train/Nominal/SurvivalRate'], 1.)
+        self.assertTrue(all(isinstance(v, (int, float)) for v in eval_values.values()))
+        status = json.loads((self.root/'swanlab_sync_status.json').read_text())
+        self.assertEqual(status['evaluations'], {'evals/iter_001000/summary.json': 'frozen'})
+        resumed = Recorder()
+        sync_run(args, resumed)
+        self.assertEqual(resumed.rows, [])
 
     def test_resume_keeps_cloud_id_and_uploads_optional_head_metrics(self):
         args = self.sync_args()

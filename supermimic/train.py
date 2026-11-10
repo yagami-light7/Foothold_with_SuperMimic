@@ -80,6 +80,8 @@ parser.add_argument('--init_from_motion', help='Cross-task Stage 1 initializatio
 parser.add_argument('--init_from_bridge', help='Initialize Quintic Foot RL from an optional paired Motion-reward bridge')
 parser.add_argument('--transfer_components', choices=['wm','wm_decoder'],default='wm_decoder')
 parser.add_argument('--obs_adapter', choices=['identity','mask_reference_orientation'],default='identity')
+parser.add_argument('--motion_obs_mode', choices=['legacy_v1', 'root_xy_heading_v2'], default='root_xy_heading_v2')
+parser.add_argument('--motion_reward_config', help='Motion reward JSON object or JSON file; defaults to requested tracking-v2 weights')
 parser.add_argument('--freeze_decoder',action='store_true')
 parser.add_argument('--train_decoder',action='store_true',help='Explicitly finetune D during direct Foot RL; bridge always freezes D')
 parser.add_argument('--reference_manifest',help='Hashed clip-level train/held-out manifest')
@@ -186,7 +188,7 @@ from supermimic.control import ACTION_LIMIT, bound_action, bound_bootstrap, retu
 from supermimic.buffer import ReplayBuffer
 from supermimic.env import TrackingSim, make_sim
 from supermimic.kinematics import S54Kinematics
-from supermimic.mdp import CRITIC_EXTRA, INV_DIM, MDP, OBS_DIM, RewardCfg, invariant_features, normalize_xi, unflatten_state
+from supermimic.mdp import CRITIC_EXTRA, INV_DIM, MDP, OBS_DIM, RewardCfg, resolve_motion_reward, invariant_features, normalize_xi, unflatten_state
 from supermimic.motion import MotionLib
 import supermimic.networks as networks
 from supermimic.networks import Critic, Policy, WorldModel
@@ -204,7 +206,19 @@ signal.signal(signal.SIGTERM, request_stop)
 signal.signal(signal.SIGINT, request_stop)
 networks.AMP_DTYPE = torch.bfloat16 if args.amp == "bf16" else None
 dev = "cuda:0"
-args.reward_config = asdict(RewardCfg() if task_cfg is None else task_cfg)
+
+if args.goal_mode == 'motion':
+    motion_reward_cfg = (RewardCfg() if args.motion_obs_mode == 'legacy_v1' and args.motion_reward_config is None
+                         else resolve_motion_reward(args.motion_reward_config))
+else:
+    if args.motion_reward_config is not None:
+        raise ValueError('motion_reward_config applies to Motion training only')
+    args.motion_obs_mode = 'legacy_v1'
+    motion_reward_cfg = RewardCfg()
+args.motion_reward_config = asdict(motion_reward_cfg) if args.goal_mode == 'motion' else None
+
+args.reward_config = asdict(
+    motion_reward_cfg if task_cfg is None else task_cfg)
 os.makedirs(args.log_dir, exist_ok=True)
 
 
@@ -217,8 +231,12 @@ else:
     motion = MotionLib(motion_files, kin, dev) if task_cfg is None else None
 default_q = torch.tensor(default_joint_pos_list(), device=dev)
 goals = GoalSource(motion, kin, goal_spec, foot_config,
-                   command_mode='alternating' if task_cfg is None else task_cfg.command_mode)
-mdp = (MDP(kin, motion, default_q) if task_cfg is None else FootTrackingMDP(kin, default_q, goals, task_cfg))
+                command_mode='alternating' if task_cfg is None else task_cfg.command_mode)
+mdp = (
+    MDP(kin, motion, default_q, motion_reward_cfg, observation_mode=args.motion_obs_mode)
+    if task_cfg is None
+    else FootTrackingMDP(kin, default_q, goals, task_cfg))
+
 if args.goal_mode=='reference_foot':
     from supermimic.reference_foot import ReferenceFootGoalSource,PairedMotionMDP
     goals=ReferenceFootGoalSource(motion,kin,goal_spec,foot_config)
@@ -232,6 +250,8 @@ if args.prior_config:
 if curriculum:
     goals.curriculum = curriculum
     goals.command_duration = task_cfg.episode_steps * .02 + goal_spec.frames * goal_spec.dt + 1
+obs_dim = mdp.obs_dim
+args.obs_dim = obs_dim
 reward_scale = mdp.max_step_reward
 value_upper = return_upper_bound(reward_scale,args.gamma) if mdp.is_foot else None
 imagination_contract=dict(version=1,action_clip=ACTION_LIMIT,bootstrap_upper_bound=value_upper)
@@ -246,14 +266,14 @@ if args.goal_mode=='reference_foot':
     from supermimic.networks import DualEncoderPolicy
     pi=DualEncoderPolicy(hist=Hh).to(dev)
 else:
-    pi = Policy(OBS_DIM, GOAL_DIM, hist=Hh,obs_adapter=args.obs_adapter).to(dev)
+    pi = Policy(obs_dim, GOAL_DIM, hist=Hh,obs_adapter=args.obs_adapter).to(dev)
 critic = Critic(CRITIC_IN).to(dev)
 opt_wm = torch.optim.Adam(wm.parameters(), lr=args.lr)
 opt_pi = torch.optim.Adam(pi.parameters(), lr=actor_lr, betas=(0.9, 0.95))
 opt_v = torch.optim.Adam(critic.parameters(), lr=critic_lr)
 start_it, wall_offset, sim_steps = 0, 0.0, 0
 supervision_steps=0
-physics_metadata=physical_contract()
+physics_metadata=physical_contract(obs_dim=obs_dim)
 transfer_report=None
 git_sha=os.environ.get('S54_SOURCE_GIT_SHA')
 if not git_sha:
@@ -271,7 +291,8 @@ if args.resume:
               'network dimensions and physical task unchanged',flush=True)
     goal_spec.assert_checkpoint(ck, foot_config)
     assert_task_checkpoint(ck, mdp)
-    assert_policy_checkpoint(ck,Hh,args.obs_adapter,not args.freeze_decoder)
+    assert_policy_checkpoint(ck,Hh,args.obs_adapter,not args.freeze_decoder,
+                             obs_dim=obs_dim, observation_mode=args.motion_obs_mode)
     if ck.get('physical_contract',physics_metadata)!=physics_metadata: raise ValueError('Resume physics contract mismatch')
     if ck.get('data_contract',data_contract)!=data_contract: raise ValueError('Resume data manifest mismatch')
     if "critic" not in ck: raise ValueError("Resume requires last.pt with critic and optimizers")
@@ -296,6 +317,8 @@ if args.init_weights:
     if transfer['args']['hist'] != args.hist: raise ValueError('Transfer requires matching Actor history')
     if transfer.get('policy_contract',{}).get('obs_adapter','identity')!=args.obs_adapter:
         raise ValueError('Compatible Actor transfer requires matching observation semantics')
+    if transfer.get('policy_contract', {}).get('obs_dim', OBS_DIM) != obs_dim:
+        raise ValueError('Actor observation dimension mismatch: new Root feedback requires a new 103D policy')
     if transfer.get('physical_contract',physics_metadata)!=physics_metadata:raise ValueError('Actor transfer physics mismatch')
     wm.load_state_dict(transfer['wm']); pi.load_state_dict(transfer['pi'])
     pi.goal_norm.mean.zero_(); pi.goal_norm.var.fill_(1); pi.goal_norm.count.zero_()
@@ -601,7 +624,7 @@ with launch_simulation(sim_cfg, args):
         env.m34_iteration = start_it
         env.m34_straight_iters = args.m34_straight_iters
     buffer = ReplayBuffer(args.buffer_steps, args.num_envs, dev, foot_commands=goals.is_foot)
-    obs_hist = torch.zeros(args.num_envs, Hh, OBS_DIM, device=dev)
+    obs_hist = torch.zeros(args.num_envs, Hh, obs_dim, device=dev)
 
     collection_frames=0; collection_seconds=0.
 
@@ -666,7 +689,8 @@ with launch_simulation(sim_cfg, args):
         ckpt = {"robot_contract": checkpoint_contract(), "goal_contract": goal_spec.contract(),
                 "checkpoint_schema_version":2,
                 "task_contract": mdp.contract(),
-                "physical_contract":physics_metadata,"policy_contract":policy_contract(Hh,args.obs_adapter,not args.freeze_decoder),
+                "physical_contract":physics_metadata,"policy_contract":policy_contract(
+                    Hh,args.obs_adapter,not args.freeze_decoder,obs_dim=obs_dim,observation_mode=args.motion_obs_mode),
                 "data_contract":data_contract,"git_sha":git_sha,"transfer_report":transfer_report,
                 "source_snapshot":source_snapshot,
                 "stage_stats":dict(stage='bridge' if args.goal_mode=='reference_foot' else 'stage1' if args.goal_mode=='motion' else 'stage2',

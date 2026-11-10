@@ -84,9 +84,11 @@ def resolve_foot_task(value=None):
 
 def assert_task_checkpoint(checkpoint, mdp):
     if not mdp.is_foot and mdp.contract()['mode']=='motion' and checkpoint.get('task_contract') is None:
+        if mdp.contract()['version'] != 1:
+            raise ValueError('Legacy checkpoint cannot resume a different reward/Root-feedback task')
         return  # Preserve legacy Motion checkpoints and their evaluation convention.
     if checkpoint.get('task_contract') != mdp.contract():
-        raise ValueError('Foot MDP contract mismatch: goal-only/other-task checkpoints cannot resume this task')
+        raise ValueError('Task/reward contract mismatch: use a new run for changed reward or observations')
 
 
 class FootTrackingMDP(MDP):

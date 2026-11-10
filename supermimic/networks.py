@@ -157,7 +157,7 @@ class Policy(nn.Module):
     def decode(self, obs_hist, z):
         o = self.obs_norm(obs_hist)
         if self.obs_adapter == 'mask_reference_orientation':
-            o = torch.cat((o[...,:93],torch.zeros_like(o[...,93:])), -1)
+            o = torch.cat((o[...,:93],torch.zeros_like(o[...,93:99]),o[...,99:]), -1)
         return run_mlp(self.dec,torch.cat((z,o.flatten(-2)),-1))
 
     def forward(self, obs_hist: torch.Tensor, goal: torch.Tensor) -> torch.Tensor:

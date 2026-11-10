@@ -6,7 +6,7 @@ import importlib.metadata
 
 import torch
 
-from .mdp import OBS_DIM, STATE_DIM, INV_DIM, RewardCfg
+from .mdp import OBS_DIM, MOTION_OBS_DIM, STATE_DIM, INV_DIM, RewardCfg, motion_reward_contract
 from .motion import CONTROL_DT
 from .s54 import (JOINT_NAMES, NUM_J, XI_DIM, MJCF_PATH, checkpoint_contract,
                   assert_checkpoint, actuator_parameters)
@@ -15,7 +15,7 @@ SIMULATION = dict(num_substeps=4, njmax=500, nconmax=128, cone='pyramidal',
                   integrator='implicitfast', use_mujoco_contacts=True)
 
 
-def physical_contract():
+def physical_contract(obs_dim=OBS_DIM):
     params = actuator_parameters()
     versions = {}
     for name in ('newton', 'mujoco-warp', 'warp-lang'):
@@ -23,28 +23,37 @@ def physical_contract():
         except importlib.metadata.PackageNotFoundError: versions[name] = 'unavailable'
     return dict(version=1, robot=checkpoint_contract(), state_dim=STATE_DIM,
                 state='root_link_world_pose_velocity; canonical_q_qd; quaternion_wxyz',
-                obs_dim=OBS_DIM, action_dim=NUM_J, xi_dim=XI_DIM, wm_input=INV_DIM+NUM_J+XI_DIM,
+                obs_dim=obs_dim, action_dim=NUM_J, xi_dim=XI_DIM, wm_input=INV_DIM+NUM_J+XI_DIM,
                 wm_output=70, control_dt=CONTROL_DT, gravity=[0.,0.,-9.81], solver=SIMULATION,
                 sim_mjcf_sha256=hashlib.sha256(MJCF_PATH.read_bytes()).hexdigest(),
                 actuators=params, action_scale=[.25*params[n]['effort']/params[n]['stiffness'] for n in JOINT_NAMES],
                 backend_versions=versions)
 
 
-def policy_contract(hist, adapter='identity', decoder_trainable=True):
+def policy_contract(hist, adapter='identity', decoder_trainable=True, *, obs_dim=OBS_DIM, observation_mode='legacy_v1'):
     if adapter not in ('identity', 'mask_reference_orientation'):
         raise ValueError('Unknown observation adapter')
-    return dict(version=1, hist=hist, obs_dim=99, z_dim=32, action_dim=29,
+    expected_dim = MOTION_OBS_DIM if observation_mode == 'root_xy_heading_v2' else OBS_DIM
+    if observation_mode not in ('legacy_v1', 'root_xy_heading_v2') or obs_dim != expected_dim:
+        raise ValueError('Policy observation mode/dimension mismatch')
+    value = dict(version=1, hist=hist, obs_dim=obs_dim, z_dim=32, action_dim=29,
                 obs_adapter=adapter, decoder_trainable=decoder_trainable,
                 obs_reference_masked_channels=list(range(93,99)) if adapter != 'identity' else [])
+    if observation_mode != 'legacy_v1':
+        value.update(version=2, observation_mode=observation_mode,
+                     feedback_channels=dict(root_xy_error=[99, 100], heading_error_sin_cos=[101, 102]))
+    return value
 
 
-def assert_policy_checkpoint(ck, hist, adapter, decoder_trainable):
+def assert_policy_checkpoint(ck, hist, adapter, decoder_trainable, *, obs_dim=OBS_DIM, observation_mode='legacy_v1'):
     actual = ck.get('policy_contract')
-    expected = policy_contract(hist,adapter,decoder_trainable)
+    expected = policy_contract(hist,adapter,decoder_trainable,obs_dim=obs_dim,observation_mode=observation_mode)
     if actual is not None and actual != expected:
         raise ValueError('Policy history/observation-adapter/freeze contract mismatch')
     if actual is None and adapter != 'identity':
         raise ValueError('Legacy checkpoints have no adapted observation contract')
+    if actual is None and observation_mode != 'legacy_v1':
+        raise ValueError('Legacy 99D checkpoints cannot resume a 103D Root-feedback policy')
 
 
 def _validate_shapes(module, state, label):
@@ -58,10 +67,9 @@ def _validate_shapes(module, state, label):
 def _validate_motion_task(ck,paired=False):
     task=ck.get('task_contract') or {}
     try:
-        expected=dict(version=1,mode='paired_motion_bridge' if paired else 'motion',
-            config=asdict(RewardCfg(**task.get('config',{}))),obs_dim=99,
-            critic_state_dim=135 if paired else 184,control_dt=CONTROL_DT,
-            reward='tracked_bodies_root_head_v1')
+        expected=dict(**motion_reward_contract(RewardCfg(**task.get('config',{}))),
+            mode='paired_motion_bridge' if paired else 'motion',obs_dim=99,
+            critic_state_dim=135 if paired else 184,control_dt=CONTROL_DT)
         if paired:
             from .motion_prior_data import ContactConfig
             expected.update(goal_source='original_reference_fk',
