@@ -1,0 +1,38 @@
+{
+  "status": "CPU_PREPARATION_VERIFIED_GPU_NOT_STARTED",
+  "gpu_smoke": "pending",
+  "formal_training": "not_started",
+  "tests": {
+    "test_s54_stair_experiment.py": 6,
+    "test_s54_root_feedback.py": 11,
+    "test_s54_m34_results_upload.py": 3,
+    "test_s54_m34_evaluation.py": 6
+  },
+  "total_tests_passed": 26,
+  "viewer_check_only": "PASS; 436 frames; data NPZ path; no GPU",
+  "byte_exact_initialization": "PASS; original counts retained; current native physical contract audited",
+  "missing_gpu_smoke_gate_blocks_formal_launch": true,
+  "train_help": "exit 0",
+  "night_dry_run": "PASS; no jobs launched",
+  "protected_sha256": {
+    "release/S54-SuperMimic-Flat-6000/checkpoints/ckpt_006063.pt": "e49e968a1a6bd7c5fcef53290b805fafb011bea5533e9bc0c050e5130e0bbe88",
+    "data/s54_stair_dataset/stair_up_4.npz": "288d3abd2fd37d3d299a17272bcf4d99a6fac0fc28dcb3e10e1c830a633bbf65",
+    "assets/terrains/stairs_straight_4_v1/terrain_mesh.npz": "1503c3e9481b92e0a6979631d3fd7748d21f7978954c48dc7cffb8b5cc6a43b2"
+  },
+  "data_directory_files": [
+    "stair_up_4.npz"
+  ],
+  "changed_or_added_code_sha256": {
+    "supermimic/m34.py": "2a9c1856eb09a712d074102bc6de4c0dc198a69a4b10eb0395e02fba7f65b7bf",
+    "supermimic/stair_data.py": "ad16146ef4a35469dda8fc0c718fa7d3a23e8008e293d5c79ab8a906322d5633",
+    "supermimic/stair_training.py": "0febe86dea7c9087c5e508f244eb928927c4b4ff31547837d1eef3a27292d845",
+    "supermimic/stair_evaluation.py": "1c851964ffbd0827eb2b31181fcdcc6010d351b8b7b2b54f7fb8fca19a443026",
+    "supermimic/train.py": "75f0cdee66b784f6bd451976356395643d5efb2a88a3d595f6cecbeb4dafef13",
+    "tools/t15_launch.py": "bbb731890f87bfaba192fe38990ce877237ace1934ca9a038aa416227e013d0a",
+    "tools/t15_stair_rollout.py": "b8b171be5bcddafc6ac0c00a15182ce9fe3f09200c4cc427f08ee649c97b16a1",
+    "tools/sync_swanlab.py": "ce8f919795d07b2362dd83da2356bf37fe42fa6cbdc3e2d05327f17e127389b3",
+    "tools/view_s54_stair_reference.py": "046fe5634a4f88e55b064ff1bc9d1a39b161044d98eb9d8c03237eab4628f2bb",
+    "tools/run_s54_stair.py": "29c65c27ac3e80b95e4cdff09ba910ca5d07b45a64e016d803ea77755800be56",
+    "tools/test_s54_stair_experiment.py": "e717d4676fd3d985ea459b11ab2746394db55b3e4b260f23ac6241f98fc658c7"
+  }
+}

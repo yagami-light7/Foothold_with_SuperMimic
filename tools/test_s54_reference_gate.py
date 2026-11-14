@@ -14,7 +14,7 @@ from prepare_s54_motion import prepare
 
 
 def main():
-    source = REPO / 'data/retarget_data/reference_grounded'
+    source = REPO / 'library/motion_reference/kuavo_s54/retarget_data/reference_grounded'
     clip, stem = 'dance1_subject1', 'known_collision'
     cache = REPO / '.cache'
     cache.mkdir(exist_ok=True)

@@ -1,0 +1,475 @@
+--- before/supermimic/kinematics.py
++++ after/supermimic/kinematics.py
+@@ -7,14 +7,15 @@
+ import mujoco
+ import numpy as np
+ import torch
+-from .s54 import JOINT_NAMES, SOURCE_MJCF, TRACKED_BODIES, model_contract
++from .robot_contract import JOINT_NAMES, SOURCE_MJCF, TRACKED_BODIES, model_contract
+ from .rotations import axis_angle_to_mat, quat_to_mat
+ 
+ 
+-class S54Kinematics:
++class RobotKinematics:
+     def __init__(self, device='cpu', tracked=None, model_path=SOURCE_MJCF, dtype=torch.float32):
+         m, rows = model_contract(model_path)
+         self.device = device
++        self.joint_names = list(JOINT_NAMES)
+         self.body_names = [m.body(b).name for b in range(1, m.nbody)]
+         self.num_bodies = len(self.body_names)
+         self.parent = [int(m.body_parentid[b])-1 for b in range(1, m.nbody)]
+@@ -44,7 +45,7 @@
+ 
+     def forward(self, p, R, v, w, q, qd, all_bodies=False):
+         if q.shape[-1] != len(JOINT_NAMES) or qd.shape != q.shape:
+-            raise ValueError('Expected canonical S54 joint position/velocity vectors')
++            raise ValueError('Expected canonical robot joint position/velocity vectors')
+         P, Rs, V, W = [], [], [], []
+         for i, par in enumerate(self.parent):
+             j = self.joint_idx[i]
+@@ -70,3 +71,7 @@
+             P.append(pi); Rs.append(Ri); V.append(vi); W.append(wi)
+         idx = range(self.num_bodies) if all_bodies else self.tracked_idx
+         return tuple(torch.stack([arr[i] for i in idx], dim) for arr,dim in ((P,-2),(Rs,-3),(V,-2),(W,-2)))
++
++
++# Historical tools retain their public name and the default S54 contract.
++S54Kinematics = RobotKinematics
+--- before/supermimic/motion.py
++++ after/supermimic/motion.py
+@@ -12,7 +12,7 @@
+ import torch
+ 
+ from .kinematics import S54Kinematics
+-from .s54 import JOINT_NAMES, SOURCE_FPS, GOAL_FRAME_DIM, checkpoint_contract
++from .robot_contract import JOINT_NAMES, SOURCE_FPS, GOAL_FRAME_DIM, checkpoint_contract
+ from .rotations import mat_to_6d, quat_slerp, quat_to_mat, so3_log, yaw_mat
+ from .reference_quality import validate_root_motion
+ 
+--- before/supermimic/mdp.py
++++ after/supermimic/mdp.py
+@@ -17,7 +17,7 @@
+ from .motion import CONTROL_DT, MotionLib
+ from .rotations import mat_to_6d, quat_to_mat, mat_to_quat, rot_angle_sq, yaw_mat
+ 
+-from .s54 import NUM_J, XI_DIM, TRACKED_BODIES, JOINT_OFFSET, COM_OFFSET, HEAD_JOINT_NAMES, JOINT_NAMES, FOOT_BODY_NAMES
++from .robot_contract import NUM_J, XI_DIM, TRACKED_BODIES, JOINT_OFFSET, COM_OFFSET, HEAD_JOINT_NAMES, JOINT_NAMES, FOOT_BODY_NAMES
+ 
+ STATE_DIM = 3 + 4 + 3 + 3 + 2 * NUM_J
+ # Legacy/independent-Foot interface. Motion training selects MDP.obs_dim=103.
+--- before/supermimic/networks.py
++++ after/supermimic/networks.py
+@@ -67,9 +67,10 @@
+ class WorldModel(nn.Module):
+     """Deterministic dynamics s_{t+1} = f(s_t, a_t, xi) predicting frame-local state increments."""
+ 
+-    def __init__(self, hidden=(2048, 2048, 2048)):
+-        super().__init__()
+-        self.in_dim = INV_DIM + NUM_J + XI_DIM
++    def __init__(self, hidden=(2048, 2048, 2048), terrain_provider=None):
++        super().__init__()
++        self.terrain_provider = terrain_provider
++        self.in_dim = INV_DIM + NUM_J + XI_DIM + (terrain_provider.dim if terrain_provider else 0)
+         self.net = mlp(self.in_dim, list(hidden), WM_OUT, act=nn.SiLU, layer_norm=True)
+         nn.init.zeros_(self.net[-1].weight)
+         nn.init.zeros_(self.net[-1].bias)
+@@ -77,7 +78,10 @@
+         self.out_norm = RunningNorm(WM_OUT, eps=1e-4)
+ 
+     def inputs(self, S, a, xi_n):
+-        return torch.cat((invariant_features(S), a, xi_n), -1)
++        parts = [invariant_features(S), a, xi_n]
++        if self.terrain_provider is not None:
++            parts.append(self.terrain_provider(S))
++        return torch.cat(parts, -1)
+ 
+     @staticmethod
+     def targets(S, S1):
+--- before/supermimic/env.py
++++ after/supermimic/env.py
+@@ -25,7 +25,7 @@
+ from .mdp import MAX_STEP_REWARD, MDP, flatten_state, unflatten_state
+ from .motion import CONTROL_DT, MotionLib
+ from .robot import S54_CFG, action_scale
+-from .s54 import (JOINT_NAMES, NUM_J, XI_DIM, JOINT_OFFSET, COM_OFFSET, COM_BODY,
++from .robot_contract import (ROBOT_KIND, REPO, JOINT_NAMES, NUM_J, XI_DIM, JOINT_OFFSET, COM_OFFSET, COM_BODY, FOOT_BODY_NAMES,
+                   TRACKED_BODIES, ROOT_BODY, name_mapping, USD_PATH, MJCF_PATH, checkpoint_contract)
+ from .rotations import mat_to_quat, quat_to_mat, so3_exp
+ from .goals import GoalSource
+@@ -34,7 +34,9 @@
+ 
+ @configclass
+ class TrackingSceneCfg(InteractiveSceneCfg):
+-    ground = AssetBaseCfg(prim_path="/World/ground", spawn=sim_utils.GroundPlaneCfg())
++    ground = AssetBaseCfg(prim_path="/World/ground", spawn=(
++        sim_utils.GroundPlaneCfg(usd_path=str(REPO/'configs/roban/flat_ground.usda'), color=None)
++        if ROBOT_KIND == 'roban' else sim_utils.GroundPlaneCfg()))
+     robot = replace(S54_CFG, prim_path="{ENV_REGEX_NS}/Robot")
+ 
+ 
+@@ -75,8 +77,8 @@
+         canonical_to_sim, sim_to_canonical = name_mapping(self.robot.joint_names)
+         self.canonical_to_sim = torch.tensor(canonical_to_sim, device=self.device)
+         self.sim_to_canonical = torch.tensor(sim_to_canonical, device=self.device)
+-        assert all(n in self.robot.body_names for n in TRACKED_BODIES)
+-        print("S54 mapping (canonical CSV → simulator):", dict(zip(JOINT_NAMES, canonical_to_sim)), flush=True)
++        assert all(n in self.robot.body_names for n in (TRACKED_BODIES if ROBOT_KIND == 's54' else [ROOT_BODY, COM_BODY, *FOOT_BODY_NAMES]))
++        print("Robot mapping (canonical reference → simulator):", dict(zip(JOINT_NAMES, canonical_to_sim)), flush=True)
+         self.N = num_envs
+         self.motion, self.mdp, self.gamma = motion, mdp, gamma
+         self.goals = goals if goals is not None else GoalSource(motion, mdp.kin)
+--- before/supermimic/goals.py
++++ after/supermimic/goals.py
+@@ -9,7 +9,7 @@
+ from .foot_trajectory import AlternatingConfig, query, sample_alternating, command_time
+ from .motion import CONTROL_DT
+ from .rotations import mat_to_6d, mat_to_quat, quat_to_mat, yaw_mat
+-from .s54 import FOOT_BODY_NAMES, GOAL_FRAME_DIM
++from .robot_contract import FOOT_BODY_NAMES, GOAL_FRAME_DIM
+ 
+ FOOT_FRAME_DIM = 23
+ 
+@@ -21,7 +21,7 @@
+     dt: float | None = None
+ 
+     def __post_init__(self):
+-        if self.mode not in ('motion', 'foot_trajectory','reference_foot') or not isinstance(self.frames, int) or self.frames < 1:
++        if self.mode not in ('motion', 'foot_trajectory','reference_foot', 'roban_foot') or not isinstance(self.frames, int) or self.frames < 1:
+             raise ValueError('Invalid goal mode or number of future samples')
+         dt = (CONTROL_DT if self.mode == 'motion' else 0.1) if self.dt is None else self.dt
+         if not 0 < dt < float('inf'):
+@@ -39,10 +39,14 @@
+         return self.frames * self.frame_dim
+ 
+     def contract(self):
+-        return dict(version=2 if self.mode=='reference_foot' else 1, **asdict(self), frame_dim=self.frame_dim, dim=self.dim,
++        value = dict(version=3 if self.mode=='roban_foot' else 2 if self.mode=='reference_foot' else 1, **asdict(self), frame_dim=self.frame_dim, dim=self.dim,
+                     coordinates='reference_heading' if self.mode == 'motion' else 'current_root_yaw',
+                     rotation='6d_columns', quaternion='wxyz',
+-                    observation_reference='motion_root' if self.mode == 'motion' else 'fixed_command_heading')
++                    observation_reference='proprio_only_sole_goals' if self.mode == 'roban_foot' else 'motion_root' if self.mode == 'motion' else 'fixed_command_heading')
++        if self.mode == 'roban_foot':
++            value.update(foot_frame='model_collision_sole',stance='fixed_at_planned_touchdown',
++                         contact='planned_schedule; truth_validity_is_privileged')
++        return value
+ 
+     def assert_checkpoint(self, checkpoint, foot_config=None):
+         saved = checkpoint.get('goal_contract')
+@@ -60,7 +64,7 @@
+ 
+ 
+ def add_goal_args(parser):
+-    parser.add_argument('--goal_mode', choices=['motion', 'foot_trajectory','reference_foot'], default='motion')
++    parser.add_argument('--goal_mode', choices=['motion', 'foot_trajectory','reference_foot','roban_foot'], default='motion')
+     parser.add_argument('--goal_dt', type=float, default=None, help='Future sample spacing: motion=0.02, foot=0.1 seconds')
+     parser.add_argument('--foot_config', default=None, help='AlternatingConfig JSON; motion mode does not use it')
+ 
+@@ -110,7 +114,7 @@
+         if self.is_foot:
+             # Extract the existing grounding implementation without changing its geometry.
+             from .foot_geometry import FootGeometry
+-            from .s54 import model_contract
++            from .robot_contract import model_contract
+             geometry = FootGeometry(model_contract()[0])
+             import numpy as np
+             self.ankle_height = [0.003 - geometry.local_low(side, np.eye(3)) for side in (0, 1)]
+--- before/supermimic/transfer.py
++++ after/supermimic/transfer.py
+@@ -8,7 +8,7 @@
+ 
+ from .mdp import OBS_DIM, MOTION_OBS_DIM, STATE_DIM, INV_DIM, RewardCfg, motion_reward_contract
+ from .motion import CONTROL_DT
+-from .s54 import (JOINT_NAMES, NUM_J, XI_DIM, MJCF_PATH, checkpoint_contract,
++from .robot_contract import (JOINT_NAMES, NUM_J, XI_DIM, MJCF_PATH, checkpoint_contract,
+                   assert_checkpoint, actuator_parameters)
+ 
+ SIMULATION = dict(num_substeps=4, njmax=500, nconmax=128, cone='pyramidal',
+@@ -24,7 +24,7 @@
+     return dict(version=1, robot=checkpoint_contract(), state_dim=STATE_DIM,
+                 state='root_link_world_pose_velocity; canonical_q_qd; quaternion_wxyz',
+                 obs_dim=obs_dim, action_dim=NUM_J, xi_dim=XI_DIM, wm_input=INV_DIM+NUM_J+XI_DIM,
+-                wm_output=70, control_dt=CONTROL_DT, gravity=[0.,0.,-9.81], solver=SIMULATION,
++                wm_output=12+2*NUM_J, control_dt=CONTROL_DT, gravity=[0.,0.,-9.81], solver=SIMULATION,
+                 sim_mjcf_sha256=hashlib.sha256(MJCF_PATH.read_bytes()).hexdigest(),
+                 actuators=params, action_scale=[.25*params[n]['effort']/params[n]['stiffness'] for n in JOINT_NAMES],
+                 backend_versions=versions)
+@@ -33,10 +33,15 @@
+ def policy_contract(hist, adapter='identity', decoder_trainable=True, *, obs_dim=OBS_DIM, observation_mode='legacy_v1'):
+     if adapter not in ('identity', 'mask_reference_orientation'):
+         raise ValueError('Unknown observation adapter')
++    if observation_mode == 'roban_proprio_v1':
++        if obs_dim != 3*NUM_J+6 or adapter != 'identity':
++            raise ValueError('Roban actor uses only proprioception')
++        return dict(version=3,hist=hist,obs_dim=obs_dim,z_dim=32,action_dim=NUM_J,
++                    obs_adapter=adapter,decoder_trainable=decoder_trainable,observation_mode=observation_mode)
+     expected_dim = MOTION_OBS_DIM if observation_mode == 'root_xy_heading_v2' else OBS_DIM
+     if observation_mode not in ('legacy_v1', 'root_xy_heading_v2') or obs_dim != expected_dim:
+         raise ValueError('Policy observation mode/dimension mismatch')
+-    value = dict(version=1, hist=hist, obs_dim=obs_dim, z_dim=32, action_dim=29,
++    value = dict(version=1, hist=hist, obs_dim=obs_dim, z_dim=32, action_dim=NUM_J,
+                 obs_adapter=adapter, decoder_trainable=decoder_trainable,
+                 obs_reference_masked_channels=list(range(93,99)) if adapter != 'identity' else [])
+     if observation_mode != 'legacy_v1':
+--- before/supermimic/robot.py
++++ after/supermimic/robot.py
+@@ -2,7 +2,7 @@
+ import isaaclab.sim as sim_utils
+ from isaaclab.actuators import ImplicitActuatorCfg
+ from isaaclab.assets import ArticulationCfg
+-from .s54 import (JOINT_NAMES, TRACKED_BODIES, MJCF_PATH, USD_PATH, ROOT_BODY,
++from .robot_contract import (ROBOT_KIND, JOINT_NAMES, TRACKED_BODIES, MJCF_PATH, USD_PATH, ROOT_BODY,
+                   default_joint_pos_list, actuator_parameters, initial_root_height)
+ 
+ PARAMETERS = actuator_parameters()
+@@ -18,7 +18,7 @@
+     spawn=sim_utils.UsdFileCfg(
+         usd_path=str(USD_PATH), variants={'Physics': 'mujoco'}, activate_contact_sensors=False,
+         rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False, linear_damping=0.0, angular_damping=0.0),
+-        articulation_props=sim_utils.ArticulationRootPropertiesCfg(enabled_self_collisions=False),
++        articulation_props=sim_utils.ArticulationRootPropertiesCfg(enabled_self_collisions=(ROBOT_KIND == 'roban')),
+     ),
+     init_state=ArticulationCfg.InitialStateCfg(pos=(0.0, 0.0, initial_root_height()), joint_pos=DEFAULT_JOINT_POS, joint_vel={'.*': 0.0}),
+     soft_joint_pos_limit_factor=0.9,
+--- before/supermimic/train.py
++++ after/supermimic/train.py
+@@ -23,6 +23,8 @@
+ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ sys.path.insert(0, REPO)
+ 
++from supermimic.roban_runtime import configure_robot, add_roban_args
++ROBOT_KIND = configure_robot(sys.argv[1:])
+ from isaaclab.app import add_launcher_args, launch_simulation
+ from supermimic.goals import GoalSource, add_goal_args, resolve_goal_config
+ from supermimic.foot_mdp import FootTrackingMDP, resolve_foot_task, assert_task_checkpoint
+@@ -82,7 +84,7 @@
+ parser.add_argument('--init_from_bridge', help='Initialize Quintic Foot RL from an optional paired Motion-reward bridge')
+ parser.add_argument('--transfer_components', choices=['wm','wm_decoder'],default='wm_decoder')
+ parser.add_argument('--obs_adapter', choices=['identity','mask_reference_orientation'],default='identity')
+-parser.add_argument('--motion_obs_mode', choices=['legacy_v1', 'root_xy_heading_v2'], default='root_xy_heading_v2')
++parser.add_argument('--motion_obs_mode', choices=['legacy_v1', 'root_xy_heading_v2', 'roban_proprio_v1'], default='root_xy_heading_v2')
+ parser.add_argument('--motion_reward_config', help='Motion reward JSON object or JSON file; defaults to requested tracking-v2 weights')
+ parser.add_argument('--freeze_decoder',action='store_true')
+ parser.add_argument('--train_decoder',action='store_true',help='Explicitly finetune D during direct Foot RL; bridge always freezes D')
+@@ -94,8 +96,16 @@
+ parser.add_argument('--paired_latent_weight',type=float,default=0.,help='Optional same-clip latent alignment; never applies to random Quintic goals')
+ add_goal_args(parser)
+ add_launcher_args(parser)
++add_roban_args(parser, sys.argv[1:])
+ args = parser.parse_args()
+ try:
++    if ROBOT_KIND == 'roban':
++        if args.goal_mode != 'roban_foot' or any((args.m34_dataset,args.stair_config,args.foot_task_config,args.curriculum_config,args.prior_config,args.init_from_motion,args.init_from_bridge,args.init_from_flat)):
++            raise ValueError('Roban uses its unified reference/task adapter; S54-only options are incompatible')
++        if args.obs_adapter != 'identity' or args.freeze_decoder or args.paired_latent_weight or args.check_foot_gradients or args.gradient_audit_every or args.critic_real_batch:
++            raise ValueError('Use Roban foot gradient tests; legacy S54 adapters/audits are incompatible')
++        from supermimic.roban_task import FootRewardConfig
++        FootRewardConfig(**dict(args.roban_reward_config, body_prior_weight=args.body_prior_weight))
+     if args.m34_eval_every < 0 or not args.m34_eval_seeds or len(set(args.m34_eval_seeds)) != len(args.m34_eval_seeds) or any(s < 0 for s in args.m34_eval_seeds):
+         raise ValueError('Invalid M3.4 evaluation interval or seed protocol')
+     goal_spec, foot_config = resolve_goal_config(args)
+@@ -145,7 +155,7 @@
+     parser.error(str(exc))
+ from pathlib import Path
+ log_path = Path(args.log_dir).resolve()
+-if not log_path.is_relative_to(Path(REPO)/"logs") or not log_path.name.startswith("s54_"):
++if not log_path.is_relative_to(Path(REPO)/"logs") or not log_path.name.startswith("roban_" if ROBOT_KIND == "roban" else "s54_"):
+     parser.error("S54 logs must be under this repository logs/s54_*; existing G1 logs are protected")
+ existing_training = ((log_path/'args.json').exists() or (log_path/'train_log.csv').exists()
+                      or any(log_path.glob('*.pt')))
+@@ -171,7 +181,10 @@
+ data_contract=None
+ if task_cfg is None:
+     try:
+-        if stair_cfg:
++        if ROBOT_KIND == 'roban':
++            from supermimic.roban_runtime import select_roban_files
++            motion_files = select_roban_files(args.motion_dir, args.clips)
++        elif stair_cfg:
+             data_contract=stair_contract(stair_cfg)
+             from supermimic.m34 import entries as stair_flat_entries
+             motion_files=[str(Path(stair_cfg['flat_dataset'])/row['path'])
+@@ -210,7 +223,7 @@
+ import supermimic.networks as networks
+ from supermimic.networks import Critic, Policy, WorldModel
+ from supermimic.transfer import (physical_contract,policy_contract,assert_policy_checkpoint,initialize_from_motion)
+-from supermimic.s54 import (default_joint_pos_list, NUM_J, checkpoint_contract, assert_checkpoint)
++from supermimic.robot_contract import (default_joint_pos_list, NUM_J, checkpoint_contract, assert_checkpoint)
+ 
+ torch.backends.cuda.matmul.allow_tf32 = True
+ torch.backends.cudnn.allow_tf32 = True
+@@ -240,7 +253,13 @@
+ 
+ 
+ kin = S54Kinematics(dev)
+-if stair_cfg:
++terrain_provider = None
++if ROBOT_KIND == 'roban':
++    from supermimic.roban_runtime import build_task
++    motion, goals, mdp, terrain_provider = build_task(args, kin, motion_files, dev)
++    (log_path/'roban_reference_validation.json').write_text(json.dumps(motion.validation, indent=2))
++    data_contract = motion.validation
++elif stair_cfg:
+     from supermimic.stair_training import library as stair_library
+     motion=stair_library(stair_cfg,kin,dev)
+     (log_path/'stair_data_validation.json').write_text(json.dumps(motion.validation,indent=2))
+@@ -250,13 +269,14 @@
+     (log_path/'m34_data_validation.json').write_text(json.dumps(motion.validation, indent=2))
+ else:
+     motion = MotionLib(motion_files, kin, dev) if task_cfg is None else None
+-default_q = torch.tensor(default_joint_pos_list(), device=dev)
+-goals = GoalSource(motion, kin, goal_spec, foot_config,
+-                command_mode='alternating' if task_cfg is None else task_cfg.command_mode)
+-mdp = (
+-    MDP(kin, motion, default_q, motion_reward_cfg, observation_mode=args.motion_obs_mode)
+-    if task_cfg is None
+-    else FootTrackingMDP(kin, default_q, goals, task_cfg))
++if ROBOT_KIND != 'roban':
++    default_q = torch.tensor(default_joint_pos_list(), device=dev)
++    goals = GoalSource(motion, kin, goal_spec, foot_config,
++                    command_mode='alternating' if task_cfg is None else task_cfg.command_mode)
++    mdp = (
++        MDP(kin, motion, default_q, motion_reward_cfg, observation_mode=args.motion_obs_mode)
++        if task_cfg is None
++        else FootTrackingMDP(kin, default_q, goals, task_cfg))
+ if stair_cfg:
+     from supermimic.stair_runtime import StairTrackingMDP
+     if motion_reward_cfg.root_position_mode!='xyz':parser.error('Stair task requires explicit XYZ root reward')
+@@ -286,13 +306,19 @@
+ GOAL_DIM = goal_spec.dim
+ CRITIC_IN = mdp.critic_dim + GOAL_DIM
+ 
+-wm = WorldModel().to(dev)
++wm = WorldModel(terrain_provider=terrain_provider).to(dev)
+ if args.goal_mode=='reference_foot':
+     from supermimic.networks import DualEncoderPolicy
+     pi=DualEncoderPolicy(hist=Hh).to(dev)
+ else:
+     pi = Policy(obs_dim, GOAL_DIM, hist=Hh,obs_adapter=args.obs_adapter).to(dev)
+-critic = Critic(CRITIC_IN).to(dev)
++if ROBOT_KIND == 'roban':
++    # Critic width is the E0/E1 ablation. Its initialization must not change
++    # subsequent shared reset/action-noise RNG draws merely by consuming more RNG.
++    with torch.random.fork_rng(devices=[torch.cuda.current_device()]):
++        critic = Critic(CRITIC_IN).to(dev)
++else:
++    critic = Critic(CRITIC_IN).to(dev)
+ opt_wm = torch.optim.Adam(wm.parameters(), lr=args.lr)
+ opt_pi = torch.optim.Adam(pi.parameters(), lr=actor_lr, betas=(0.9, 0.95))
+ opt_v = torch.optim.Adam(critic.parameters(), lr=critic_lr)
+@@ -319,7 +345,10 @@
+         print('Legacy checkpoint: applying real/imagined action consistency and valid foot return bound; '
+               'network dimensions and physical task unchanged',flush=True)
+     goal_spec.assert_checkpoint(ck, foot_config)
+-    assert_task_checkpoint(ck, mdp)
++    if ROBOT_KIND == 'roban':
++        if ck.get('task_contract') != mdp.contract(): raise ValueError('Roban task/critic/terrain resume mismatch')
++    else:
++        assert_task_checkpoint(ck, mdp)
+     assert_policy_checkpoint(ck,Hh,args.obs_adapter,not args.freeze_decoder,
+                              obs_dim=obs_dim, observation_mode=args.motion_obs_mode)
+     if ck.get('physical_contract',physics_metadata)!=physics_metadata: raise ValueError('Resume physics contract mismatch')
+@@ -342,17 +371,21 @@
+ if args.init_weights:
+     transfer = torch.load(args.init_weights, map_location=dev, weights_only=False)
+     assert_checkpoint(transfer)
+-    goal_spec.assert_checkpoint(transfer)  # representation must match; sampling/task may change explicitly
+-    if transfer['args']['hist'] != args.hist: raise ValueError('Transfer requires matching Actor history')
+-    if transfer.get('policy_contract',{}).get('obs_adapter','identity')!=args.obs_adapter:
+-        raise ValueError('Compatible Actor transfer requires matching observation semantics')
+-    if transfer.get('policy_contract', {}).get('obs_dim', OBS_DIM) != obs_dim:
+-        raise ValueError('Actor observation dimension mismatch: new Root feedback requires a new 103D policy')
+-    if transfer.get('physical_contract',physics_metadata)!=physics_metadata:raise ValueError('Actor transfer physics mismatch')
+-    wm.load_state_dict(transfer['wm']); pi.load_state_dict(transfer['pi'])
+-    pi.goal_norm.mean.zero_(); pi.goal_norm.var.fill_(1); pi.goal_norm.count.zero_()
+-    print('TRANSFER: WM+Actor (goal normalization reset); fresh Critic/optimizers/replay/curriculum. Source iteration',
+-          transfer['iteration'], flush=True)
++    if ROBOT_KIND == 'roban':
++        from supermimic.roban_runtime import initialize_compatible
++        transfer_report = initialize_compatible(transfer,wm,pi,physics_metadata,hist=Hh,goal_contract=goal_spec.contract())
++    else:
++        goal_spec.assert_checkpoint(transfer)  # representation must match; sampling/task may change explicitly
++        if transfer['args']['hist'] != args.hist: raise ValueError('Transfer requires matching Actor history')
++        if transfer.get('policy_contract',{}).get('obs_adapter','identity')!=args.obs_adapter:
++            raise ValueError('Compatible Actor transfer requires matching observation semantics')
++        if transfer.get('policy_contract', {}).get('obs_dim', OBS_DIM) != obs_dim:
++            raise ValueError('Actor observation dimension mismatch: new Root feedback requires a new 103D policy')
++        if transfer.get('physical_contract',physics_metadata)!=physics_metadata:raise ValueError('Actor transfer physics mismatch')
++        wm.load_state_dict(transfer['wm']); pi.load_state_dict(transfer['pi'])
++        pi.goal_norm.mean.zero_(); pi.goal_norm.var.fill_(1); pi.goal_norm.count.zero_()
++        print('TRANSFER: WM+Actor (goal normalization reset); fresh Critic/optimizers/replay/curriculum. Source iteration',
++              transfer['iteration'], flush=True)
+ 
+ if args.init_from_flat:
+     from supermimic.stair_training import initialize_flat
+@@ -423,7 +456,7 @@
+ 
+ 
+ def _reward_term(S, f, a, a_prev, ep_step, command):
+-    if mdp.is_foot:
++    if mdp.is_foot or getattr(mdp,'is_reference_foot',False):
+         r, terms = mdp.reward(S,f,a,a_prev,terms=True,command=command,ep_step=ep_step)
+         foot_reward = terms['foot_objective']
+     else:
+@@ -506,7 +539,7 @@
+     set_requires_grad(wm, False)
+     set_requires_grad(critic, False)
+     B = args.pi_batch
+-    audit_freeze=args.check_foot_gradients or audit_gradients or args.goal_mode=='reference_foot'
++    audit_freeze=args.check_foot_gradients or audit_gradients or args.goal_mode=='reference_foot' or args.roban_gradient_audit
+     wm_versions=tuple(p._version for p in wm.parameters()) if audit_freeze else None
+     decoder_versions=tuple(p._version for p in pi.dec.parameters()) if audit_freeze and args.freeze_decoder else None
+     g0 = goals.goal(S, f, ep_step, command)
+@@ -546,12 +579,14 @@
+         loss=loss+args.paired_latent_weight*latent_loss
+         supervision_steps+=HZ*B
+     foot_gn = torch.zeros((), device=dev)
+-    if mdp.is_foot and (args.check_foot_gradients or audit_gradients):
++    if (mdp.is_foot and (args.check_foot_gradients or audit_gradients)) or (ROBOT_KIND == 'roban' and args.roban_gradient_audit):
+         # Exclude direct action costs, posture, base terms, critic and survival derivatives.
+         foot_loss = -(disc*c_t.detach()*foot_reward.view(HZ,B)).sum(0).mean()
+         fg = torch.autograd.grad(foot_loss,actor_parameters,retain_graph=True,allow_unused=True)
+         foot_gn = torch.stack([g.detach().float().square().sum() for g in fg if g is not None]).sum().sqrt()
+         if not torch.isfinite(foot_gn): raise FloatingPointError('Nonfinite pure foot Actor gradient')
++        if ROBOT_KIND == 'roban' and foot_gn <= 0:
++            raise RuntimeError('Roban primary foot reward produced no Actor gradient')
+     gradient_diagnostics={}
+     if audit_gradients:
+         params=actor_parameters
+@@ -747,7 +782,7 @@
+ 
+     def save_checkpoint(label=None):
+         ckpt = {"robot_contract": checkpoint_contract(), "goal_contract": goal_spec.contract(),
+-                "checkpoint_schema_version":2,
++                "checkpoint_schema_version":3 if ROBOT_KIND == 'roban' else 2,
+                 "task_contract": mdp.contract(),
+                 "physical_contract":physics_metadata,"policy_contract":policy_contract(
+                     Hh,args.obs_adapter,not args.freeze_decoder,obs_dim=obs_dim,observation_mode=args.motion_obs_mode),
+@@ -838,7 +873,7 @@
+                     torch.cuda.synchronize(); tp3 = time.time()
+                     print(f"[prof] collect {1e3*(tp1-tp0):.0f} ms ({n} steps) | wm {1e3*(tp2-tp1):.0f} ms | policy+critic {1e3*(tp3-tp2):.0f} ms", flush=True)
+                 agg["pi"].append(pl), agg["v"].append(vl), agg["ir"].append(ir), agg["gn"].append(gn), agg["surv"].append(surv)
+-                if args.check_foot_gradients or audit_gradients: agg['fgn'].append(fgn)
++                if args.check_foot_gradients or audit_gradients or args.roban_gradient_audit: agg['fgn'].append(fgn)
+             if (it + 1) % args.log_every == 0 or (stair_cfg and it==start_it):
+                 mean = lambda x: float(sum(float(v) for v in x) / max(len(x), 1))  # noqa: E731
+                 ips = ((it+1-last_log_iteration) if stair_cfg else args.log_every) / (time.time() - t_log)
+--- before/README.md
++++ after/README.md
+@@ -2,7 +2,7 @@
+ 
+ 后续机器人模型与动作统一存放在 **`library/`**。当前资产整理对象是 **Roban `roban_s22_0901`**：21 个活动关节、固定头部、球手。资产入口见 [library/README.md](library/README.md)，机器可读路径见 [registry.json](library/registry.json)。
+ 
+-本次完成模型/动作导入和 `data → library` 路径迁移。Roban 的 Newton 环境、观测/动作维度及训练适配留待下一阶段。当前 `run_train.sh` 和 `s54_*` 工具仍是 S54 专用入口。
++Roban 已接入 Foot-conditioned Actor、非对称 Critic、模块化足部奖励和可选地形 World Model，复用原 SuperMimic BPTT Trainer。架构、数据协议和测试结果见 [Roban 文档](docs/ROBAN_FOOT_CONDITIONED_ARCHITECTURE.md)。`bash tools/run_roban.sh smoke --prefix roban_check_new` 运行有界的端到端验收；不启动正式长训练。`run_train.sh` 和 `s54_*` 工具仍是历史 S54 入口。
+ 
+ 原 S54 模型和动作已归入 `library/model/kuavo_s54`、`library/motion_reference/kuavo_s54`，现有工具与配置已使用新路径。历史 Checkpoint、日志及数据契约保留原样；迁移清单位于 `library/manifests/`。
+ 
+--- before/.gitignore
++++ after/.gitignore
+@@ -49,3 +49,6 @@
+ *.ckpt
+ *.onnx
+ *.log
++
++# Generated Roban Newton asset; regenerate with tools/run_roban.sh prepare
++assets/roban/usd/

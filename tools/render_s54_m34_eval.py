@@ -137,7 +137,7 @@ def render_one(row, reference, output, model, renderer, width, height, iteration
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--evaluation', type=Path, required=True, help='Completed per-split results.json')
-    parser.add_argument('--dataset', type=Path, default=Path('data/s54_flat_dataset/dataset_export'))
+    parser.add_argument('--dataset', type=Path, default=Path('library/motion_reference/kuavo_s54/datasets/s54_flat_dataset/dataset_export'))
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--width', type=int, default=960)
     parser.add_argument('--height', type=int, default=540)

@@ -395,14 +395,14 @@ def main():
     a = p.parse_args(); a.out.mkdir(parents=True, exist_ok=True); torch.set_num_threads(4)
     pkl = pickle.load((a.gmr / 'output/kuavo_s54/pkl/dance1_subject1_30fps.pkl').open('rb'))
     raw = np.loadtxt(a.gmr / 'output/kuavo_s54/csv/dance1_subject1.csv', delimiter=',')
-    full = np.loadtxt('data/retarget_data/reference/dance1_subject1.csv', delimiter=',')
+    full = np.loadtxt('library/motion_reference/kuavo_s54/retarget_data/reference/dance1_subject1.csv', delimiter=',')
     if raw.shape != (len(pkl['root_pos']), 34) or full.shape != (len(raw), 36): raise ValueError('Unexpected S54 reference shapes')
     source = mj.MjModel.from_xml_path(str(a.gmr / 'assets/kuavo_s54/xml/biped_s54.xml'))
     actual_names = [source.joint(j).name for j in range(source.njnt) if source.jnt_type[j] != mj.mjtJoint.mjJNT_FREE]
     if actual_names != JOINT_NAMES: raise ValueError('Source joint names/order differs from S54 contract')
     recording = dict(np.load(a.run_dir / 'traj_10000.npz', allow_pickle=False))
     if list(recording['joint_names']) != JOINT_NAMES: raise ValueError('NPZ joint names/order differs')
-    fps = float(pkl['fps']); kin = S54Kinematics(); motion = MotionLib.from_dir('data/retarget_data/reference', kin, 'cpu')
+    fps = float(pkl['fps']); kin = S54Kinematics(); motion = MotionLib.from_dir('library/motion_reference/kuavo_s54/retarget_data/reference', kin, 'cpu')
     report = {'pipeline':pipeline(pkl, raw, full, motion, recording, a.out)}
     print('Data/time alignment complete', flush=True)
     report['feet'], body = foot_analysis(source, full[:, :3], full[:, 3:7], full[:, 7:], fps, a.out, a.out / 'human_targets.npz')

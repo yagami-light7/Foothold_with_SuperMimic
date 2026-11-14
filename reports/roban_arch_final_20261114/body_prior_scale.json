@@ -1,0 +1,9 @@
+{
+  "kind": "controlled_unit_npz_quality_1",
+  "gradient_wrt": "predicted_joint_positions_not_actor_parameters",
+  "body_prior_weight": 0.03,
+  "primary_foot_state_gradnorm": 0.062125541269779205,
+  "prior_state_gradnorm": 0.00023031063028611243,
+  "prior_to_foot_state_gradient_ratio": 0.0037071809638291597,
+  "max_prior_to_foot_reward_ratio": 0.023284805938601494
+}

@@ -125,7 +125,7 @@ def core_test(kin,motion):
 
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--samples',type=int,default=128);ap.add_argument('--skip_core',action='store_true')
-    ap.add_argument('--motion_dir',default='data/retarget_data/reference_safe')
+    ap.add_argument('--motion_dir',default='library/motion_reference/kuavo_s54/retarget_data/reference_safe')
     ap.add_argument('--out',type=Path,default=Path('results/s54/cpu_tests.json'));a=ap.parse_args()
     torch.set_num_threads(4)
     kin=S54Kinematics();motion=MotionLib.from_dir(a.motion_dir,kin,'cpu')

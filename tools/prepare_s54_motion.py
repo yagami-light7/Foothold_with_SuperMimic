@@ -17,7 +17,7 @@ def sha(path): return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 def prepare(src, dst, expected_frames=None, raw_dir=None):
     src, dst = Path(src).resolve(), Path(dst).resolve()
-    raw_dir = Path(raw_dir).resolve() if raw_dir is not None else REPO / "data/retarget_data/reference/raw"
+    raw_dir = Path(raw_dir).resolve() if raw_dir is not None else REPO / "library/motion_reference/kuavo_s54/retarget_data/reference/raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
     preserved = raw_dir / src.name
     if preserved.exists() and sha(preserved) != sha(src):
@@ -77,8 +77,8 @@ def prepare(src, dst, expected_frames=None, raw_dir=None):
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("--input", type=Path, default=REPO / "data/retarget_data/reference/raw/dance1_subject1.csv")
-    p.add_argument("--output", type=Path, default=REPO / "data/retarget_data/reference/dance1_subject1.csv")
+    p.add_argument("--input", type=Path, default=REPO / "library/motion_reference/kuavo_s54/retarget_data/reference/raw/dance1_subject1.csv")
+    p.add_argument("--output", type=Path, default=REPO / "library/motion_reference/kuavo_s54/retarget_data/reference/dance1_subject1.csv")
     p.add_argument("--expected_frames", type=int, default=None)
     p.add_argument("--raw_dir", type=Path, help="Separate raw archive for an independent reference dataset")
     a=p.parse_args(); prepare(a.input,a.output,a.expected_frames,a.raw_dir)

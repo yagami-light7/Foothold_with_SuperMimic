@@ -1,0 +1,18 @@
+{
+  "supermimic/env.py": "62f134b689bbd45532694f2455facb4f85ad19377eb42c26b956f25a7ff5e39d",
+  "supermimic/stair_reset.py": "95c18ce72a8d0a5ebc11a986f72541ff18e60f868b0edd455c8a1d8e059d8808",
+  "supermimic/stair_runtime.py": "476c24297698dc6a9678d3a2c97facf7a0297d16c88271cff8a6de23b6640f6e",
+  "supermimic/stair_training.py": "6b1b5c2d5bdb0de5b324f8014a690bf41f398480e1a480335bd07587a3d22181",
+  "supermimic/stair_evaluation.py": "6d53211e447b3604bbc4df546534056290ecf8d7a24bde0b3d510836232d85cc",
+  "supermimic/train.py": "083dd00923b15c6070d0cfc5d6b0ee41a33d30a5df6d9a877b7d8edae63d1fd7",
+  "tools/diagnose_s54_stair_reset.py": "e3b698b2430c6b9aee68e4c21202a24e1251f2453c8009cdcda4185defb59a8f",
+  "tools/run_s54_stair.py": "3fdf0d4639167e497444c01166d09f4e5557c7dbb431d378cdf44f759638c61e",
+  "tools/t15_stair_rollout.py": "faebca4e14c790218e7b11a654d2eb0a2cd0cfafb412b702e6b616f30f18ca35",
+  "tools/test_s54_stair_experiment.py": "1fe9799a5644b214cba450595c3d70d432ac2d7d88bee7973ecd229c0e1e6ab9",
+  "experiments/s54_stair_flat6063_8h/train.json": "93146ac803258e119886c2b71628fb785ae31ae7dcb0e6f1274943eab21a8f76",
+  "experiments/s54_stair_flat6063_8h/smoke.json": "c9bc21cd4eae8f73ba5cf59a255fdb538bc3a4363441218cad7913643ad640e9",
+  "experiments/s54_stair_flat6063_8h/design.json": "2981ce6f04c8e760ee20af5392dc55a2404bfda929127d6527fe8b5e4103c21a",
+  "experiments/s54_stair_flat6063_8h/smoke_design.json": "419afb8adedc61c4daeb4c7fe1993af3f8a1462a7314ae17b92b40dfef2120d6",
+  "experiments/s54_stair_flat6063_8h/flat_training_profile.json": "7548d2ac212512f0e54124ad6431aa4e08a9b5b4a6804c293f95169dd585fe8c",
+  "experiments/s54_stair_flat6063_8h/reward.json": "9d81c0bce412672f2767273e8cf487106301b4fe3de0d9fea28ec44b93724e84"
+}

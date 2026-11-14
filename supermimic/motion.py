@@ -12,7 +12,7 @@ import numpy as np
 import torch
 
 from .kinematics import S54Kinematics
-from .s54 import JOINT_NAMES, SOURCE_FPS, GOAL_FRAME_DIM, checkpoint_contract
+from .robot_contract import JOINT_NAMES, SOURCE_FPS, GOAL_FRAME_DIM, checkpoint_contract
 from .rotations import mat_to_6d, quat_slerp, quat_to_mat, so3_log, yaw_mat
 from .reference_quality import validate_root_motion
 

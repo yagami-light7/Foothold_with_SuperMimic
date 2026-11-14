@@ -1,0 +1,51 @@
+# caches and build output
+.cache/
+__pycache__/
+*.pyc
+build_*.log
+# upstream checkout (pinned commit cloned by tools/setup.sh)
+IsaacLab/
+# Deprecated layout: do not add new assets here.
+data/
+# Local asset collections; entry-point metadata and library/README.md are tracked.
+/library/model/
+/library/motion_reference/
+/library/manifests/
+# training runs: checkpoints, logs
+logs/
+*.pt
+# rendered videos and recorded trajectories (derived from CC BY-NC-ND LAFAN1 motions)
+*.mp4
+*.npz
+results/analysis/
+# third-party paper
+*.pdf
+.vscode/
+.vene-swanlab/
+.venv-swanlab/
+.swanlab/
+
+# Local environments and credentials
+.venv*/
+.env
+.env.*
+!.env.example
+.netrc
+.aws/
+.ssh/
+.codex/
+.agents/
+*.pem
+*.key
+
+# Generated training artifacts
+/results/
+/checkpoints/
+/artifacts/
+MUJOCO_LOG.TXT
+swanlog/
+events.out.tfevents.*
+*.pth
+*.ckpt
+*.onnx
+*.log

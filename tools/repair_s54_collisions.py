@@ -18,8 +18,8 @@ from s54_reference_publish import finish_candidate, accepted
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--input_dir', type=Path, default=REPO / 'data/retarget_data/reference_grounded')
-    p.add_argument('--out_dir', type=Path, default=REPO / 'data/retarget_data/reference_safe')
+    p.add_argument('--input_dir', type=Path, default=REPO / 'library/motion_reference/kuavo_s54/retarget_data/reference_grounded')
+    p.add_argument('--out_dir', type=Path, default=REPO / 'library/motion_reference/kuavo_s54/retarget_data/reference_safe')
     p.add_argument('--clips', nargs='+')
     p.add_argument('--all', action='store_true')
     p.add_argument('--skip_existing', action='store_true')
@@ -28,7 +28,7 @@ def main():
     p.add_argument('--collision_config', type=Path, default=REPO / 'configs/s54_self_collision.json')
     a = p.parse_args()
     src, out = a.input_dir.resolve(), a.out_dir.resolve()
-    if not out.is_relative_to(REPO) or out == src or out in (REPO, REPO / 'data', REPO / 'data/retarget_data'):
+    if not out.is_relative_to(REPO) or out == src or out in (REPO, REPO / 'library', REPO / 'library/motion_reference/kuavo_s54/retarget_data'):
         p.error('Use a separate output directory inside the S54 workspace')
     if not a.clips and not a.all:
         p.error('Select --clips or --all')

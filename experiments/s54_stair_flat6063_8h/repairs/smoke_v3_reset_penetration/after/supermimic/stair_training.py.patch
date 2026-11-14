@@ -1,0 +1,73 @@
+--- before/supermimic/stair_training.py
++++ after/supermimic/stair_training.py
+@@ -61,7 +61,8 @@
+         source_checkpoint_sha256=cfg.get('source_checkpoint_sha256'),
+         normalizer_policy=cfg.get('normalizer_policy','frozen_source'),
+         reset_noise=cfg.get('reset_noise',False),flat_sampling='equal mode then equal clip',
+-        sampling_stages=cfg['sampling_stages'])
++        sampling_stages=cfg['sampling_stages'],reset_feasibility=cfg.get('reset_feasibility'),
++        flat_ground_collider=cfg.get('flat_ground_collider','box'))
+ 
+ 
+ def library(cfg,kin,device):
+@@ -108,7 +109,13 @@
+             weights[mask]=mass/len(modes)/same_mode*(.5/int(mask.sum())+.5*adaptive)
+     bins=torch.multinomial(weights,n,replacement=True)
+     starts=m.bin_start[bins];ends=torch.minimum(starts+BIN_FRAMES,m.clip_end[m.bin_clip[bins]])
+-    return starts+(torch.rand(n,device=env.device)*(ends-starts)).long(),bins
++    frames=starts+(torch.rand(n,device=env.device)*(ends-starts)).long()
++    if hasattr(m,'reset_feasible'):
++        invalid=~m.reset_feasible[frames]
++        while invalid.any():
++            frames[invalid]=starts[invalid]+(torch.rand(int(invalid.sum()),device=env.device)*(ends[invalid]-starts[invalid])).long()
++            invalid=~m.reset_feasible[frames]
++    return frames,bins
+ 
+ 
+ def environment(sim_cfg,n,motion,mdp,cfg,**kwargs):
+@@ -118,10 +125,35 @@
+     from .stair_runtime import make_stair_env
+     # make_stair_env accepts an explicit class to avoid process-global monkeypatches.
+     class MixedTrackingSim(TrackingSim):
++        def ensure_reset_validator(self):
++            if hasattr(self,'reset_validator') or not cfg.get('reset_feasibility'):return
++            from .stair_reset import TerrainResetValidator
++            self.reset_validator=TerrainResetValidator(self.mdp.kin,cfg['terrain'],
++                clearance=cfg['reset_feasibility']['clearance_m'],
++                max_attempts=cfg['reset_feasibility']['max_attempts'])
++            m=self.motion;mask=torch.empty(m.num_frames,dtype=torch.bool,device=self.device)
++            for start in range(0,m.num_frames,256):
++                f=torch.arange(start,min(start+256,m.num_frames),device=self.device)
++                mask[f]=self.reset_validator.valid(m.ref_state(f))
++            # Every nonempty sampling bin must still contain a feasible reset.
++            for b in range(m.num_bins):
++                end=min(int(m.bin_start[b])+BIN_FRAMES,int(m.clip_end[m.bin_clip[b]]))
++                if not mask[int(m.bin_start[b]):end].any():raise ValueError('Motion bin has no geometry-feasible reset state')
++            m.reset_feasible=mask
++            self.reset_geometry_audit=dict(total_frames=m.num_frames,
++                excluded_reset_frames=(~mask).nonzero().flatten().tolist(),
++                clearance_m=self.reset_validator.clearance,
++                scope='Reset sampling only; all original frames retained as motion goals')
+         def sample_frames(self,count):
++            self.ensure_reset_validator()
+             return sample_frames(self,count,cfg)
++        def prepare_motion_reset(self,state,frames):
++            if not cfg.get('reset_feasibility') or not self.reset_noise:return state
++            self.ensure_reset_validator()
++            return self.reset_validator.condition(state,self.motion.ref_state(frames))
+     return make_stair_env(sim_cfg,n,motion,mdp,cfg['terrain'],eval_mode=False,
+-        reset_noise=cfg.get('reset_noise',False),mixed_flat=True,environment_class=MixedTrackingSim,**kwargs)
++        reset_noise=cfg.get('reset_noise',False),mixed_flat=True,environment_class=MixedTrackingSim,
++        flat_collider=cfg.get('flat_ground_collider','box'),**kwargs)
+ 
+ 
+ def initialize_flat(checkpoint,wm,pi,physics,goal_spec,hist,*,normalizer_policy='frozen_source'):
+@@ -133,7 +165,7 @@
+     source=checkpoint['physical_contract'];expected={**physics}
+     # Only these explicitly audited transfer differences are permitted. Other
+     # actuator/clock/gravity/schema differences remain fatal.
+-    permitted=['backend_versions','terrain_task']
++    permitted=['backend_versions','terrain_task','collision_decimation']
+     a={k:v for k,v in source.items() if k not in permitted}
+     b={k:v for k,v in expected.items() if k not in permitted}
+     a={**a,'solver':{**a['solver'],'use_mujoco_contacts':False}}

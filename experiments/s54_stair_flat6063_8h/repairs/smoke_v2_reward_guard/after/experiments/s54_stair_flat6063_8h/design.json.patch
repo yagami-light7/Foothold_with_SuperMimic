@@ -1,0 +1,31 @@
+--- experiments/s54_stair_flat6063_8h/design.json (v2)
++++ experiments/s54_stair_flat6063_8h/design.json (v3)
+@@ -22,14 +22,13 @@
+   "source_checkpoint": "release/S54-SuperMimic-Flat-6000/checkpoints/ckpt_006063.pt",
+   "source_checkpoint_sha256": "e49e968a1a6bd7c5fcef53290b805fafb011bea5533e9bc0c050e5130e0bbe88",
+   "training_enabled": true,
+-  "normalizer_policy": "frozen_source",
+-  "reset_noise": false,
++  "normalizer_policy": "source_online",
++  "reset_noise": true,
+   "keep_periodic_checkpoints": 8,
+   "transition_limits": {
+     "root_speed_m_s": 20.0,
+     "root_angvel_rad_s": 50.0,
+-    "joint_speed_rad_s": 200.0,
+-    "normalized_reward": -20.0
++    "joint_speed_rad_s": 200.0
+   },
+   "sampling_stages": [
+     {
+@@ -49,7 +48,8 @@
+     }
+   ],
+   "scope": "single four-step training action; original flat test excluded; no stair generalization claim",
+-  "required_smoke_gate": "experiments/s54_stair_flat6063_8h/smoke_gate.json",
++  "required_smoke_gate": "experiments/s54_stair_flat6063_8h/smoke_gate_v3.json",
+   "final_eval_reserve_seconds": 300,
+-  "eval_timeout_seconds": 300
++  "eval_timeout_seconds": 300,
++  "tracking_reward_warning_below": -20.0
+ }

@@ -21,7 +21,7 @@ from render import apply_render_style, set_pose
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--motion_dir', type=Path, default=REPO / 'data/retarget_data/reference_startup_fixed')
+    parser.add_argument('--motion_dir', type=Path, default=REPO / 'library/motion_reference/kuavo_s54/retarget_data/reference_startup_fixed')
     parser.add_argument('--clip', default='dance1_subject1')
     parser.add_argument('--start', type=float, default=0.)
     parser.add_argument('--speed', type=float, default=1.)

@@ -1,0 +1,171 @@
+{
+  "status": "PASS",
+  "scope": "asset import, model compilation, CSV headers and path migration only",
+  "robot": {
+    "robot": "roban_s22_0901",
+    "source_mjcf_sha256": "05ef4d4946803de21c0445d11187b7c4316e57654d7b929a57943741c4d553ab",
+    "urdf_sha256": "5b51f91efab797588a171fda37deb4ce55bc7017d9719768d074cfb91c805145",
+    "root_body": "base_link",
+    "root_semantics": "floating chest/torso; waist and pelvis are descendants",
+    "joint_names": [
+      "waist_yaw_joint",
+      "leg_l1_joint",
+      "leg_l2_joint",
+      "leg_l3_joint",
+      "leg_l4_joint",
+      "leg_l5_joint",
+      "leg_l6_joint",
+      "leg_r1_joint",
+      "leg_r2_joint",
+      "leg_r3_joint",
+      "leg_r4_joint",
+      "leg_r5_joint",
+      "leg_r6_joint",
+      "zarm_l1_joint",
+      "zarm_l2_joint",
+      "zarm_l3_joint",
+      "zarm_l4_joint",
+      "zarm_r1_joint",
+      "zarm_r2_joint",
+      "zarm_r3_joint",
+      "zarm_r4_joint"
+    ],
+    "num_joints": 21,
+    "nq": 28,
+    "nv": 27,
+    "nu": 21,
+    "body_names": [
+      "base_link",
+      "waist_yaw_link",
+      "leg_l1_link",
+      "leg_l2_link",
+      "leg_l3_link",
+      "leg_l4_link",
+      "leg_l5_link",
+      "leg_l6_link",
+      "leg_r1_link",
+      "leg_r2_link",
+      "leg_r3_link",
+      "leg_r4_link",
+      "leg_r5_link",
+      "leg_r6_link",
+      "zarm_l1_link",
+      "zarm_l2_link",
+      "zarm_l3_link",
+      "zarm_l4_link",
+      "l_handball",
+      "zarm_r1_link",
+      "zarm_r2_link",
+      "zarm_r3_link",
+      "zarm_r4_link",
+      "r_handball",
+      "zhead_1_link",
+      "head_radar",
+      "zhead_2_link",
+      "head_camera_base",
+      "camera_bottom_screw_frame",
+      "camera_left_ir_frame",
+      "camera_left_ir_optical_frame",
+      "camera_right_ir_frame",
+      "camera_right_ir_optical_frame",
+      "camera_color_frame",
+      "camera_color_optical_frame",
+      "camera_depth_frame",
+      "camera_depth_optical_frame"
+    ],
+    "body_count_including_fixed_frames": 37,
+    "positive_mass_body_count": 26,
+    "visual_mesh_references": 28,
+    "model_mass_kg": 40.69991336,
+    "mjcf_quaternion_order": "wxyz",
+    "csv_root_quaternion_order": "xyzw",
+    "csv_root_columns": [
+      "Frame",
+      "root_translateX",
+      "root_translateY",
+      "root_translateZ",
+      "root_rotateX",
+      "root_rotateY",
+      "root_rotateZ",
+      "root_rotateW"
+    ],
+    "csv_joint_columns": [
+      "waist_yaw_joint",
+      "leg_l1_joint",
+      "leg_l2_joint",
+      "leg_l3_joint",
+      "leg_l4_joint",
+      "leg_l5_joint",
+      "leg_l6_joint",
+      "leg_r1_joint",
+      "leg_r2_joint",
+      "leg_r3_joint",
+      "leg_r4_joint",
+      "leg_r5_joint",
+      "leg_r6_joint",
+      "zarm_l1_joint",
+      "zarm_l2_joint",
+      "zarm_l3_joint",
+      "zarm_l4_joint",
+      "zarm_r1_joint",
+      "zarm_r2_joint",
+      "zarm_r3_joint",
+      "zarm_r4_joint"
+    ],
+    "csv_extra_columns": "retarget diagnostics, not robot actions"
+  },
+  "datasets": {
+    "kimodo_fallgetup": {
+      "clips": 8348,
+      "bytes": 2466369315,
+      "declared_fps": null,
+      "fps_provenance": "Not supplied by the CSV header; confirm before resampling/training",
+      "extra_diagnostic_columns": [
+        32
+      ],
+      "csv_schema": "PASS"
+    },
+    "lafan1": {
+      "clips": 89,
+      "bytes": 1007104108,
+      "declared_fps": null,
+      "fps_provenance": "Not supplied by the CSV header; confirm before resampling/training",
+      "extra_diagnostic_columns": [
+        32,
+        68
+      ],
+      "csv_schema": "PASS"
+    },
+    "snapmogen_roban_50hz": {
+      "clips": 7235,
+      "bytes": 6047296602,
+      "declared_fps": 50,
+      "fps_provenance": "50 Hz declared by source dataset name/generation log; no timestamp column",
+      "extra_diagnostic_columns": [
+        32
+      ],
+      "csv_schema": "PASS"
+    },
+    "style100_roban_50hz": {
+      "clips": 799,
+      "bytes": 2225323268,
+      "declared_fps": 50,
+      "fps_provenance": "50 Hz declared by source dataset name/generation log; no timestamp column",
+      "extra_diagnostic_columns": [
+        32
+      ],
+      "csv_schema": "PASS"
+    }
+  },
+  "imported_files": 16520,
+  "imported_bytes": 11777433054,
+  "import_checksums": "all compared with source during copy",
+  "import_hashes_rechecked": false,
+  "migrated_files_verified": 673,
+  "old_data_directory_exists": false,
+  "newton_or_training_adaptation": "not part of this migration",
+  "timing_pending": [
+    "kimodo_fallgetup",
+    "lafan1"
+  ]
+}

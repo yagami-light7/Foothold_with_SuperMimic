@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from isaaclab.app import add_launcher_args, launch_simulation
 p=argparse.ArgumentParser();p.add_argument('--num_envs',type=int,default=1);p.add_argument('--steps',type=int,default=60)
-p.add_argument('--motion_dir',default='data/retarget_data/reference');p.add_argument('--out',default=None)
+p.add_argument('--motion_dir',default='library/motion_reference/kuavo_s54/retarget_data/reference');p.add_argument('--out',default=None)
 add_launcher_args(p);args=p.parse_args()
 if not 1<=args.num_envs<=16:p.error('S54 initial smoke is limited to 1–16 envs')
 if not 20<=args.steps<=100:p.error('Use 20–100 steps')

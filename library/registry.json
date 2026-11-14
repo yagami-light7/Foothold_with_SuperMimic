@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "active_robot": "roban_s22_0901",
+  "selection_scope": "asset organization; Newton and training adapters are separate work",
+  "robots": {
+    "roban_s22_0901": {
+      "model_root": "model/roban_s22_0901",
+      "mjcf": "model/roban_s22_0901/xml/biped_s17_verified_handball_fixedhead.xml",
+      "urdf": "model/roban_s22_0901/urdf/biped_s17_verified_handball_fixedhead.urdf",
+      "meshes": "model/roban_s22_0901/meshes",
+      "model_contract": "manifests/roban_model_contract.json",
+      "motion_root": "motion_reference/roban",
+      "datasets": {
+        "kimodo_fallgetup": {
+          "path": "motion_reference/roban/kimodo_fallgetup",
+          "expected_clips": 8348,
+          "fps": null,
+          "fps_provenance": "Not supplied by the CSV header; confirm before resampling/training"
+        },
+        "lafan1": {
+          "path": "motion_reference/roban/lafan1",
+          "expected_clips": 89,
+          "fps": null,
+          "fps_provenance": "Not supplied by the CSV header; confirm before resampling/training"
+        },
+        "snapmogen_roban_50hz": {
+          "path": "motion_reference/roban/snapmogen_roban_50hz",
+          "expected_clips": 7235,
+          "fps": 50,
+          "fps_provenance": "50 Hz declared by source dataset name/generation log; no timestamp column"
+        },
+        "style100_roban_50hz": {
+          "path": "motion_reference/roban/style100_roban_50hz",
+          "expected_clips": 799,
+          "fps": 50,
+          "fps_provenance": "50 Hz declared by source dataset name/generation log; no timestamp column"
+        }
+      }
+    },
+    "kuavo_s54": {
+      "status": "historical assets, isolated from Roban",
+      "model_root": "model/kuavo_s54",
+      "mjcf": "model/kuavo_s54/xml/biped_s54.xml",
+      "simulation_mjcf": "model/kuavo_s54/xml/s54_sim.xml",
+      "usd": "model/kuavo_s54/usd/s54_sim/s54_sim.usda",
+      "urdf": "model/kuavo_s54/urdf/biped_s54.urdf",
+      "motion_root": "motion_reference/kuavo_s54",
+      "m34_dataset": "motion_reference/kuavo_s54/datasets/s54_flat_dataset/dataset_export",
+      "stair_npz": "motion_reference/kuavo_s54/datasets/s54_stair_dataset/stair_up_4.npz"
+    }
+  }
+}

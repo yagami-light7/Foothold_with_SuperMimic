@@ -20,7 +20,7 @@ from tools.test_s54_cpu import fk_test
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--motion_dir', type=Path, default=Path('data/retarget_data/reference'))
+    p.add_argument('--motion_dir', type=Path, default=Path('library/motion_reference/kuavo_s54/retarget_data/reference'))
     p.add_argument('--baseline', type=Path, help='Baseline PKL/CSV; defaults to the newly generated dance1 baseline PKL')
     p.add_argument('--out', type=Path, default=Path('results/s54/upper_body_validation.json'))
     a = p.parse_args()

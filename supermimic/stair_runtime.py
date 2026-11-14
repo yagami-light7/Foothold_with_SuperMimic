@@ -10,7 +10,18 @@ from .mdp import MDP
 from .s54 import REPO
 
 
+def flat_zone_mesh():
+    """Exact former finite Box boundary, baked into world-coordinate triangles."""
+    import numpy as np
+    import trimesh
+    transform=np.eye(4);transform[:3,3]=[20.,0.,-.05]
+    return trimesh.creation.box(extents=(24.,24.,.1),transform=transform)
+
+
 class StairTrackingMDP(MDP):
+    # Use the exact 71D quaternion state stored in replay for real-step rewards.
+    # This avoids rewarding one rotation-matrix rounding and replaying another.
+    canonical_replay_reward=True
     def __init__(self, *args, stance_slip_weight=.05, stance_slip_std=.1, **kwargs):
         super().__init__(*args, **kwargs)
         self.stance_slip_weight, self.stance_slip_std = stance_slip_weight, stance_slip_std
@@ -44,12 +55,16 @@ def make_stair_sim(device, args, *, contact_pipeline='newton', render=False):
     # Explicit, recorded transfer difference: keep MJWarp solver, implicit PD,
     # friction, substeps, gravity and limits; use triangle-capable contacts.
     cfg.physics.solver_cfg.use_mujoco_contacts = contact_pipeline == 'mujoco'
+    # External Newton contacts otherwise refresh only once per 20 ms control
+    # tick and remain stale through all four solver substeps. MuJoCo's internal
+    # pipeline refreshes each solver step; preserve that timing for mesh contact.
+    if contact_pipeline=='newton':cfg.physics.collision_decimation=1
     cfg.physics.load_visual_shapes = render
     return cfg
 
 
 def make_stair_env(cfg, num_envs, motion, mdp, terrain_asset, *, goals=None, eval_mode=True,
-                   reset_noise=False, gamma=.99, mixed_flat=False, **kwargs):
+                   reset_noise=False, gamma=.99, mixed_flat=False, environment_class=None, flat_collider='box', **kwargs):
     import isaaclab.sim as sim_utils
     from isaaclab.assets import AssetBaseCfg
     from isaaclab.utils import configclass
@@ -65,16 +80,22 @@ def make_stair_env(cfg, num_envs, motion, mdp, terrain_asset, *, goals=None, eva
         # Fixed paired transform for flat training clips only. The stair mesh and
         # stair reference stay in the authoritative unmodified source world.
         scene_cfg.flat = AssetBaseCfg(prim_path='/World/FlatZone', collision_group=-1,
-            spawn=sim_utils.CuboidCfg(size=(16.,16.,.1),
+            spawn=sim_utils.CuboidCfg(size=(24.,24.,.1),
                 collision_props=sim_utils.UsdPhysicsCollisionCfg(collision_enabled=True),
                 visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(.08,.08,.08))),
             init_state=AssetBaseCfg.InitialStateCfg(pos=(20.,0.,-.05)))
+        if flat_collider=='mesh':scene_cfg.flat=AssetBaseCfg(prim_path='/World/FlatZone',spawn=None,collision_group=-1)
 
     def setup():
         path = REPO/'scripts/terrain/load_stairs_asset.py'
         spec = importlib.util.spec_from_file_location('s54_stair_loader_local', path)
         module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
         module.spawn_stairs(terrain_asset, '/World/Stairs')
+        if mixed_flat and flat_collider=='mesh':
+            from isaaclab.terrains.utils import create_prim_from_mesh
+            create_prim_from_mesh('/World/FlatZone',flat_zone_mesh(),
+                collision_props=sim_utils.UsdPhysicsCollisionCfg(collision_enabled=True),
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(.08,.08,.08)))
 
-    return TrackingSim(cfg, num_envs, motion, mdp, gamma=gamma, eval_mode=eval_mode,
+    return (environment_class or TrackingSim)(cfg, num_envs, motion, mdp, gamma=gamma, eval_mode=eval_mode,
         reset_noise=reset_noise, goals=goals, scene_cfg=scene_cfg, scene_setup=setup, **kwargs)

@@ -10,7 +10,7 @@ from supermimic.mdp import MDP
 from supermimic.motion import MotionLib
 from supermimic.s54 import default_joint_pos_list, NUM_J, XI_DIM
 dev = "cuda:0"
-kin = S54Kinematics(dev); motion = MotionLib.from_dir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "retarget_data", "reference"), kin, dev)
+kin = S54Kinematics(dev); motion = MotionLib.from_dir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "library", "motion_reference", "kuavo_s54", "retarget_data", "reference"), kin, dev)
 mdp = MDP(kin, motion, torch.tensor(default_joint_pos_list(), device=dev))
 sim_cfg = make_sim(dev, args)
 with launch_simulation(sim_cfg, args):

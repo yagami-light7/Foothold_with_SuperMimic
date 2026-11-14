@@ -1,0 +1,19 @@
+--- before/tools/run_s54_stair.py
++++ after/tools/run_s54_stair.py
+@@ -36,6 +36,7 @@
+     wm=WorldModel();pi=Policy(103,730,hist=10)
+     physics=physical_contract(obs_dim=103)
+     physics['solver']={**physics['solver'],'use_mujoco_contacts':False}
++    physics['collision_decimation']=1
+     physics['terrain_task']=contract(design)
+     transfer=initialize_flat(ck,wm,pi,physics,GoalSpec('motion',10,.02),10,
+         normalizer_policy=design.get('normalizer_policy','frozen_source'))
+@@ -147,7 +148,7 @@
+             return
+         from t15_launch import launch
+         launch([sys.executable,'-u','tools/run_s54_stair.py','_night'],
+-               'logs/s54_stair_flat6063_night_v3','night')
++               'logs/s54_stair_flat6063_night_v8','night')
+         return
+     if args.phase=='_night':
+         cpu_check()

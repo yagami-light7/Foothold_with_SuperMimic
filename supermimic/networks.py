@@ -67,9 +67,10 @@ def run_mlp(net: nn.Module, x: torch.Tensor) -> torch.Tensor:
 class WorldModel(nn.Module):
     """Deterministic dynamics s_{t+1} = f(s_t, a_t, xi) predicting frame-local state increments."""
 
-    def __init__(self, hidden=(2048, 2048, 2048)):
+    def __init__(self, hidden=(2048, 2048, 2048), terrain_provider=None):
         super().__init__()
-        self.in_dim = INV_DIM + NUM_J + XI_DIM
+        self.terrain_provider = terrain_provider
+        self.in_dim = INV_DIM + NUM_J + XI_DIM + (terrain_provider.dim if terrain_provider else 0)
         self.net = mlp(self.in_dim, list(hidden), WM_OUT, act=nn.SiLU, layer_norm=True)
         nn.init.zeros_(self.net[-1].weight)
         nn.init.zeros_(self.net[-1].bias)
@@ -77,7 +78,10 @@ class WorldModel(nn.Module):
         self.out_norm = RunningNorm(WM_OUT, eps=1e-4)
 
     def inputs(self, S, a, xi_n):
-        return torch.cat((invariant_features(S), a, xi_n), -1)
+        parts = [invariant_features(S), a, xi_n]
+        if self.terrain_provider is not None:
+            parts.append(self.terrain_provider(S))
+        return torch.cat(parts, -1)
 
     @staticmethod
     def targets(S, S1):

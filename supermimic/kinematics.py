@@ -7,14 +7,15 @@ from __future__ import annotations
 import mujoco
 import numpy as np
 import torch
-from .s54 import JOINT_NAMES, SOURCE_MJCF, TRACKED_BODIES, model_contract
+from .robot_contract import JOINT_NAMES, SOURCE_MJCF, TRACKED_BODIES, model_contract
 from .rotations import axis_angle_to_mat, quat_to_mat
 
 
-class S54Kinematics:
+class RobotKinematics:
     def __init__(self, device='cpu', tracked=None, model_path=SOURCE_MJCF, dtype=torch.float32):
         m, rows = model_contract(model_path)
         self.device = device
+        self.joint_names = list(JOINT_NAMES)
         self.body_names = [m.body(b).name for b in range(1, m.nbody)]
         self.num_bodies = len(self.body_names)
         self.parent = [int(m.body_parentid[b])-1 for b in range(1, m.nbody)]
@@ -44,7 +45,7 @@ class S54Kinematics:
 
     def forward(self, p, R, v, w, q, qd, all_bodies=False):
         if q.shape[-1] != len(JOINT_NAMES) or qd.shape != q.shape:
-            raise ValueError('Expected canonical S54 joint position/velocity vectors')
+            raise ValueError('Expected canonical robot joint position/velocity vectors')
         P, Rs, V, W = [], [], [], []
         for i, par in enumerate(self.parent):
             j = self.joint_idx[i]
@@ -70,3 +71,7 @@ class S54Kinematics:
             P.append(pi); Rs.append(Ri); V.append(vi); W.append(wi)
         idx = range(self.num_bodies) if all_bodies else self.tracked_idx
         return tuple(torch.stack([arr[i] for i in idx], dim) for arr,dim in ((P,-2),(Rs,-3),(V,-2),(W,-2)))
+
+
+# Historical tools retain their public name and the default S54 contract.
+S54Kinematics = RobotKinematics

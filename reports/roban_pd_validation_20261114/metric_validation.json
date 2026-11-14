@@ -1,0 +1,28 @@
+{
+  "status": "PASS",
+  "checks": [
+    "first_order_90pct_and_5pct_settling",
+    "analytic_underdamped_overshoot",
+    "negative_step_normalization"
+  ],
+  "first_order": {
+    "t10_s": 0.006,
+    "t90_s": 0.116,
+    "rise_10_90_s": 0.11,
+    "overshoot_pct": 0.0,
+    "settling_5pct_s": 0.15,
+    "settling_band_rad": 0.0025000000000000005,
+    "final_mean_error_rad": 0.0,
+    "peak_speed_rad_s": 0.9900663346622373
+  },
+  "underdamped": {
+    "t10_s": 0.024,
+    "t90_s": 0.084,
+    "rise_10_90_s": 0.060000000000000005,
+    "overshoot_pct": 52.660989059691765,
+    "settling_5pct_s": 0.6880000000000001,
+    "settling_band_rad": 0.0025000000000000005,
+    "final_mean_error_rad": 6.265111277984487e-06,
+    "peak_speed_rad_s": 0.7560999803500952
+  }
+}

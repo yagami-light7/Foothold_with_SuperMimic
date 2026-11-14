@@ -1,0 +1,91 @@
+{
+  "passed": false,
+  "data_contract": {
+    "format": "s54_stair_t15_mixed_train_v2",
+    "flat": {
+      "format": "s54_flat_m3_4_v1",
+      "split": "train",
+      "fps": 50,
+      "metadata_sha256": "2bbbd3a9dbd271bd8fbfbc5d1446cc45ba37e0f61f8bcde57c3a3e960eadaea1",
+      "manifest_sha256": "96e3d0f118bf7da65e8cd12e3a0e58d90fb23d921553cbe2716f178b2813c367",
+      "motions": {
+        "spin_flat_02": "883f1c8be16e3180288a3daa46589f08de5dd899ecef16f99520e7015b7a0220",
+        "spin_flat_03": "8d5bb67da9ab92fca851859cd26bc50a72889cce94d05e1c02713d1018180d61",
+        "spin_flat_05": "775eb17fe553458b5e51c8a5f7fa0c3ee99960a967f4ef70909049074288b099",
+        "spin_flat_06": "f4b0ea50f159369108a7fd1db95e4cedfe868c031216622319a8b4db3752b55a",
+        "turn_flat_10": "493a91f848102c37b20958ed9f4ad3ee7bb4d8cba433bc33b32c0d9b0ec61ea3",
+        "turn_flat_11": "3f06845c500469c1a2eb3f07985b0a6227a279a8c102472c74a34236a92060b5",
+        "turn_flat_12": "8838d3ec1a242d702e24a3c20fdab90654116a71d9f4b69e834ed9fc14d76f4a",
+        "turn_flat_14": "796f982e04ab05d2e9978a80f273b79e5e079381efba2d5c0aff9e760cd7bbb1",
+        "turn_flat_15": "25bac2964273f14900847ea9ad903341c40d51f14bdc8a11106d9e8b75a09ecc",
+        "turn_flat_16": "06a7e503ab095e62079f63fffc97b989299a725e38e2904839f1c431620e6b3c",
+        "straight_flat_18": "b2f921e7cc81c5c044330c6e85cfc02e14f6d92782f9663f394747d95c0560f2",
+        "straight_flat_19": "12eb73c05531b4ec97ff89e41b0a2d9841eaa7b561bbdac89587cd338f1cd8d7",
+        "straight_flat_20": "63b3bf42168d17b4e156116d4904a3d9308d840f9546fe542f3b00990389d6fb",
+        "straight_flat_21": "d33bb33bdf3e551edd0ebe4193a0a780995354dd10595378f902a0c7b5cd25fb"
+      }
+    },
+    "stair_ids": [
+      "stair_up_4"
+    ],
+    "excluded_ids": [
+      "stair_up_2"
+    ],
+    "stair_npz_sha256": "288d3abd2fd37d3d299a17272bcf4d99a6fac0fc28dcb3e10e1c830a633bbf65",
+    "terrain_mesh_sha256": "1503c3e9481b92e0a6979631d3fd7748d21f7978954c48dc7cffb8b5cc6a43b2",
+    "source_metadata_sha256": "4595d60e9f0f915e809af3c4ae19ec861b25a929ce0ee4fa9dbe2c30d6b5bc23",
+    "explicit_assignment": "single_motion_finetuning; stair_up_4 is training, not heldout",
+    "flat_world_translation_m": [
+      20.0,
+      0.0,
+      0.0
+    ],
+    "stair_world_transform": "identity",
+    "split": "experiment_train",
+    "source_checkpoint_sha256": "e49e968a1a6bd7c5fcef53290b805fafb011bea5533e9bc0c050e5130e0bbe88",
+    "normalizer_policy": "source_online",
+    "reset_noise": true,
+    "flat_sampling": "equal mode then equal clip",
+    "sampling_stages": [
+      {
+        "name": "A",
+        "until_iteration": 1000,
+        "stair_fraction": 0.2
+      },
+      {
+        "name": "B",
+        "until_iteration": 6000,
+        "stair_fraction": 0.6
+      },
+      {
+        "name": "C",
+        "until_iteration": 1000000000,
+        "stair_fraction": 0.5
+      }
+    ],
+    "reset_feasibility": {
+      "method": "all_collision_proxy_vs_original_terrain_rejection",
+      "clearance_m": -0.001,
+      "max_attempts": 64,
+      "fallback": "validated_same_reference_frame; reset only",
+      "reward_state": "canonical_71d_replay_quaternion",
+      "newton_collision_decimation": 1
+    },
+    "flat_ground_collider": "mesh"
+  },
+  "checks": {
+    "finite_training_metrics": true,
+    "actor_gradients": true,
+    "reward_sync": true,
+    "source_normalizer_counts_retained": true
+  },
+  "purpose": "technical stability gate, not stair convergence",
+  "tracking_diagnostics": {
+    "min_mean_real_reward": 0.705725,
+    "wm8_final": 0.190934,
+    "max_abs_imagined_reward": 0.835513,
+    "max_critic_loss": 0.589471,
+    "interpretation": "Finite tracking losses are diagnostics; negative returns do not imply a Newton environment error"
+  },
+  "error": "TimeoutExpired(['/mnt/sage_data/workspace/Toolbox/IsaacLab_3_0/.venv/bin/python', '-u', 'tools/t15_stair_rollout.py', '--mode', 'policy', '--reference', 'flat', '--checkpoint', '/mnt/sage_data/workspace/Foothold/supermimic_s54_main/logs/s54_stair_flat6063_smoke_v8/latest.pt', '--bundle', 'results/s54_stair_t15_20261110/data/newton_import', '--stair-npz', 'data/s54_stair_dataset/stair_up_4.npz', '--terrain', 'assets/terrains/stairs_straight_4_v1', '--flat-dataset', 'data/s54_flat_dataset/dataset_export', '--contacts', 'newton', '--seeds', '0', '1', '2', '--out', '/mnt/sage_data/workspace/Foothold/supermimic_s54_main/logs/s54_stair_flat6063_smoke_v8/evals/iter_000064/attempt_001/FlatTrain_turn_flat_10', '--flat-id', 'turn_flat_10', '--no-video'], 164.3559029330063)"
+}

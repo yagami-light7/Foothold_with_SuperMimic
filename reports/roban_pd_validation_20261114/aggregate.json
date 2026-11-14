@@ -1,0 +1,485 @@
+{
+  "conclusion": "PD 起动及时，但腰髋肩欠阻尼；不宜直接视为已调好的动态跟踪参数",
+  "production_gains_changed": false,
+  "profiles": {
+    "baseline": {
+      "all_step_trials": {
+        "count": 252,
+        "screen_pass": 128,
+        "t90_s": {
+          "median": 0.04,
+          "max": 0.1,
+          "unresolved": 0
+        },
+        "overshoot_pct": {
+          "median": 12.867139279842387,
+          "max": 76.77943408489227,
+          "unresolved": 0
+        },
+        "settling_5pct_s": {
+          "median": 0.34,
+          "max": 1.92,
+          "unresolved": 4
+        },
+        "final_mean_error_rad": {
+          "median": 9.699910879151784e-07,
+          "max": 0.028429291397333144,
+          "unresolved": 0
+        }
+      },
+      "contact_free_step_trials": {
+        "count": 248,
+        "screen_pass": 128,
+        "t90_s": {
+          "median": 0.04,
+          "max": 0.1,
+          "unresolved": 0
+        },
+        "overshoot_pct": {
+          "median": 12.867139279842387,
+          "max": 76.77943408489227,
+          "unresolved": 0
+        },
+        "settling_5pct_s": {
+          "median": 0.34,
+          "max": 1.92,
+          "unresolved": 2
+        },
+        "final_mean_error_rad": {
+          "median": 9.093247354013955e-07,
+          "max": 0.005807074904441834,
+          "unresolved": 0
+        }
+      },
+      "contact_affected_trials": 4
+    },
+    "inertia_damping_probe": {
+      "all_step_trials": {
+        "count": 252,
+        "screen_pass": 226,
+        "t90_s": {
+          "median": 0.08,
+          "max": 0.16,
+          "unresolved": 2
+        },
+        "overshoot_pct": {
+          "median": 4.789912700653042,
+          "max": 10.60213340079783,
+          "unresolved": 0
+        },
+        "settling_5pct_s": {
+          "median": 0.1,
+          "max": 0.32,
+          "unresolved": 2
+        },
+        "final_mean_error_rad": {
+          "median": 1.1920928952302567e-08,
+          "max": 0.028429383784532546,
+          "unresolved": 0
+        }
+      },
+      "contact_free_step_trials": {
+        "count": 250,
+        "screen_pass": 226,
+        "t90_s": {
+          "median": 0.08,
+          "max": 0.16,
+          "unresolved": 0
+        },
+        "overshoot_pct": {
+          "median": 4.796459277470911,
+          "max": 10.60213340079783,
+          "unresolved": 0
+        },
+        "settling_5pct_s": {
+          "median": 0.1,
+          "max": 0.32,
+          "unresolved": 0
+        },
+        "final_mean_error_rad": {
+          "median": 1.1920928952302567e-08,
+          "max": 3.5166740419700915e-07,
+          "unresolved": 0
+        }
+      },
+      "contact_affected_trials": 2
+    }
+  },
+  "joints": [
+    {
+      "joint": "waist_yaw_joint",
+      "t90_max_ms": 80.0,
+      "overshoot_max_pct": 45.284503698349,
+      "settling_max_ms": 1860.0,
+      "unsettled": 1,
+      "gain_2Hz_max": 1.8601167284577682
+    },
+    {
+      "joint": "leg_l1_joint",
+      "t90_max_ms": 80.0,
+      "overshoot_max_pct": 64.59453105926518,
+      "settling_max_ms": 1340.0,
+      "unsettled": 0,
+      "gain_2Hz_max": 1.6305657789184198
+    },
+    {
+      "joint": "leg_l2_joint",
+      "t90_max_ms": 100.0,
+      "overshoot_max_pct": 76.77943408489227,
+      "settling_max_ms": 1900.0000000000002,
+      "unsettled": 0,
+      "gain_2Hz_max": 1.911426698906476
+    },
+    {
+      "joint": "leg_l3_joint",
+      "t90_max_ms": 20.0,
+      "overshoot_max_pct": 11.541152000427246,
+      "settling_max_ms": 60.0,
+      "unsettled": 0,
+      "gain_2Hz_max": 1.0357265166863954
+    },
+    {
+      "joint": "leg_l4_joint",
+      "t90_max_ms": 40.0,
+      "overshoot_max_pct": 16.045698523521423,
+      "settling_max_ms": 640.0,
+      "unsettled": 0,
+      "gain_2Hz_max": 1.1555119404259102
+    },
+    {
+      "joint": "leg_l5_joint",
+      "t90_max_ms": 20.0,
+      "overshoot_max_pct": 5.772376060485862,
+      "settling_max_ms": 40.0,
+      "unsettled": 0,
+      "gain_2Hz_max": 1.003188466480005
+    },
+    {
+      "joint": "leg_l6_joint",
+      "t90_max_ms": 20.0,
+      "overshoot_max_pct": 3.427410125732444,
+      "settling_max_ms": 20.0,
+      "unsettled": 0,
+      "gain_2Hz_max": 1.0013633957704293
+    },
+    {
+      "joint": "leg_r1_joint",
+      "t90_max_ms": 80.0,
+      "overshoot_max_pct": 41.67886972427368,
+      "settling_max_ms": 980.0,
+      "unsettled": 0,
+      "gain_2Hz_max": 1.3578198337127645
+    },
+    {
+      "joint": "leg_r2_joint",
+      "t90_max_ms": 100.0,
+      "overshoot_max_pct": 76.77943408489227,
+      "settling_max_ms": 1900.0000000000002,
+      "unsettled": 0,
+      "gain_2Hz_max": 1.9410851095545292
+    },
+    {
+      "joint": "leg_r3_joint",
+      "t90_max_ms": 20.0,
+      "overshoot_max_pct": 11.541077494621277,
+      "settling_max_ms": 60.0,
+      "unsettled": 0,
+      "gain_2Hz_max": 1.0341903711784735
+    },
+    {
+      "joint": "leg_r4_joint",
+      "t90_max_ms": 40.0,
+      "overshoot_max_pct": 17.581367492675803,
+      "settling_max_ms": 480.0,
+      "unsettled": 0,
+      "gain_2Hz_max": 1.1474894110676115
+    },
+    {
+      "joint": "leg_r5_joint",
+      "t90_max_ms": 20.0,
+      "overshoot_max_pct": 5.5841445922851785,
+      "settling_max_ms": 40.0,
+      "unsettled": 0,
+      "gain_2Hz_max": 1.0030834811241203
+    },
+    {
+      "joint": "leg_r6_joint",
+      "t90_max_ms": 20.0,
+      "overshoot_max_pct": 3.4239232540130837,
+      "settling_max_ms": 20.0,
+      "unsettled": 0,
+      "gain_2Hz_max": 1.0013758143403586
+    },
+    {
+      "joint": "zarm_l1_joint",
+      "t90_max_ms": 60.0,
+      "overshoot_max_pct": 48.48102629184723,
+      "settling_max_ms": 500.0,
+      "unsettled": 0,
+      "gain_2Hz_max": 1.2086387081409182
+    },
+    {
+      "joint": "zarm_l2_joint",
+      "t90_max_ms": 60.0,
+      "overshoot_max_pct": 49.47468042373657,
+      "settling_max_ms": 480.0,
+      "unsettled": 0,
+      "gain_2Hz_max": 1.209479865913686
+    },
+    {
+      "joint": "zarm_l3_joint",
+      "t90_max_ms": 40.0,
+      "overshoot_max_pct": 3.219747543334983,
+      "settling_max_ms": 40.0,
+      "unsettled": 0,
+      "gain_2Hz_max": 1.0007973555091714
+    },
+    {
+      "joint": "zarm_l4_joint",
+      "t90_max_ms": 40.0,
+      "overshoot_max_pct": 4.760110378265403,
+      "settling_max_ms": 40.0,
+      "unsettled": 0,
+      "gain_2Hz_max": 1.0104746478961601
+    },
+    {
+      "joint": "zarm_r1_joint",
+      "t90_max_ms": 60.0,
+      "overshoot_max_pct": 48.48099648952484,
+      "settling_max_ms": 500.0,
+      "unsettled": 0,
+      "gain_2Hz_max": 1.208638676249174
+    },
+    {
+      "joint": "zarm_r2_joint",
+      "t90_max_ms": 60.0,
+      "overshoot_max_pct": 49.474695324897766,
+      "settling_max_ms": 480.0,
+      "unsettled": 0,
+      "gain_2Hz_max": 1.2094798347006341
+    },
+    {
+      "joint": "zarm_r3_joint",
+      "t90_max_ms": 40.0,
+      "overshoot_max_pct": 2.735310792922996,
+      "settling_max_ms": 40.0,
+      "unsettled": 0,
+      "gain_2Hz_max": 0.9993335223200032
+    },
+    {
+      "joint": "zarm_r4_joint",
+      "t90_max_ms": 40.0,
+      "overshoot_max_pct": 4.45600748062136,
+      "settling_max_ms": 40.0,
+      "unsettled": 0,
+      "gain_2Hz_max": 1.0104746617918527
+    }
+  ],
+  "worst_contact_free_overshoot": {
+    "t10_s": 0.04,
+    "t90_s": 0.1,
+    "rise_10_90_s": 0.060000000000000005,
+    "overshoot_pct": 76.77943408489227,
+    "settling_5pct_s": 1.9000000000000001,
+    "settling_band_rad": 0.0025000000000000005,
+    "final_mean_error_rad": 0.0018560099601745595,
+    "peak_speed_rad_s": 0.8110257796943187,
+    "profile": "baseline",
+    "kind": "step",
+    "requested_amplitude_rad": 0.05,
+    "amplitude_rad": -0.05,
+    "joint": "leg_l2_joint",
+    "posture": "source_neutral",
+    "direction": -1,
+    "peak_actual_torque_Nm": 9.101298332214355,
+    "saturation_fraction_last_substep": 0.0,
+    "active_contact_samples": 0,
+    "cross_joint_peak_rad": 0.0007829639362171292,
+    "screen_pass": false,
+    "contact_free": true
+  },
+  "worst_contact_free_sine_gain": {
+    "profile": "baseline",
+    "kind": "sine",
+    "joint": "leg_r2_joint",
+    "posture": "Neutral_FW_frame_50",
+    "frequency_hz": 2.0,
+    "amplitude_rad": 0.1,
+    "gain": 1.9410851095545292,
+    "phase_lag_deg": 19.3865020926503,
+    "equivalent_delay_s": 0.026925697350903194,
+    "active_contact_samples": 0,
+    "rmse_rad": 0.06725296382671252,
+    "saturation_fraction_last_substep": 0.0
+  },
+  "sine_summary": [
+    {
+      "profile": "baseline",
+      "frequency_hz": 1.0,
+      "count": 63,
+      "gain_min": 0.9997255543239802,
+      "gain_max": 1.1297584594187429,
+      "max_phase_lag_deg": 8.390363159745878,
+      "max_equivalent_delay_s": 0.023306564332627434
+    },
+    {
+      "profile": "baseline",
+      "frequency_hz": 2.0,
+      "count": 62,
+      "gain_min": 0.9988703873610907,
+      "gain_max": 1.9410851095545292,
+      "max_phase_lag_deg": 20.20511349334974,
+      "max_equivalent_delay_s": 0.02806265762965242
+    },
+    {
+      "profile": "inertia_damping_probe",
+      "frequency_hz": 1.0,
+      "count": 63,
+      "gain_min": 0.9866634433107266,
+      "gain_max": 1.0226725676722948,
+      "max_phase_lag_deg": 31.313937944858623,
+      "max_equivalent_delay_s": 0.0869831609579406
+    },
+    {
+      "profile": "inertia_damping_probe",
+      "frequency_hz": 2.0,
+      "count": 63,
+      "gain_min": 0.9075725675279717,
+      "gain_max": 1.0584060612302897,
+      "max_phase_lag_deg": 68.62085237781933,
+      "max_equivalent_delay_s": 0.09530673941363796
+    }
+  ],
+  "standing": [
+    {
+      "profile": "baseline",
+      "initial_pitch_deg": 0.0,
+      "fall_time_s": null,
+      "duration_s": 5.0,
+      "joint_rmse_before_fall_rad": 0.025753454715320312,
+      "max_tilt_before_fall_deg": 12.055451393127441,
+      "final_root_height_m": 0.7651875615119934,
+      "saturation_fraction_before_fall": 0.0,
+      "feet_with_measured_ground_force": 2,
+      "peak_foot_ground_vertical_force_N": 392.99441623687744,
+      "nonfoot_ground_contact_samples_before_fall": 0
+    },
+    {
+      "profile": "baseline",
+      "initial_pitch_deg": -1.0,
+      "fall_time_s": null,
+      "duration_s": 5.0,
+      "joint_rmse_before_fall_rad": 0.025567787365066822,
+      "max_tilt_before_fall_deg": 12.628294944763184,
+      "final_root_height_m": 0.7650036811828613,
+      "saturation_fraction_before_fall": 0.0,
+      "feet_with_measured_ground_force": 2,
+      "peak_foot_ground_vertical_force_N": 326.47920989990234,
+      "nonfoot_ground_contact_samples_before_fall": 0
+    },
+    {
+      "profile": "baseline",
+      "initial_pitch_deg": 1.0,
+      "fall_time_s": null,
+      "duration_s": 5.0,
+      "joint_rmse_before_fall_rad": 0.02622845245922147,
+      "max_tilt_before_fall_deg": 11.498380661010742,
+      "final_root_height_m": 0.7654016613960266,
+      "saturation_fraction_before_fall": 0.0,
+      "feet_with_measured_ground_force": 2,
+      "peak_foot_ground_vertical_force_N": 420.4717311859131,
+      "nonfoot_ground_contact_samples_before_fall": 0
+    },
+    {
+      "profile": "baseline",
+      "initial_pitch_deg": -2.0,
+      "fall_time_s": null,
+      "duration_s": 5.0,
+      "joint_rmse_before_fall_rad": 0.0255028086619746,
+      "max_tilt_before_fall_deg": 13.124495506286621,
+      "final_root_height_m": 0.7657657861709595,
+      "saturation_fraction_before_fall": 0.0,
+      "feet_with_measured_ground_force": 2,
+      "peak_foot_ground_vertical_force_N": 377.6201972961426,
+      "nonfoot_ground_contact_samples_before_fall": 0
+    },
+    {
+      "profile": "baseline",
+      "initial_pitch_deg": 2.0,
+      "fall_time_s": null,
+      "duration_s": 5.0,
+      "joint_rmse_before_fall_rad": 0.0265255196722555,
+      "max_tilt_before_fall_deg": 10.829019546508789,
+      "final_root_height_m": 0.7650342583656311,
+      "saturation_fraction_before_fall": 0.0,
+      "feet_with_measured_ground_force": 2,
+      "peak_foot_ground_vertical_force_N": 385.8612847328186,
+      "nonfoot_ground_contact_samples_before_fall": 0
+    },
+    {
+      "profile": "inertia_damping_probe",
+      "initial_pitch_deg": 0.0,
+      "fall_time_s": null,
+      "duration_s": 5.0,
+      "joint_rmse_before_fall_rad": 0.02606445658639501,
+      "max_tilt_before_fall_deg": 11.52550220489502,
+      "final_root_height_m": 0.7654789090156555,
+      "saturation_fraction_before_fall": 0.0,
+      "feet_with_measured_ground_force": 2,
+      "peak_foot_ground_vertical_force_N": 392.9944648742676,
+      "nonfoot_ground_contact_samples_before_fall": 0
+    },
+    {
+      "profile": "inertia_damping_probe",
+      "initial_pitch_deg": -1.0,
+      "fall_time_s": null,
+      "duration_s": 5.0,
+      "joint_rmse_before_fall_rad": 0.025781948440849325,
+      "max_tilt_before_fall_deg": 12.068002700805664,
+      "final_root_height_m": 0.7652637958526611,
+      "saturation_fraction_before_fall": 0.0,
+      "feet_with_measured_ground_force": 2,
+      "peak_foot_ground_vertical_force_N": 321.71690464019775,
+      "nonfoot_ground_contact_samples_before_fall": 0
+    },
+    {
+      "profile": "inertia_damping_probe",
+      "initial_pitch_deg": 1.0,
+      "fall_time_s": null,
+      "duration_s": 5.0,
+      "joint_rmse_before_fall_rad": 0.026165945959048073,
+      "max_tilt_before_fall_deg": 10.853476524353027,
+      "final_root_height_m": 0.76541668176651,
+      "saturation_fraction_before_fall": 0.0,
+      "feet_with_measured_ground_force": 2,
+      "peak_foot_ground_vertical_force_N": 458.3422441482544,
+      "nonfoot_ground_contact_samples_before_fall": 0
+    },
+    {
+      "profile": "inertia_damping_probe",
+      "initial_pitch_deg": -2.0,
+      "fall_time_s": null,
+      "duration_s": 5.0,
+      "joint_rmse_before_fall_rad": 0.025552492051083495,
+      "max_tilt_before_fall_deg": 12.525975227355957,
+      "final_root_height_m": 0.765651524066925,
+      "saturation_fraction_before_fall": 0.0,
+      "feet_with_measured_ground_force": 2,
+      "peak_foot_ground_vertical_force_N": 388.5524787902832,
+      "nonfoot_ground_contact_samples_before_fall": 0
+    },
+    {
+      "profile": "inertia_damping_probe",
+      "initial_pitch_deg": 2.0,
+      "fall_time_s": null,
+      "duration_s": 5.0,
+      "joint_rmse_before_fall_rad": 0.026003985496794033,
+      "max_tilt_before_fall_deg": 10.10873031616211,
+      "final_root_height_m": 0.7649021744728088,
+      "saturation_fraction_before_fall": 0.0,
+      "feet_with_measured_ground_force": 2,
+      "peak_foot_ground_vertical_force_N": 395.29868245124817,
+      "nonfoot_ground_contact_samples_before_fall": 0
+    }
+  ]
+}

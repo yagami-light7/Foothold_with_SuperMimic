@@ -10,7 +10,7 @@ from supermimic.s54 import default_joint_pos_list, NUM_J, XI_DIM
 torch.backends.cuda.matmul.allow_tf32 = True
 dev = "cuda:0"
 kin = S54Kinematics(dev)
-motion = MotionLib.from_dir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "retarget_data", "reference"), kin, dev)
+motion = MotionLib.from_dir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "library", "motion_reference", "kuavo_s54", "retarget_data", "reference"), kin, dev)
 mdp = MDP(kin, motion, torch.tensor(default_joint_pos_list(), device=dev))
 wm = WorldModel().to(dev)
 B = 2048

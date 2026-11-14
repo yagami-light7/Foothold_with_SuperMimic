@@ -1,0 +1,90 @@
+{
+  "status": "CPU_CAPTURE_REPRODUCTION_PASS_GPU_NOT_RESTARTED",
+  "source": "logs/s54_stair_flat6063_smoke_v2/failure_physics_transition.pt",
+  "source_sha256": "61724a26f81ec1e7060aec42c9a11d26db0c2705b44bad0d37f2d381fcbc6fc7",
+  "motion": "stair_up_4",
+  "frame": 244,
+  "episode_step": 41,
+  "diagnostics": {
+    "root_speed_m_s": [
+      1.334444284439087
+    ],
+    "root_angvel_rad_s": [
+      1.427011489868164
+    ],
+    "joint_speed_rad_s": [
+      20.968935012817383
+    ],
+    "normalized_reward": [
+      -41.08363723754883
+    ]
+  },
+  "original_stop_cause": "normalized_reward < -20; all original speed bounds passed and state/reward finite",
+  "raw_reward": -5.340872764587402,
+  "stance_velocity_penalty": -5.1205153465271,
+  "other_reward": -0.22035741806030273,
+  "terms": {
+    "track": [
+      0.016733309254050255
+    ],
+    "e_body_pos": [
+      0.09354645758867264
+    ],
+    "e_body_ori": [
+      0.2756293714046478
+    ],
+    "e_root_pos": [
+      0.09364428371191025
+    ],
+    "e_root_xy": [
+      0.05950724333524704
+    ],
+    "e_root_ori": [
+      0.12495998293161392
+    ],
+    "root_position_reward": [
+      0.0019244210561737418
+    ],
+    "root_orientation_reward": [
+      0.0037419467698782682
+    ],
+    "action_rate": [
+      114.62366485595703
+    ],
+    "joint_limit": [
+      0.16900330781936646
+    ],
+    "head_position_error": [
+      0.10602734237909317
+    ],
+    "head_velocity_error": [
+      0.23148904740810394
+    ],
+    "head_penalty": [
+      -0.0010834223357960582
+    ],
+    "e_foot_pos": [
+      0.02479729801416397
+    ],
+    "e_foot_ori": [
+      0.35238009691238403
+    ],
+    "foot_position_reward": [
+      0.00021568386000581086
+    ],
+    "foot_orientation_reward": [
+      0.000206171564059332
+    ],
+    "stance_slip_penalty": [
+      -5.1205153465271
+    ],
+    "stance_slip_speed_squared": [
+      51.20515060424805
+    ]
+  },
+  "repair": "Retain finite tracking transitions unchanged; log low rewards separately. Nonfinite states and original speed bounds still abort.",
+  "regression": "Exact captured state accepted after repair; reward unchanged; tracking diagnostic saved",
+  "failed_v2_preserved": true,
+  "new_smoke_log": "logs/s54_stair_flat6063_smoke_v3",
+  "gpu_validation": "pending"
+}

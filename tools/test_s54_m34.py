@@ -14,7 +14,7 @@ from test_s54_cpu import fk_test, core_test
 
 
 def main():
-    root = Path('data/s54_flat_dataset/dataset_export')
+    root = Path('library/motion_reference/kuavo_s54/datasets/s54_flat_dataset/dataset_export')
     opened = []
     original = np.load
     def guarded(path, *args, **kwargs):

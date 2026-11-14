@@ -13,7 +13,7 @@ import torch
 from supermimic.foot_trajectory import AlternatingConfig, FootstepCommand, query, sample_alternating
 from supermimic.goals import GoalSource, GoalSpec, foot_goal, resolve_goal_config
 from supermimic.rotations import axis_angle_to_mat, mat_to_quat, quat_to_mat, so3_exp, yaw_mat
-MOTION_DIR = 'data/retarget_data/reference_startup_fixed'
+MOTION_DIR = 'library/motion_reference/kuavo_s54/retarget_data/reference_startup_fixed'
 
 
 def command(B=2, dtype=torch.float64):
@@ -266,7 +266,7 @@ class S54IntegrationTests(unittest.TestCase):
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--motion_dir',default='data/retarget_data/reference_startup_fixed')
+    parser.add_argument('--motion_dir',default='library/motion_reference/kuavo_s54/retarget_data/reference_startup_fixed')
     parser.add_argument('--out',default='results/s54/foot_trajectory_cpu.json')
     args,remaining=parser.parse_known_args();MOTION_DIR=args.motion_dir
     torch.set_num_threads(4)

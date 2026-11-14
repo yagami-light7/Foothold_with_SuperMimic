@@ -1,0 +1,38 @@
+{
+  "status": "V3_CPU_REPAIR_VERIFIED_GPU_NOT_RESTARTED",
+  "gpu_smoke_v2": "failed in warmup due to low finite tracking reward guard; original artifacts preserved",
+  "gpu_smoke_v3": "pending",
+  "formal_training": "not_started",
+  "current_tests_passed": {
+    "test_s54_stair_experiment.py": 9,
+    "test_s54_root_feedback.py": 11
+  },
+  "current_test_count": 20,
+  "original_captured_transition_reproduced": true,
+  "reward_unchanged": true,
+  "physical_speed_limits_unchanged": true,
+  "nonfinite_state_regression": "PASS: still aborts",
+  "core_parameter_match_count": 39,
+  "profile": "flat_training_profile.json",
+  "preflight": "PASS: current contracts and byte-exact Flat initialization",
+  "new_cli_smoke_dry_run": "PASS",
+  "formal_launch_without_v3_gate": "rejected as expected",
+  "protected_sha256": {
+    "release/S54-SuperMimic-Flat-6000/checkpoints/ckpt_006063.pt": "e49e968a1a6bd7c5fcef53290b805fafb011bea5533e9bc0c050e5130e0bbe88",
+    "data/s54_stair_dataset/stair_up_4.npz": "288d3abd2fd37d3d299a17272bcf4d99a6fac0fc28dcb3e10e1c830a633bbf65",
+    "assets/terrains/stairs_straight_4_v1/terrain_mesh.npz": "1503c3e9481b92e0a6979631d3fd7748d21f7978954c48dc7cffb8b5cc6a43b2"
+  },
+  "repair_snapshot": "experiments/s54_stair_flat6063_8h/repairs/smoke_v2_reward_guard",
+  "changed_code_and_config_sha256": {
+    "supermimic/stair_training.py": "a78e790104e8280af9da8f893bda3fa7396e202d165a309e61784e1dc266027a",
+    "supermimic/train.py": "afcd34250f2b2f4ca862eca68e260aad898d4d117ed55ed65998f913cc9e4389",
+    "tools/run_s54_stair.py": "5611ebbbc7c29b956a63d197375ab5fba9520f2db63b98caac9eb17f424f6498",
+    "tools/test_s54_stair_experiment.py": "c7d44696a22479f9aed959e10a8fd84506196e9d132e76282966ff185f305999",
+    "experiments/s54_stair_flat6063_8h/train.json": "93146ac803258e119886c2b71628fb785ae31ae7dcb0e6f1274943eab21a8f76",
+    "experiments/s54_stair_flat6063_8h/smoke.json": "d25071713ddc37ae28b3ccddfb0a3e9e5c73d8d48ed174491dfeda7341cd62d9",
+    "experiments/s54_stair_flat6063_8h/design.json": "d24e2f4f208601ad61a85f1f85ee0fbdb74964d6124e55df8a5f764fb01c2554",
+    "experiments/s54_stair_flat6063_8h/smoke_design.json": "e11e36f0b1bda0be9e15bb8dd7d6df9a8a0064d2d365911c21bc14c640f2be48",
+    "experiments/s54_stair_flat6063_8h/README.md": "f424f974190037a508bb747668f58a2cb9131ba000563b7f21449bbf4dfca524",
+    "experiments/s54_stair_flat6063_8h/flat_training_profile.json": "368d5d4c64559f715294567cd0cf0eb65358cb9bafa298dc35549d96127b5a86"
+  }
+}

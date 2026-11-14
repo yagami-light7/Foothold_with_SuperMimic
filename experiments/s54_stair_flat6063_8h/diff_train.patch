@@ -1,0 +1,144 @@
+--- supermimic/train.py (before)
++++ supermimic/train.py
+@@ -173,7 +173,10 @@
+     try:
+         if stair_cfg:
+             data_contract=stair_contract(stair_cfg)
+-            motion_files=[str(Path(stair_cfg['bundle'])/'test/stair_up_4.npz')]
++            from supermimic.m34 import entries as stair_flat_entries
++            motion_files=[str(Path(stair_cfg['flat_dataset'])/row['path'])
++                          for row in stair_flat_entries(stair_cfg['flat_dataset'],'train')[2]]
++            motion_files.append(str(stair_cfg.get('stair_npz',Path(stair_cfg['bundle'])/'test/stair_up_4.npz')))
+         elif args.m34_dataset:
+             if args.goal_mode != 'motion' or args.reference_manifest or args.clips or args.m34_straight_iters < 0:
+                 raise ValueError('M3.4 requires motion goals, all train clips, and no legacy manifest')
+@@ -352,6 +355,10 @@
+ 
+ if args.init_from_flat:
+     from supermimic.stair_training import initialize_flat
++    from supermimic.m34 import sha256 as stair_sha256
++    if (stair_cfg.get('source_checkpoint_sha256') and
++            stair_sha256(args.init_from_flat)!=stair_cfg['source_checkpoint_sha256']):
++        raise ValueError('Flat initialization differs from the pinned experiment checkpoint')
+     transfer=torch.load(args.init_from_flat,map_location=dev,weights_only=False)
+     transfer_report=initialize_flat(transfer,wm,pi,physics_metadata,goal_spec,Hh)
+     transfer_report['source_path']=str(Path(args.init_from_flat).resolve())
+@@ -680,12 +687,15 @@
+             fresh = env.ep_step == 0
+             obs_hist = torch.where(fresh[:, None, None], o.unsqueeze(1).expand_as(obs_hist), torch.cat((obs_hist[:, 1:], o.unsqueeze(1)), 1))
+             g = goals.goal(S, env.f, env.ep_step, env.command)
+-            pi.obs_norm.update(o)
+-            pi.goal_norm.update(g)
++            if not stair_cfg:
++                pi.obs_norm.update(o)
++                pi.goal_norm.update(g)
+             a = pi(obs_hist, g)
+             a = bound_action(a + args.action_noise * torch.randn_like(a))
+             out = env.step(a)
+             if stair_cfg:
++                from supermimic.stair_training import validate_transition
++                validate_transition(out,mdp,stair_cfg,log_path)
+                 replay_reward=mdp.reward(unflatten_state(out['s1']),out['f']+1,out['a'],out['a_prev'])
+                 error=(out['r']-replay_reward).abs().max()
+                 if error>1e-5:raise RuntimeError(f'Stair real/replay reward timing mismatch: {float(error)}')
+@@ -701,8 +711,9 @@
+             buffer.add(out)
+             if curriculum: curriculum.observe(out['command'],out['ep_step'])
+             S0, S1 = unflatten_state(out["s"]), unflatten_state(out["s1"])
+-            wm.in_norm.update(wm.inputs(S0, out["a"], normalize_xi(out["xi"])))
+-            wm.out_norm.update(wm.targets(S0, S1))
++            if not stair_cfg:
++                wm.in_norm.update(wm.inputs(S0, out["a"], normalize_xi(out["xi"])))
++                wm.out_norm.update(wm.targets(S0, S1))
+             sim_steps += args.num_envs
+             stats["r"].append(out["r"].mean() / reward_scale)
+             stats["head_error"].append(out['terms']['head_position_error'].mean())
+@@ -767,6 +778,8 @@
+         atomic_save(ckpt,log_path/f'ckpt_{current_it:06d}.pt')
+         if curriculum:
+             for path in sorted(log_path.glob('ckpt_*.pt'))[:-curriculum.cfg['keep_checkpoints']]: path.unlink()
++        if stair_cfg:
++            for path in sorted(log_path.glob('ckpt_*.pt'))[:-stair_cfg.get('keep_periodic_checkpoints',8)]:path.unlink()
+         free,total=torch.cuda.mem_get_info()
+         (log_path/'runtime_stats.json').write_text(json.dumps(dict(iteration=current_it,gpu=torch.cuda.get_device_name(),
+             torch_peak_allocated_MiB=torch.cuda.max_memory_allocated()/2**20,
+@@ -790,7 +803,8 @@
+         for it in range(start_it, args.iterations):
+             if stair_cfg:env.stair_iteration=it
+             if args.m34_dataset: env.m34_iteration = it
+-            if STOP_REQUESTED or (args.wall_seconds is not None and elapsed()>=args.wall_seconds) or (curriculum and elapsed() >= curriculum.cfg['budget_seconds']-45):
++            reserve=stair_cfg.get('final_eval_reserve_seconds',0) if stair_cfg and args.m34_eval_every else 0
++            if STOP_REQUESTED or (args.wall_seconds is not None and elapsed()>=args.wall_seconds-reserve) or (curriculum and elapsed() >= curriculum.cfg['budget_seconds']-45):
+                 print('Safe stop requested / wall-clock budget reserve reached',flush=True); break
+             lr = lr_at(it)
+             for o,scale in ((opt_wm,1.),(opt_pi,actor_lr/args.lr),(opt_v,critic_lr/args.lr)):
+@@ -843,6 +857,13 @@
+                 stats = {k: [] for k in stats}
+                 agg = {k: [] for k in agg}
+             current_it = it+1
++            if stair_cfg and current_it % args.log_every==0:
++                free,total=torch.cuda.mem_get_info()
++                if args.max_device_memory_mib is not None and (total-free)/2**20>=args.max_device_memory_mib:
++                    STOP_REQUESTED=True
++                    print('Configured device memory limit reached; saving before safe stop',flush=True)
++                (log_path/'training_status.json').write_text(json.dumps(dict(status='running',
++                    iteration=current_it,wall_seconds=elapsed(),budget_seconds=args.wall_seconds)))
+             if curriculum:
+                 if current_it % args.log_every == 0:
+                     gpu_stats={}
+@@ -939,6 +960,34 @@
+                 print(f'Iteration {current_it}: evaluation complete; continuing existing replay/optimizers', flush=True)
+                 # Exclude evaluation duration from the next throughput window.
+                 t_log += time.time()-evaluation_started
++            if stair_cfg and args.m34_eval_every and current_it % args.m34_eval_every == 0:
++                evaluation_dir=log_path/'evals'/f'iter_{current_it:06d}'
++                evaluation_dir.mkdir(parents=True,exist_ok=True)
++                frozen_checkpoint=evaluation_dir/'checkpoint.pt'
++                if not frozen_checkpoint.exists():
++                    save_checkpoint()
++                    os.link(log_path/'last.pt',frozen_checkpoint)
++                torch.cuda.synchronize();torch.cuda.empty_cache()
++                from supermimic.stair_evaluation import evaluate_checkpoint as evaluate_stairs
++                print(f'Iteration {current_it}: independent frozen stair/flat Newton evaluation',flush=True)
++                evaluation_started=time.time()
++                evaluation=evaluate_stairs(frozen_checkpoint,stair_cfg,evaluation_dir,args.m34_eval_seeds,
++                    timeout_seconds=min(stair_cfg.get('eval_timeout_seconds',300),
++                        max(.1,args.wall_seconds-elapsed())) if args.wall_seconds else None)
++                # Select solely on TRAIN references. The designated four-step
++                # stair is a training action; no held-out flat test is opened.
++                if evaluation['flat_retention_passed']:
++                    score=evaluation['stair_score']
++                    best_path=log_path/'best_score.json'
++                    previous=json.loads(best_path.read_text()) if best_path.exists() else {}
++                    if score>previous.get('score',-float('inf')):
++                        temp=log_path/'best.pt.tmp'
++                        if temp.exists():temp.unlink()
++                        os.link(frozen_checkpoint,temp);os.replace(temp,log_path/'best.pt')
++                        best_path.write_text(json.dumps(dict(iteration=current_it,score=score,
++                            selection='stair train return; flat train retention >= 0.85',
++                            checkpoint_sha256=evaluation['checkpoint_sha256']),indent=2)+'\n')
++                t_log+=time.time()-evaluation_started
+         if curriculum and not STOP_REQUESTED:
+             remaining=curriculum.cfg['budget_seconds']-elapsed()
+             allowance=min(180.,elapsed()*curriculum.cfg['eval_fraction']-curriculum.eval_spent)
+@@ -953,4 +1002,19 @@
+         log_f.close()
+         final_status='error' if sys.exc_info()[0] is not None else 'stopped' if STOP_REQUESTED or current_it<args.iterations else 'completed'
+         (log_path/'training_status.json').write_text(json.dumps(dict(status=final_status,iteration=current_it,wall_seconds=elapsed(),
+-            stop_requested=STOP_REQUESTED,budget_seconds=curriculum.cfg['budget_seconds'] if curriculum else None)))
++            stop_requested=STOP_REQUESTED,budget_seconds=curriculum.cfg['budget_seconds'] if curriculum else args.wall_seconds)))
++
++# The parent simulator is closed before the final independent physics rollout.
++# Smoke has eval_every=0: its checkpoint is evaluated by the explicit gate command.
++if stair_cfg and args.m34_eval_every:
++    periodic=log_path/'evals'/f'iter_{current_it:06d}'/'summary.json'
++    if not periodic.exists():
++        torch.cuda.empty_cache()
++        final_dir=log_path/'evals'/f'final_{current_it:06d}'
++        final_dir.mkdir(parents=True,exist_ok=True)
++        frozen=final_dir/'checkpoint.pt'
++        if not frozen.exists():os.link(log_path/'last.pt',frozen)
++        from supermimic.stair_evaluation import evaluate_checkpoint as evaluate_stairs
++        evaluate_stairs(frozen,stair_cfg,final_dir,args.m34_eval_seeds,
++            timeout_seconds=min(stair_cfg.get('eval_timeout_seconds',300),
++                max(.1,args.wall_seconds-elapsed())) if args.wall_seconds else None)

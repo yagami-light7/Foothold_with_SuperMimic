@@ -1,0 +1,1003 @@
+{
+  "status": "PASS",
+  "gpu_training_started": false,
+  "source_iteration": 6063,
+  "source_sha256": "e49e968a1a6bd7c5fcef53290b805fafb011bea5533e9bc0c050e5130e0bbe88",
+  "data_contract": {
+    "format": "s54_stair_t15_mixed_train_v2",
+    "flat": {
+      "format": "s54_flat_m3_4_v1",
+      "split": "train",
+      "fps": 50,
+      "metadata_sha256": "2bbbd3a9dbd271bd8fbfbc5d1446cc45ba37e0f61f8bcde57c3a3e960eadaea1",
+      "manifest_sha256": "96e3d0f118bf7da65e8cd12e3a0e58d90fb23d921553cbe2716f178b2813c367",
+      "motions": {
+        "spin_flat_02": "883f1c8be16e3180288a3daa46589f08de5dd899ecef16f99520e7015b7a0220",
+        "spin_flat_03": "8d5bb67da9ab92fca851859cd26bc50a72889cce94d05e1c02713d1018180d61",
+        "spin_flat_05": "775eb17fe553458b5e51c8a5f7fa0c3ee99960a967f4ef70909049074288b099",
+        "spin_flat_06": "f4b0ea50f159369108a7fd1db95e4cedfe868c031216622319a8b4db3752b55a",
+        "turn_flat_10": "493a91f848102c37b20958ed9f4ad3ee7bb4d8cba433bc33b32c0d9b0ec61ea3",
+        "turn_flat_11": "3f06845c500469c1a2eb3f07985b0a6227a279a8c102472c74a34236a92060b5",
+        "turn_flat_12": "8838d3ec1a242d702e24a3c20fdab90654116a71d9f4b69e834ed9fc14d76f4a",
+        "turn_flat_14": "796f982e04ab05d2e9978a80f273b79e5e079381efba2d5c0aff9e760cd7bbb1",
+        "turn_flat_15": "25bac2964273f14900847ea9ad903341c40d51f14bdc8a11106d9e8b75a09ecc",
+        "turn_flat_16": "06a7e503ab095e62079f63fffc97b989299a725e38e2904839f1c431620e6b3c",
+        "straight_flat_18": "b2f921e7cc81c5c044330c6e85cfc02e14f6d92782f9663f394747d95c0560f2",
+        "straight_flat_19": "12eb73c05531b4ec97ff89e41b0a2d9841eaa7b561bbdac89587cd338f1cd8d7",
+        "straight_flat_20": "63b3bf42168d17b4e156116d4904a3d9308d840f9546fe542f3b00990389d6fb",
+        "straight_flat_21": "d33bb33bdf3e551edd0ebe4193a0a780995354dd10595378f902a0c7b5cd25fb"
+      }
+    },
+    "stair_ids": [
+      "stair_up_4"
+    ],
+    "excluded_ids": [
+      "stair_up_2"
+    ],
+    "stair_npz_sha256": "288d3abd2fd37d3d299a17272bcf4d99a6fac0fc28dcb3e10e1c830a633bbf65",
+    "terrain_mesh_sha256": "1503c3e9481b92e0a6979631d3fd7748d21f7978954c48dc7cffb8b5cc6a43b2",
+    "source_metadata_sha256": "4595d60e9f0f915e809af3c4ae19ec861b25a929ce0ee4fa9dbe2c30d6b5bc23",
+    "explicit_assignment": "single_motion_finetuning; stair_up_4 is training, not heldout",
+    "flat_world_translation_m": [
+      20.0,
+      0.0,
+      0.0
+    ],
+    "stair_world_transform": "identity",
+    "split": "experiment_train",
+    "source_checkpoint_sha256": "e49e968a1a6bd7c5fcef53290b805fafb011bea5533e9bc0c050e5130e0bbe88",
+    "normalizer_policy": "source_online",
+    "reset_noise": true,
+    "flat_sampling": "equal mode then equal clip",
+    "sampling_stages": [
+      {
+        "name": "A",
+        "until_iteration": 1000,
+        "stair_fraction": 0.2
+      },
+      {
+        "name": "B",
+        "until_iteration": 6000,
+        "stair_fraction": 0.6
+      },
+      {
+        "name": "C",
+        "until_iteration": 1000000000,
+        "stair_fraction": 0.5
+      }
+    ],
+    "reset_feasibility": {
+      "method": "all_collision_proxy_vs_original_terrain_rejection",
+      "clearance_m": -0.001,
+      "max_attempts": 64,
+      "fallback": "validated_same_reference_frame; reset only",
+      "reward_state": "canonical_71d_replay_quaternion",
+      "newton_collision_decimation": 1
+    },
+    "flat_ground_collider": "mesh"
+  },
+  "training_clips": [
+    "spin_flat_02",
+    "spin_flat_03",
+    "spin_flat_05",
+    "spin_flat_06",
+    "turn_flat_10",
+    "turn_flat_11",
+    "turn_flat_12",
+    "turn_flat_14",
+    "turn_flat_15",
+    "turn_flat_16",
+    "straight_flat_18",
+    "straight_flat_19",
+    "straight_flat_20",
+    "straight_flat_21",
+    "stair_up_4"
+  ],
+  "flat_test_opened": false,
+  "stair_frames": 436,
+  "byte_exact_initialization": true,
+  "transfer": {
+    "type": "flat_to_stair_explicit_finetune",
+    "source_iteration": 6063,
+    "source_sim_steps": 32090112,
+    "source_physics": {
+      "version": 1,
+      "robot": {
+        "robot": "kuavo_s54_leju_gmr_v1",
+        "joint_names": [
+          "leg_l1_joint",
+          "leg_l2_joint",
+          "leg_l3_joint",
+          "leg_l4_joint",
+          "leg_l5_joint",
+          "leg_l6_joint",
+          "leg_r1_joint",
+          "leg_r2_joint",
+          "leg_r3_joint",
+          "leg_r4_joint",
+          "leg_r5_joint",
+          "leg_r6_joint",
+          "waist_yaw_joint",
+          "zarm_l1_joint",
+          "zarm_l2_joint",
+          "zarm_l3_joint",
+          "zarm_l4_joint",
+          "zarm_l5_joint",
+          "zarm_l6_joint",
+          "zarm_l7_joint",
+          "zarm_r1_joint",
+          "zarm_r2_joint",
+          "zarm_r3_joint",
+          "zarm_r4_joint",
+          "zarm_r5_joint",
+          "zarm_r6_joint",
+          "zarm_r7_joint",
+          "zhead_1_joint",
+          "zhead_2_joint"
+        ],
+        "tracked_bodies": [
+          "base_link",
+          "leg_l1_link",
+          "leg_l4_link",
+          "leg_l6_link",
+          "leg_r1_link",
+          "leg_r4_link",
+          "leg_r6_link",
+          "waist_yaw",
+          "zarm_l2_link",
+          "zarm_l4_link",
+          "zarm_l7_link",
+          "zarm_r2_link",
+          "zarm_r4_link",
+          "zarm_r7_link"
+        ],
+        "source_mjcf_sha256": "9a92e5b125808d9021b0d52cac7ec22b58de260cee9392bf2d667c56ff8da446"
+      },
+      "state_dim": 71,
+      "state": "root_link_world_pose_velocity; canonical_q_qd; quaternion_wxyz",
+      "obs_dim": 103,
+      "action_dim": 29,
+      "xi_dim": 33,
+      "wm_input": 133,
+      "wm_output": 70,
+      "control_dt": 0.02,
+      "gravity": [
+        0.0,
+        0.0,
+        -9.81
+      ],
+      "solver": {
+        "num_substeps": 4,
+        "njmax": 500,
+        "nconmax": 128,
+        "cone": "pyramidal",
+        "integrator": "implicitfast",
+        "use_mujoco_contacts": true
+      },
+      "sim_mjcf_sha256": "5fd6812db4dca13dab487b0d0df4cf901e7cfa99d184826b11588e59cbb42069",
+      "actuators": {
+        "leg_l1_joint": {
+          "effort": 127.0,
+          "velocity": 10.4,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_l2_joint": {
+          "effort": 71.0,
+          "velocity": 8.7,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_l3_joint": {
+          "effort": 132.0,
+          "velocity": 12.7,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_l4_joint": {
+          "effort": 280.0,
+          "velocity": 10.4,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_l5_joint": {
+          "effort": 91.6,
+          "velocity": 17.8,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_l6_joint": {
+          "effort": 30.0,
+          "velocity": 17.8,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_r1_joint": {
+          "effort": 127.0,
+          "velocity": 10.4,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_r2_joint": {
+          "effort": 71.0,
+          "velocity": 8.7,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_r3_joint": {
+          "effort": 132.0,
+          "velocity": 12.7,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_r4_joint": {
+          "effort": 280.0,
+          "velocity": 10.4,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_r5_joint": {
+          "effort": 91.6,
+          "velocity": 17.8,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_r6_joint": {
+          "effort": 30.0,
+          "velocity": 17.8,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "waist_yaw_joint": {
+          "effort": 102.0,
+          "velocity": 8.7,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "zarm_l1_joint": {
+          "effort": 66.0,
+          "velocity": 18.8,
+          "armature": 0.05,
+          "stiffness": 80.0,
+          "damping": 4.0
+        },
+        "zarm_l2_joint": {
+          "effort": 75.0,
+          "velocity": 8.0,
+          "armature": 0.05,
+          "stiffness": 80.0,
+          "damping": 4.0
+        },
+        "zarm_l3_joint": {
+          "effort": 57.0,
+          "velocity": 7.5,
+          "armature": 0.05,
+          "stiffness": 80.0,
+          "damping": 4.0
+        },
+        "zarm_l4_joint": {
+          "effort": 75.0,
+          "velocity": 8.0,
+          "armature": 0.05,
+          "stiffness": 80.0,
+          "damping": 4.0
+        },
+        "zarm_l5_joint": {
+          "effort": 14.1,
+          "velocity": 17.5,
+          "armature": 0.05,
+          "stiffness": 20.0,
+          "damping": 2.0
+        },
+        "zarm_l6_joint": {
+          "effort": 14.1,
+          "velocity": 17.5,
+          "armature": 0.05,
+          "stiffness": 20.0,
+          "damping": 2.0
+        },
+        "zarm_l7_joint": {
+          "effort": 14.1,
+          "velocity": 17.5,
+          "armature": 0.05,
+          "stiffness": 20.0,
+          "damping": 2.0
+        },
+        "zarm_r1_joint": {
+          "effort": 66.0,
+          "velocity": 18.8,
+          "armature": 0.05,
+          "stiffness": 80.0,
+          "damping": 4.0
+        },
+        "zarm_r2_joint": {
+          "effort": 75.0,
+          "velocity": 8.0,
+          "armature": 0.05,
+          "stiffness": 80.0,
+          "damping": 4.0
+        },
+        "zarm_r3_joint": {
+          "effort": 57.0,
+          "velocity": 7.5,
+          "armature": 0.05,
+          "stiffness": 80.0,
+          "damping": 4.0
+        },
+        "zarm_r4_joint": {
+          "effort": 75.0,
+          "velocity": 8.0,
+          "armature": 0.05,
+          "stiffness": 80.0,
+          "damping": 4.0
+        },
+        "zarm_r5_joint": {
+          "effort": 14.1,
+          "velocity": 17.5,
+          "armature": 0.05,
+          "stiffness": 20.0,
+          "damping": 2.0
+        },
+        "zarm_r6_joint": {
+          "effort": 14.1,
+          "velocity": 17.5,
+          "armature": 0.05,
+          "stiffness": 20.0,
+          "damping": 2.0
+        },
+        "zarm_r7_joint": {
+          "effort": 14.1,
+          "velocity": 17.5,
+          "armature": 0.05,
+          "stiffness": 20.0,
+          "damping": 2.0
+        },
+        "zhead_1_joint": {
+          "effort": 1.5,
+          "velocity": 5.23,
+          "armature": 0.05,
+          "stiffness": 10.0,
+          "damping": 1.4142135623730951
+        },
+        "zhead_2_joint": {
+          "effort": 12.0,
+          "velocity": 5.23,
+          "armature": 0.05,
+          "stiffness": 10.0,
+          "damping": 1.4142135623730951
+        }
+      },
+      "action_scale": [
+        0.15875,
+        0.08875,
+        0.165,
+        0.35,
+        0.11449999999999999,
+        0.0375,
+        0.15875,
+        0.08875,
+        0.165,
+        0.35,
+        0.11449999999999999,
+        0.0375,
+        0.1275,
+        0.20625,
+        0.234375,
+        0.178125,
+        0.234375,
+        0.17625,
+        0.17625,
+        0.17625,
+        0.20625,
+        0.234375,
+        0.178125,
+        0.234375,
+        0.17625,
+        0.17625,
+        0.17625,
+        0.0375,
+        0.3
+      ],
+      "backend_versions": {
+        "newton": "1.8.0.dev0",
+        "mujoco-warp": "3.15.0",
+        "warp-lang": "1.17.0"
+      }
+    },
+    "target_physics": {
+      "version": 1,
+      "robot": {
+        "robot": "kuavo_s54_leju_gmr_v1",
+        "joint_names": [
+          "leg_l1_joint",
+          "leg_l2_joint",
+          "leg_l3_joint",
+          "leg_l4_joint",
+          "leg_l5_joint",
+          "leg_l6_joint",
+          "leg_r1_joint",
+          "leg_r2_joint",
+          "leg_r3_joint",
+          "leg_r4_joint",
+          "leg_r5_joint",
+          "leg_r6_joint",
+          "waist_yaw_joint",
+          "zarm_l1_joint",
+          "zarm_l2_joint",
+          "zarm_l3_joint",
+          "zarm_l4_joint",
+          "zarm_l5_joint",
+          "zarm_l6_joint",
+          "zarm_l7_joint",
+          "zarm_r1_joint",
+          "zarm_r2_joint",
+          "zarm_r3_joint",
+          "zarm_r4_joint",
+          "zarm_r5_joint",
+          "zarm_r6_joint",
+          "zarm_r7_joint",
+          "zhead_1_joint",
+          "zhead_2_joint"
+        ],
+        "tracked_bodies": [
+          "base_link",
+          "leg_l1_link",
+          "leg_l4_link",
+          "leg_l6_link",
+          "leg_r1_link",
+          "leg_r4_link",
+          "leg_r6_link",
+          "waist_yaw",
+          "zarm_l2_link",
+          "zarm_l4_link",
+          "zarm_l7_link",
+          "zarm_r2_link",
+          "zarm_r4_link",
+          "zarm_r7_link"
+        ],
+        "source_mjcf_sha256": "9a92e5b125808d9021b0d52cac7ec22b58de260cee9392bf2d667c56ff8da446"
+      },
+      "state_dim": 71,
+      "state": "root_link_world_pose_velocity; canonical_q_qd; quaternion_wxyz",
+      "obs_dim": 103,
+      "action_dim": 29,
+      "xi_dim": 33,
+      "wm_input": 133,
+      "wm_output": 70,
+      "control_dt": 0.02,
+      "gravity": [
+        0.0,
+        0.0,
+        -9.81
+      ],
+      "solver": {
+        "num_substeps": 4,
+        "njmax": 500,
+        "nconmax": 128,
+        "cone": "pyramidal",
+        "integrator": "implicitfast",
+        "use_mujoco_contacts": false
+      },
+      "sim_mjcf_sha256": "5fd6812db4dca13dab487b0d0df4cf901e7cfa99d184826b11588e59cbb42069",
+      "actuators": {
+        "leg_l1_joint": {
+          "effort": 127.0,
+          "velocity": 10.4,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_l2_joint": {
+          "effort": 71.0,
+          "velocity": 8.7,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_l3_joint": {
+          "effort": 132.0,
+          "velocity": 12.7,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_l4_joint": {
+          "effort": 280.0,
+          "velocity": 10.4,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_l5_joint": {
+          "effort": 91.6,
+          "velocity": 17.8,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_l6_joint": {
+          "effort": 30.0,
+          "velocity": 17.8,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_r1_joint": {
+          "effort": 127.0,
+          "velocity": 10.4,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_r2_joint": {
+          "effort": 71.0,
+          "velocity": 8.7,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_r3_joint": {
+          "effort": 132.0,
+          "velocity": 12.7,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_r4_joint": {
+          "effort": 280.0,
+          "velocity": 10.4,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_r5_joint": {
+          "effort": 91.6,
+          "velocity": 17.8,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "leg_r6_joint": {
+          "effort": 30.0,
+          "velocity": 17.8,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "waist_yaw_joint": {
+          "effort": 102.0,
+          "velocity": 8.7,
+          "armature": 0.05,
+          "stiffness": 200.0,
+          "damping": 6.324555320336759
+        },
+        "zarm_l1_joint": {
+          "effort": 66.0,
+          "velocity": 18.8,
+          "armature": 0.05,
+          "stiffness": 80.0,
+          "damping": 4.0
+        },
+        "zarm_l2_joint": {
+          "effort": 75.0,
+          "velocity": 8.0,
+          "armature": 0.05,
+          "stiffness": 80.0,
+          "damping": 4.0
+        },
+        "zarm_l3_joint": {
+          "effort": 57.0,
+          "velocity": 7.5,
+          "armature": 0.05,
+          "stiffness": 80.0,
+          "damping": 4.0
+        },
+        "zarm_l4_joint": {
+          "effort": 75.0,
+          "velocity": 8.0,
+          "armature": 0.05,
+          "stiffness": 80.0,
+          "damping": 4.0
+        },
+        "zarm_l5_joint": {
+          "effort": 14.1,
+          "velocity": 17.5,
+          "armature": 0.05,
+          "stiffness": 20.0,
+          "damping": 2.0
+        },
+        "zarm_l6_joint": {
+          "effort": 14.1,
+          "velocity": 17.5,
+          "armature": 0.05,
+          "stiffness": 20.0,
+          "damping": 2.0
+        },
+        "zarm_l7_joint": {
+          "effort": 14.1,
+          "velocity": 17.5,
+          "armature": 0.05,
+          "stiffness": 20.0,
+          "damping": 2.0
+        },
+        "zarm_r1_joint": {
+          "effort": 66.0,
+          "velocity": 18.8,
+          "armature": 0.05,
+          "stiffness": 80.0,
+          "damping": 4.0
+        },
+        "zarm_r2_joint": {
+          "effort": 75.0,
+          "velocity": 8.0,
+          "armature": 0.05,
+          "stiffness": 80.0,
+          "damping": 4.0
+        },
+        "zarm_r3_joint": {
+          "effort": 57.0,
+          "velocity": 7.5,
+          "armature": 0.05,
+          "stiffness": 80.0,
+          "damping": 4.0
+        },
+        "zarm_r4_joint": {
+          "effort": 75.0,
+          "velocity": 8.0,
+          "armature": 0.05,
+          "stiffness": 80.0,
+          "damping": 4.0
+        },
+        "zarm_r5_joint": {
+          "effort": 14.1,
+          "velocity": 17.5,
+          "armature": 0.05,
+          "stiffness": 20.0,
+          "damping": 2.0
+        },
+        "zarm_r6_joint": {
+          "effort": 14.1,
+          "velocity": 17.5,
+          "armature": 0.05,
+          "stiffness": 20.0,
+          "damping": 2.0
+        },
+        "zarm_r7_joint": {
+          "effort": 14.1,
+          "velocity": 17.5,
+          "armature": 0.05,
+          "stiffness": 20.0,
+          "damping": 2.0
+        },
+        "zhead_1_joint": {
+          "effort": 1.5,
+          "velocity": 5.23,
+          "armature": 0.05,
+          "stiffness": 10.0,
+          "damping": 1.4142135623730951
+        },
+        "zhead_2_joint": {
+          "effort": 12.0,
+          "velocity": 5.23,
+          "armature": 0.05,
+          "stiffness": 10.0,
+          "damping": 1.4142135623730951
+        }
+      },
+      "action_scale": [
+        0.15875,
+        0.08875,
+        0.165,
+        0.35,
+        0.11449999999999999,
+        0.0375,
+        0.15875,
+        0.08875,
+        0.165,
+        0.35,
+        0.11449999999999999,
+        0.0375,
+        0.1275,
+        0.20625,
+        0.234375,
+        0.178125,
+        0.234375,
+        0.17625,
+        0.17625,
+        0.17625,
+        0.20625,
+        0.234375,
+        0.178125,
+        0.234375,
+        0.17625,
+        0.17625,
+        0.17625,
+        0.0375,
+        0.3
+      ],
+      "backend_versions": {
+        "newton": "1.6.1",
+        "mujoco-warp": "3.12.0",
+        "warp-lang": "1.17.0"
+      },
+      "collision_decimation": 1,
+      "terrain_task": {
+        "format": "s54_stair_t15_mixed_train_v2",
+        "flat": {
+          "format": "s54_flat_m3_4_v1",
+          "split": "train",
+          "fps": 50,
+          "metadata_sha256": "2bbbd3a9dbd271bd8fbfbc5d1446cc45ba37e0f61f8bcde57c3a3e960eadaea1",
+          "manifest_sha256": "96e3d0f118bf7da65e8cd12e3a0e58d90fb23d921553cbe2716f178b2813c367",
+          "motions": {
+            "spin_flat_02": "883f1c8be16e3180288a3daa46589f08de5dd899ecef16f99520e7015b7a0220",
+            "spin_flat_03": "8d5bb67da9ab92fca851859cd26bc50a72889cce94d05e1c02713d1018180d61",
+            "spin_flat_05": "775eb17fe553458b5e51c8a5f7fa0c3ee99960a967f4ef70909049074288b099",
+            "spin_flat_06": "f4b0ea50f159369108a7fd1db95e4cedfe868c031216622319a8b4db3752b55a",
+            "turn_flat_10": "493a91f848102c37b20958ed9f4ad3ee7bb4d8cba433bc33b32c0d9b0ec61ea3",
+            "turn_flat_11": "3f06845c500469c1a2eb3f07985b0a6227a279a8c102472c74a34236a92060b5",
+            "turn_flat_12": "8838d3ec1a242d702e24a3c20fdab90654116a71d9f4b69e834ed9fc14d76f4a",
+            "turn_flat_14": "796f982e04ab05d2e9978a80f273b79e5e079381efba2d5c0aff9e760cd7bbb1",
+            "turn_flat_15": "25bac2964273f14900847ea9ad903341c40d51f14bdc8a11106d9e8b75a09ecc",
+            "turn_flat_16": "06a7e503ab095e62079f63fffc97b989299a725e38e2904839f1c431620e6b3c",
+            "straight_flat_18": "b2f921e7cc81c5c044330c6e85cfc02e14f6d92782f9663f394747d95c0560f2",
+            "straight_flat_19": "12eb73c05531b4ec97ff89e41b0a2d9841eaa7b561bbdac89587cd338f1cd8d7",
+            "straight_flat_20": "63b3bf42168d17b4e156116d4904a3d9308d840f9546fe542f3b00990389d6fb",
+            "straight_flat_21": "d33bb33bdf3e551edd0ebe4193a0a780995354dd10595378f902a0c7b5cd25fb"
+          }
+        },
+        "stair_ids": [
+          "stair_up_4"
+        ],
+        "excluded_ids": [
+          "stair_up_2"
+        ],
+        "stair_npz_sha256": "288d3abd2fd37d3d299a17272bcf4d99a6fac0fc28dcb3e10e1c830a633bbf65",
+        "terrain_mesh_sha256": "1503c3e9481b92e0a6979631d3fd7748d21f7978954c48dc7cffb8b5cc6a43b2",
+        "source_metadata_sha256": "4595d60e9f0f915e809af3c4ae19ec861b25a929ce0ee4fa9dbe2c30d6b5bc23",
+        "explicit_assignment": "single_motion_finetuning; stair_up_4 is training, not heldout",
+        "flat_world_translation_m": [
+          20.0,
+          0.0,
+          0.0
+        ],
+        "stair_world_transform": "identity",
+        "split": "experiment_train",
+        "source_checkpoint_sha256": "e49e968a1a6bd7c5fcef53290b805fafb011bea5533e9bc0c050e5130e0bbe88",
+        "normalizer_policy": "source_online",
+        "reset_noise": true,
+        "flat_sampling": "equal mode then equal clip",
+        "sampling_stages": [
+          {
+            "name": "A",
+            "until_iteration": 1000,
+            "stair_fraction": 0.2
+          },
+          {
+            "name": "B",
+            "until_iteration": 6000,
+            "stair_fraction": 0.6
+          },
+          {
+            "name": "C",
+            "until_iteration": 1000000000,
+            "stair_fraction": 0.5
+          }
+        ],
+        "reset_feasibility": {
+          "method": "all_collision_proxy_vs_original_terrain_rejection",
+          "clearance_m": -0.001,
+          "max_attempts": 64,
+          "fallback": "validated_same_reference_frame; reset only",
+          "reward_state": "canonical_71d_replay_quaternion",
+          "newton_collision_decimation": 1
+        },
+        "flat_ground_collider": "mesh"
+      }
+    },
+    "copied": [
+      "WorldModel",
+      "MotionEncoder",
+      "SharedDecoder",
+      "all normalizer means/variances"
+    ],
+    "normalizer_effective_count": {
+      "policy_obs": {
+        "source": 32090112.0,
+        "finetuning": 32090112.0,
+        "mean_variance_preserved": true
+      },
+      "motion_goal": {
+        "source": 32090112.0,
+        "finetuning": 32090112.0,
+        "mean_variance_preserved": true
+      },
+      "wm_input": {
+        "source": 32090112.0,
+        "finetuning": 32090112.0,
+        "mean_variance_preserved": true
+      },
+      "wm_output": {
+        "source": 32090112.0,
+        "finetuning": 32090112.0,
+        "mean_variance_preserved": true
+      }
+    },
+    "normalizer_policy": "source_online",
+    "fresh": [
+      "Critic (fixed-world/XYZ/slip reward changed)",
+      "optimizers",
+      "replay",
+      "sampling statistics"
+    ],
+    "reason": "Preserve source policy interface; recalibrate WM from real terrain transitions; no reference transitions as WM labels"
+  },
+  "sampling": [
+    {
+      "iteration": 0,
+      "stair_fraction": 0.1988999992609024,
+      "expected": 0.2
+    },
+    {
+      "iteration": 1000,
+      "stair_fraction": 0.5960500240325928,
+      "expected": 0.6
+    },
+    {
+      "iteration": 6000,
+      "stair_fraction": 0.4988499879837036,
+      "expected": 0.5
+    }
+  ],
+  "all_body_fk": [
+    {
+      "id": "spin_flat_02",
+      "max_errors": [
+        2.384185791015625e-07,
+        4.76837158203125e-07,
+        7.152557373046875e-07,
+        1.430511474609375e-06
+      ]
+    },
+    {
+      "id": "spin_flat_03",
+      "max_errors": [
+        2.384185791015625e-07,
+        4.76837158203125e-07,
+        5.364418029785156e-07,
+        1.430511474609375e-06
+      ]
+    },
+    {
+      "id": "spin_flat_05",
+      "max_errors": [
+        2.384185791015625e-07,
+        4.76837158203125e-07,
+        7.152557373046875e-07,
+        1.9073486328125e-06
+      ]
+    },
+    {
+      "id": "spin_flat_06",
+      "max_errors": [
+        2.384185791015625e-07,
+        4.76837158203125e-07,
+        7.450580596923828e-07,
+        1.430511474609375e-06
+      ]
+    },
+    {
+      "id": "turn_flat_10",
+      "max_errors": [
+        4.76837158203125e-07,
+        4.76837158203125e-07,
+        1.0728836059570312e-06,
+        1.430511474609375e-06
+      ]
+    },
+    {
+      "id": "turn_flat_11",
+      "max_errors": [
+        4.76837158203125e-07,
+        4.3958425521850586e-07,
+        9.5367431640625e-07,
+        1.430511474609375e-06
+      ]
+    },
+    {
+      "id": "turn_flat_12",
+      "max_errors": [
+        9.5367431640625e-07,
+        3.8743019104003906e-07,
+        8.940696716308594e-07,
+        1.430511474609375e-06
+      ]
+    },
+    {
+      "id": "turn_flat_14",
+      "max_errors": [
+        9.5367431640625e-07,
+        3.6135315895080566e-07,
+        9.98377799987793e-07,
+        1.430511474609375e-06
+      ]
+    },
+    {
+      "id": "turn_flat_15",
+      "max_errors": [
+        4.76837158203125e-07,
+        4.3213367462158203e-07,
+        7.152557373046875e-07,
+        1.1473894119262695e-06
+      ]
+    },
+    {
+      "id": "turn_flat_16",
+      "max_errors": [
+        7.152557373046875e-07,
+        4.76837158203125e-07,
+        1.3113021850585938e-06,
+        1.9073486328125e-06
+      ]
+    },
+    {
+      "id": "straight_flat_18",
+      "max_errors": [
+        9.5367431640625e-07,
+        2.980232238769531e-07,
+        1.9073486328125e-06,
+        9.5367431640625e-07
+      ]
+    },
+    {
+      "id": "straight_flat_19",
+      "max_errors": [
+        9.5367431640625e-07,
+        2.980232238769531e-07,
+        2.1457672119140625e-06,
+        1.9073486328125e-06
+      ]
+    },
+    {
+      "id": "straight_flat_20",
+      "max_errors": [
+        9.5367431640625e-07,
+        2.384185791015625e-07,
+        2.0265579223632812e-06,
+        9.5367431640625e-07
+      ]
+    },
+    {
+      "id": "straight_flat_21",
+      "max_errors": [
+        9.5367431640625e-07,
+        2.980232238769531e-07,
+        1.5497207641601562e-06,
+        1.1920928955078125e-06
+      ]
+    },
+    {
+      "id": "stair_up_4",
+      "max_errors": [
+        3.5762786865234375e-07,
+        2.980232238769531e-07,
+        4.172325134277344e-07,
+        7.152557373046875e-07
+      ]
+    }
+  ],
+  "remaining": "New physical Smoke + independent Smoke checkpoint evaluation must pass before 8h training"
+}

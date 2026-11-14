@@ -40,7 +40,7 @@ parser.add_argument('--manifest_split',choices=['train','heldout'])
 add_launcher_args(parser)
 args = parser.parse_args()
 saved_config = json.loads(open(os.path.join(args.run_dir, 'args.json')).read())
-args.motion_dir = args.motion_dir or saved_config.get('motion_dir') or os.path.join(REPO, 'data/retarget_data/reference_startup_fixed')
+args.motion_dir = args.motion_dir or saved_config.get('motion_dir') or os.path.join(REPO, 'library/motion_reference/kuavo_s54/retarget_data/reference_startup_fixed')
 from supermimic.reference_selection import select_reference_files
 foot_run = saved_config.get('goal_mode','motion') == 'foot_trajectory'
 if not foot_run and (args.duration_s is not None or args.seeds or args.reset_noise or args.diagnostics or args.controller != 'policy'):

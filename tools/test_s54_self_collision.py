@@ -14,7 +14,7 @@ from s54_self_collision import CollisionGeometry, dense_contacts
 
 
 def main():
-    source = REPO / 'data/retarget_data/reference_grounded/dance1_subject1.csv'
+    source = REPO / 'library/motion_reference/kuavo_s54/retarget_data/reference_grounded/dance1_subject1.csv'
     q = np.loadtxt(source, delimiter=',', ndmin=2)[:, 7:34]
     model, _ = model_contract()
     g = CollisionGeometry(model)

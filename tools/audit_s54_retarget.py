@@ -88,9 +88,9 @@ def audit_clip(path, source_frames, limits, speeds, contract):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--raw_dir', type=Path, default=REPO/'data/retarget_data/raw')
+    parser.add_argument('--raw_dir', type=Path, default=REPO/'library/motion_reference/kuavo_s54/retarget_data/raw')
     parser.add_argument('--motion_dirs', type=Path, nargs='+', default=[
-        REPO/'data/retarget_data/reference_safe', REPO/'data/retarget_data/reference_startup_fixed'])
+        REPO/'library/motion_reference/kuavo_s54/retarget_data/reference_safe', REPO/'library/motion_reference/kuavo_s54/retarget_data/reference_startup_fixed'])
     parser.add_argument('--out', type=Path, default=REPO/'results/s54/retarget_inventory')
     parser.add_argument('--required_clips', nargs='*', default=[])
     args = parser.parse_args()

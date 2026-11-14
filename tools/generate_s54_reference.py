@@ -128,7 +128,7 @@ def main():
     select.add_argument('--clips', nargs='+', help='Clip stems or quoted glob patterns, e.g. walk1_subject1 or "walk*"')
     select.add_argument('--all', action='store_true', help='Generate all local LAFAN1 BVHs sequentially')
     p.add_argument('--exclude', nargs='*', default=[], help='Clip stems or glob patterns to exclude')
-    p.add_argument('--out_dir', type=Path, default=REPO / 'data/retarget_data/reference_startup_fixed')
+    p.add_argument('--out_dir', type=Path, default=REPO / 'library/motion_reference/kuavo_s54/retarget_data/reference_startup_fixed')
     p.add_argument('--config', type=Path, default=REPO / 'configs/s54_upper_body_retarget.json')
     p.add_argument('--ground_config', type=Path, default=REPO / 'configs/s54_grounding.json')
     p.add_argument('--collision_config', type=Path, default=REPO / 'configs/s54_self_collision.json')
@@ -140,10 +140,10 @@ def main():
     p.add_argument('--dry_run', action='store_true', help='List selected clips and outputs without running IK')
     p.add_argument('--max_frames', type=int, help='Explicit prefix probe, not a full clip export')
     a = p.parse_args()
-    root = (a.bvh_dir or REPO / 'data/retarget_data/raw').resolve()
+    root = (a.bvh_dir or REPO / 'library/motion_reference/kuavo_s54/retarget_data/raw').resolve()
     out = a.out_dir.resolve()
     if (not out.is_relative_to(REPO)
-            or out in (REPO, REPO / 'data', REPO / 'data/retarget_data')
+            or out in (REPO, REPO / 'library', REPO / 'library/motion_reference/kuavo_s54/retarget_data')
             or out == root or root in out.parents):
         p.error('Use an independent output directory inside the S54 workspace')
     if a.max_frames is not None and a.max_frames < 2:

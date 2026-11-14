@@ -1,0 +1,167 @@
+[
+  {
+    "path": "supermimic/s54.py",
+    "before_sha256": "e781542ec40335d0771b576317868dcfca43b2dc4e0b318d5a0c9016f247b1a9",
+    "after_sha256": "4fa1811fd320bcbca613ead3d9a0bacdb70d86f40cf65f9431a1dc633eff61f0"
+  },
+  {
+    "path": "supermimic/evaluate.py",
+    "before_sha256": "219a418a4aa1f2ed4b2ce83cb6ef6bd30566f14cffeee72f61566c4abb09aa33",
+    "after_sha256": "4bd4cd9404988e93f9b52cdc363b93b87ccf2d9e7a7708dd72a9d6f3a2d4891f"
+  },
+  {
+    "path": "supermimic/train.py",
+    "before_sha256": "083dd00923b15c6070d0cfc5d6b0ee41a33d30a5df6d9a877b7d8edae63d1fd7",
+    "after_sha256": "081b163e8ea5b5ae3be99956765759eede9e736d2c9a9d220e40c55a0a87e478"
+  },
+  {
+    "path": "tools/render_s54_m34_eval.py",
+    "before_sha256": "64d6006b80335ecca74f147d858fd6c6a48e82c6311b52d847ef60388541475b",
+    "after_sha256": "365271915f111eca720abe609c85a6695cd0cdeea380fc38368119cce66b412c"
+  },
+  {
+    "path": "tools/run_s54_smoke.sh",
+    "before_sha256": "f5b02c8c216c1c31c8b4c273e2905510fc6553cd12c12dd4ed6c29dadf173af9",
+    "after_sha256": "55f9629f3f531ed2c56ba04c156a4baace0e07d0e3a545d8e627e350d1840acb"
+  },
+  {
+    "path": "tools/repair_s54_collisions.py",
+    "before_sha256": "02e25d3686ca99d64c1a4923622934bd69f296e973648667f0e58552213f5a81",
+    "after_sha256": "f3e8e2a3322ecbbc2d96c7616d2355103820e4f12a0b94dbe208dc09d0e325c9"
+  },
+  {
+    "path": "tools/generate_s54_reference.py",
+    "before_sha256": "91a9b08953d07032f2045428cda14c79d8600db153e070c22b4656356b441172",
+    "after_sha256": "ce3cf9d236570ad8e1fc7b0a14b44c4330cd5c651264e54d11b0fe4d20106bae"
+  },
+  {
+    "path": "tools/test_s54_m34.py",
+    "before_sha256": "3401cee6738de2a1d3a78601204616ff90115759b982603e079aa4ef8b7d8809",
+    "after_sha256": "4fe9225b21ba3bc6f697a1bb77fb9263f9c38c46a724307ea9016450cd357da8"
+  },
+  {
+    "path": "tools/test_reset.py",
+    "before_sha256": "3cb1007099be7483049180cadc2f672a42df6ffc2fce838ace0aeae2eb21b50f",
+    "after_sha256": "f90885a0268cf82d0ca076050853180b29fa4ec1b207d0579624924b29c79673"
+  },
+  {
+    "path": "tools/test_foot_trajectory.py",
+    "before_sha256": "178b770e7e618b1e8ab74d48d16d7f4e385e84a1f65a423a70de77e33fdd1955",
+    "after_sha256": "060c251a1883f70708223f084af22bbc369fc7ee642329be5d26fe20f4a77b6d"
+  },
+  {
+    "path": "tools/test_env_s54.py",
+    "before_sha256": "33e9492038c1824e1aff2ce3a4a51c522bfd549d04e8ad9c07c8c4f9c17dd77d",
+    "after_sha256": "eb0d05db4668c8a8ae3c9c436e31178f4ae3f00de6cd4df57b729f979dbebabd"
+  },
+  {
+    "path": "tools/compare_s54_reference.py",
+    "before_sha256": "f872177c7ccc575beee8032f385a59af9c0b6faf70634be5427c97caaed8b2f6",
+    "after_sha256": "88e73c51ac756f245724dd0131df5355f1680515143a50808fcffd374dc63471"
+  },
+  {
+    "path": "tools/bench.py",
+    "before_sha256": "44006b8aa473eebf1754cb11dad5990ce0360238e3a2e1e235545b0ffa8a98f1",
+    "after_sha256": "e9b2564919b38884520d6c4db3abcdf19fb1c691dfda83ee4051bf4b0754d50c"
+  },
+  {
+    "path": "tools/preview_s54_reference.py",
+    "before_sha256": "a40e7f9249ae3902d821f138db4d4a42ea687bd70dc38c395e6d8f3362e44649",
+    "after_sha256": "b34eeb342f49c3f73c93b1c5d5b62589a0c429f61bb617083f083fed98ae7ee0"
+  },
+  {
+    "path": "tools/test_s54_self_collision.py",
+    "before_sha256": "6f2c137212c9304c906563275c8d386d5b7a5732146247c018d0260bf7bf92ce",
+    "after_sha256": "eb32375f47f6f29b78ab92fd56f2e22ffe257a8dcf1e516026087410a7856668"
+  },
+  {
+    "path": "tools/copy_s54_sources.py",
+    "before_sha256": "a253776b9f89c645cbc1159ae596719000c1be437f1df42f05fa6c3b44e55aa4",
+    "after_sha256": "03057633133e81531d3608e0e3c4f0387abbd1937df3eae31bf4517164c54492"
+  },
+  {
+    "path": "tools/audit_s54_retarget.py",
+    "before_sha256": "aea2b21c661f4d0d46e77bb94578b2190fa36da2999d388e10e8fff468e2fc1f",
+    "after_sha256": "696324da086c042c80df22538e7aa1233ebea4d9a3a980b24a7f02347ec8fc7b"
+  },
+  {
+    "path": "tools/retarget_s54_upper_body.py",
+    "before_sha256": "f13f697d18af649a5b2b2a86e8f102bc85f7e045f5186954347b5117adb6b66a",
+    "after_sha256": "4b9cc71c8b29ae2c838ba00317960b4e14cfd4ed8f4a2f3ef98c1eca1143bb0b"
+  },
+  {
+    "path": "tools/test_s54_reference_gate.py",
+    "before_sha256": "854cfd3ff852e62fa55ea6e5c1f542b3788f6673c388a0617639d0dadd02a48d",
+    "after_sha256": "73ef9a6c1cd026f7e047ad09a9595aabff71763461d289c5f9142487724da8fc"
+  },
+  {
+    "path": "tools/view_s54_stair_reference.py",
+    "before_sha256": "046fe5634a4f88e55b064ff1bc9d1a39b161044d98eb9d8c03237eab4628f2bb",
+    "after_sha256": "a305568cd7ef0e933f3049d46e75451c43ac7f295d53b939af0702dca7e871ba"
+  },
+  {
+    "path": "tools/prepare_s54_motion.py",
+    "before_sha256": "3a6192d212a9bbd9868cf17386ada1cdb8fd27ff09dcbcb9c8d22df014c072df",
+    "after_sha256": "d7da8262da4d3116194af468e30f69f982e48b5a687353f64748725798ea6c77"
+  },
+  {
+    "path": "tools/view_s54_reference.py",
+    "before_sha256": "58c3763c894397e22df842c91ab91dc6d4a0235f87fc98e20ee4f1f8ba650a65",
+    "after_sha256": "dfdaabf249a976087ff3489b327bf7e48330824d28350b8f8fd9e6e902d6718a"
+  },
+  {
+    "path": "tools/validate_s54_upper_body.py",
+    "before_sha256": "252748b7f4e06f674fbfa4654135939e0134b22c98e0098b9d69a833452784ba",
+    "after_sha256": "90ef261dde2cac6442975984d1d2833805f2927db22506963c886b77b6bcdc60"
+  },
+  {
+    "path": "tools/view_s54_foot_trajectory.py",
+    "before_sha256": "8b58036c583c4e81c459deb3a620008058f6a89e36e6196933388e629890bb29",
+    "after_sha256": "1f2fe15b14a6812a8c2403e20fb3a4dcf4a241de94801dc164731a0d3514c5cf"
+  },
+  {
+    "path": "tools/diagnose_s54_reference.py",
+    "before_sha256": "3330904ee267e1d48613892ab8960ff87bd1036cf42f99209a909edad71ac48d",
+    "after_sha256": "11edad8cd73fcc6161d5c98957e6bd5e50ac2f3b17263f707ea60901e7919d9c"
+  },
+  {
+    "path": "tools/m34_rollout.py",
+    "before_sha256": "387511711a8e3b49c84c99bd8c503dd89406d3e09610910e70d58298f52bdc40",
+    "after_sha256": "70f599a7d7c5eb0f4fcf55f77fa02cd7c116d6b9afccd30cc0c145ce9aa58d38"
+  },
+  {
+    "path": "tools/t15_stair_rollout.py",
+    "before_sha256": "faebca4e14c790218e7b11a654d2eb0a2cd0cfafb412b702e6b616f30f18ca35",
+    "after_sha256": "a16aca9fa39c9526188cc4c73eb8d572fb6fa639ce5902b38341ba8c38dddcc6"
+  },
+  {
+    "path": "tools/test_s54_cpu.py",
+    "before_sha256": "5c03934b1279a0bf593b55e4293ba3df69ce84f968e7fd5db8d97916a2e7f061",
+    "after_sha256": "3c45259d50ae46e40079231d0db71291c16097161c9461bd43aad2dac88f8b2c"
+  },
+  {
+    "path": "tools/prepare_s54_motion_prior.py",
+    "before_sha256": "66e3d886c921cafbdad62695255f4d790d36abdb6998f5b88050496f66364145",
+    "after_sha256": "2bbce5a8f01fc84caefcaecc9030896c4fc854f373a26cba6286c638f4d77f57"
+  },
+  {
+    "path": "configs/s54_m34_4060.json",
+    "before_sha256": "42ccfc1ec266f3afa3ed9712d7499c369b8ba712b72abf36f4d7f64a4581c8c4",
+    "after_sha256": "046a33b2d9082db0e0dd03e100d329cc324e387c92334fbbb41877abf35a2de0"
+  },
+  {
+    "path": "run_train.sh",
+    "before_sha256": "f3fb4ceaaa2764b029d64b45af4d006bd4f9ef9e789450d3c677efe1ffa7e8f8",
+    "after_sha256": "796c67d19d70fb559d0fc9364fee25a2e1e719d148f6f7c1a4f0afa79b703e15"
+  },
+  {
+    "path": "experiments/s54_stair_flat6063_8h/design.json",
+    "before_sha256": "2981ce6f04c8e760ee20af5392dc55a2404bfda929127d6527fe8b5e4103c21a",
+    "after_sha256": "93faaad6a1323a05ff9210c9f57dcab95585845c88fc56d9d52405161688e4e0"
+  },
+  {
+    "path": "experiments/s54_stair_flat6063_8h/smoke_design.json",
+    "before_sha256": "419afb8adedc61c4daeb4c7fe1993af3f8a1462a7314ae17b92b40dfef2120d6",
+    "after_sha256": "2267d78c631492b078e732f2800a3032ced6835379d1eccdd5de47170f00ca13"
+  }
+]

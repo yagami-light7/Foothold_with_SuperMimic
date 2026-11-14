@@ -1,0 +1,251 @@
+{
+  "status": "PASS",
+  "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "experiments": {
+    "E0": {
+      "status": "PASS",
+      "iterations": 4,
+      "sim_steps": 104,
+      "wm_loss": 2.88905,
+      "critic_loss": 0.000554694,
+      "actor_gradnorm": 0.0369852,
+      "foot_actor_gradnorm": 0.000886462,
+      "obs_dim": 69,
+      "goal_dim": 230,
+      "critic_input": 310,
+      "wm_input": 101,
+      "wm_output": 54,
+      "source_contact_fraction": 0.0,
+      "prior_quality_mean": 0.0
+    },
+    "E1": {
+      "status": "PASS",
+      "iterations": 4,
+      "sim_steps": 104,
+      "wm_loss": 2.88902,
+      "critic_loss": 0.00448301,
+      "actor_gradnorm": 0.0151272,
+      "foot_actor_gradnorm": 0.000836567,
+      "obs_dim": 69,
+      "goal_dim": 230,
+      "critic_input": 880,
+      "wm_input": 101,
+      "wm_output": 54,
+      "source_contact_fraction": 0.0,
+      "prior_quality_mean": 0.0
+    },
+    "E2": {
+      "status": "PASS",
+      "iterations": 4,
+      "sim_steps": 104,
+      "wm_loss": 2.88901,
+      "critic_loss": 0.00448436,
+      "actor_gradnorm": 0.0151213,
+      "foot_actor_gradnorm": 0.000836276,
+      "obs_dim": 69,
+      "goal_dim": 230,
+      "critic_input": 880,
+      "wm_input": 101,
+      "wm_output": 54,
+      "source_contact_fraction": 0.0,
+      "prior_quality_mean": 0.0
+    },
+    "terrain_smoke": {
+      "status": "PASS",
+      "iterations": 4,
+      "sim_steps": 104,
+      "wm_loss": 2.88372,
+      "critic_loss": 0.00338517,
+      "actor_gradnorm": 0.0112295,
+      "foot_actor_gradnorm": 0.00122209,
+      "obs_dim": 69,
+      "goal_dim": 230,
+      "critic_input": 1105,
+      "wm_input": 326,
+      "wm_output": 54,
+      "source_contact_fraction": 0.0,
+      "prior_quality_mean": 0.0
+    }
+  },
+  "formal_training": false,
+  "resume": {
+    "status": "PASS",
+    "iteration": 6,
+    "adam_actor_step_before": 3.0,
+    "adam_actor_step_after": 5.0
+  },
+  "newton": {
+    "status": "PASS",
+    "scope": "short physical chain test; untrained policy may fall",
+    "backend": "Isaac Lab 3 Newton/MJWarp",
+    "checkpoint": "/workspace/supermimic/logs/roban_arch_final_20261114_E1/last.pt",
+    "num_envs": 4,
+    "requested_steps": 100,
+    "executed_steps": 75,
+    "episode_lengths": [
+      75.0,
+      75.0,
+      75.0,
+      75.0
+    ],
+    "norm_return": 0.15137708187103271,
+    "n_failed": 4,
+    "foot_rmse_m": 0.21528083086013794,
+    "max_sole_fk_error_m": 9.253279245058366e-07,
+    "max_real_replay_reward_error": 0.0,
+    "actor_obs_dim": 69,
+    "actor_goal_dim": 230,
+    "actor_uses_whole_body_reference": false,
+    "state_writes_after_reset": 0,
+    "contact_status": "last_substep_solver_forces",
+    "nonzero_contact_force_observed": true,
+    "reference_validation": {
+      "robot": {
+        "robot": "roban_s22_0901",
+        "joint_names": [
+          "waist_yaw_joint",
+          "leg_l1_joint",
+          "leg_l2_joint",
+          "leg_l3_joint",
+          "leg_l4_joint",
+          "leg_l5_joint",
+          "leg_l6_joint",
+          "leg_r1_joint",
+          "leg_r2_joint",
+          "leg_r3_joint",
+          "leg_r4_joint",
+          "leg_r5_joint",
+          "leg_r6_joint",
+          "zarm_l1_joint",
+          "zarm_l2_joint",
+          "zarm_l3_joint",
+          "zarm_l4_joint",
+          "zarm_r1_joint",
+          "zarm_r2_joint",
+          "zarm_r3_joint",
+          "zarm_r4_joint"
+        ],
+        "tracked_bodies": [
+          "base_link",
+          "waist_yaw_link",
+          "leg_l1_link",
+          "leg_l2_link",
+          "leg_l3_link",
+          "leg_l4_link",
+          "leg_l5_link",
+          "leg_l6_link",
+          "leg_r1_link",
+          "leg_r2_link",
+          "leg_r3_link",
+          "leg_r4_link",
+          "leg_r5_link",
+          "leg_r6_link",
+          "zarm_l1_link",
+          "zarm_l2_link",
+          "zarm_l3_link",
+          "zarm_l4_link",
+          "l_handball",
+          "zarm_r1_link",
+          "zarm_r2_link",
+          "zarm_r3_link",
+          "zarm_r4_link",
+          "r_handball",
+          "zhead_1_link",
+          "head_radar",
+          "zhead_2_link",
+          "head_camera_base",
+          "camera_bottom_screw_frame",
+          "camera_left_ir_frame",
+          "camera_left_ir_optical_frame",
+          "camera_right_ir_frame",
+          "camera_right_ir_optical_frame",
+          "camera_color_frame",
+          "camera_color_optical_frame",
+          "camera_depth_frame",
+          "camera_depth_optical_frame"
+        ],
+        "source_mjcf_sha256": "05ef4d4946803de21c0445d11187b7c4316e57654d7b929a57943741c4d553ab",
+        "foot_frames": [
+          {
+            "body": "leg_l6_link",
+            "sole": [
+              0.047499999999999994,
+              0.0,
+              -0.04
+            ],
+            "heel": -0.05500000000000001,
+            "toe": 0.15,
+            "corners": [
+              [
+                -0.05500000000000001,
+                -0.04,
+                -0.04
+              ],
+              [
+                -0.05500000000000001,
+                0.04,
+                -0.04
+              ],
+              [
+                0.15,
+                -0.04,
+                -0.04
+              ],
+              [
+                0.15,
+                0.04,
+                -0.04
+              ]
+            ]
+          },
+          {
+            "body": "leg_r6_link",
+            "sole": [
+              0.047499999999999994,
+              0.0,
+              -0.04
+            ],
+            "heel": -0.05500000000000001,
+            "toe": 0.15,
+            "corners": [
+              [
+                -0.05500000000000001,
+                -0.04,
+                -0.04
+              ],
+              [
+                -0.05500000000000001,
+                0.04,
+                -0.04
+              ],
+              [
+                0.15,
+                -0.04,
+                -0.04
+              ],
+              [
+                0.15,
+                0.04,
+                -0.04
+              ]
+            ]
+          }
+        ]
+      },
+      "files": [
+        {
+          "path": "library/motion_reference/roban/style100_roban_50hz/Neutral/Neutral_FW.csv",
+          "sha256": "c608e7cc69d9fb2bf34851d2e57974a9881709b3b9d6d76936277838ea7a781b",
+          "source_fps": 50.0,
+          "control_dt": 0.02,
+          "frames": 6580,
+          "contact_labelled": false
+        }
+      ],
+      "contact": "untrusted estimates unless labelled",
+      "frames": 6580,
+      "trusted_contact_fraction": 0.0,
+      "body_prior_quality_mean": 0.0
+    }
+  }
+}

@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from isaaclab.app import add_launcher_args, launch_simulation
 
 p = argparse.ArgumentParser(description=__doc__)
-p.add_argument('--dataset', default='data/s54_flat_dataset/dataset_export')
+p.add_argument('--dataset', default='library/motion_reference/kuavo_s54/datasets/s54_flat_dataset/dataset_export')
 p.add_argument('--split', choices=['train', 'test'], default='train')
 p.add_argument('--checkpoint')
 p.add_argument('--out', required=True)

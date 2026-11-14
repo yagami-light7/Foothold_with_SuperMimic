@@ -19,7 +19,7 @@ from render import set_pose, apply_render_style
 
 def main():
  p=argparse.ArgumentParser();p.add_argument('--seconds',type=float,default=5);p.add_argument('--start',type=float,default=0)
- p.add_argument('--motion_dir',default='data/retarget_data/reference_startup_fixed');p.add_argument('--clip',help='Clip stem; defaults to the first clip')
+ p.add_argument('--motion_dir',default='library/motion_reference/kuavo_s54/retarget_data/reference_startup_fixed');p.add_argument('--clip',help='Clip stem; defaults to the first clip')
  p.add_argument('--width',type=int,default=480);p.add_argument('--height',type=int,default=360);p.add_argument('--fps',type=int,default=30)
  p.add_argument('--out',default='results/s54/reference_preview.mp4');a=p.parse_args()
  torch.set_num_threads(4);motion=MotionLib.from_dir(a.motion_dir,S54Kinematics(),'cpu')

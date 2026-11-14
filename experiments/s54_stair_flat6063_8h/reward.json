@@ -1,0 +1,17 @@
+{
+  "w_body_pos": 1.0,
+  "body_pos_std": 0.3,
+  "w_body_ori": 1.0,
+  "body_ori_std": 0.4,
+  "w_body_linvel": 1.0,
+  "w_body_angvel": 1.0,
+  "w_root_pos": 1.0,
+  "root_position_mode": "xyz",
+  "root_pos_std": 0.2,
+  "w_root_ori": 0.75,
+  "root_ori_std": 0.3,
+  "w_foot_pos": 0.5,
+  "foot_pos_std": 0.08,
+  "w_foot_ori": 0.25,
+  "foot_ori_std": 0.2
+}

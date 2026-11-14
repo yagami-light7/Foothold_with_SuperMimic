@@ -1,5 +1,5 @@
 {
-  "dataset": "data/s54_flat_dataset/dataset_export",
+  "dataset": "library/motion_reference/kuavo_s54/datasets/s54_flat_dataset/dataset_export",
   "num_envs": 2048,
   "iterations": 10000,
   "buffer_steps": 1024,

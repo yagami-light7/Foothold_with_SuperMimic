@@ -48,6 +48,7 @@ CORE_CONFIG_KEYS = {
     'hist', 'goal_frames', 'goal_dt', 'lr', 'actor_lr', 'critic_lr', 'gamma', 'lam',
     'action_noise', 'm34_straight_iters', 'm34_eval_every', 'amp', 'seed',
     'motion_obs_mode', 'obs_dim', 'motion_reward_config',
+    'wall_seconds',
 }
 CORE_METRICS = {key: METRICS[key] for key in (
     'wm_loss', 'pi_loss', 'v_loss', 'sim_rew', 'ep_ret_norm', 'ep_len',
@@ -100,6 +101,11 @@ def evaluation_metrics(summary):
     """Scalar metrics only; train/test and nominal/perturbed protocols stay separate."""
     if summary['status'] != 'completed':
         raise ValueError('Refusing to upload an incomplete evaluation as completed')
+    if summary.get('kind')=='s54_stair_t15':
+        values=summary['scalars']
+        if not values or not all(k.startswith('Eval/') and math.isfinite(v) for k,v in values.items()):
+            raise ValueError('Invalid stair scalar evaluation')
+        return values
     values = {}
     for split, data in summary['splits'].items():
         if split not in ('train', 'test'):

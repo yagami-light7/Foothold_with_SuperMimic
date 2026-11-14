@@ -23,6 +23,8 @@ def request_stop(*_):
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
+from supermimic.roban_runtime import configure_robot, add_roban_args
+ROBOT_KIND = configure_robot(sys.argv[1:])
 from isaaclab.app import add_launcher_args, launch_simulation
 from supermimic.goals import GoalSource, add_goal_args, resolve_goal_config
 from supermimic.foot_mdp import FootTrackingMDP, resolve_foot_task, assert_task_checkpoint
@@ -59,7 +61,7 @@ parser.add_argument("--wm_only_iters", type=int, default=10, help="world-model-o
 parser.add_argument("--lr_decay_iters", type=int, default=250_000)
 parser.add_argument("--ckpt_every", type=int, default=30)
 parser.add_argument("--log_every", type=int, default=10)
-parser.add_argument("--motion_dir", type=str, default=os.path.join(REPO, "data", "retarget_data", "reference_startup_fixed"))
+parser.add_argument("--motion_dir", type=str, default=os.path.join(REPO, "library", "motion_reference", "kuavo_s54", "retarget_data", "reference_startup_fixed"))
 parser.add_argument('--m34_dataset', help='M3.4 dataset_export root; strictly train split, native 50 Hz NPZ')
 parser.add_argument('--m34_straight_iters', type=int, default=1000, help='Straight emphasis before equal three-class sampling')
 parser.add_argument('--m34_eval_every', type=int, default=1000, help='Independent frozen train/test Newton eval interval; 0 disables')
@@ -76,11 +78,13 @@ parser.add_argument('--curriculum_config', help='Enable the bounded curriculum (
 parser.add_argument('--max_device_memory_mib',type=float,default=None,help='Optional device-memory stop threshold at telemetry intervals')
 parser.add_argument('--fresh_start', action='store_true', help='Assert fresh models/progress; forbid resume and transfer')
 parser.add_argument('--init_weights', help='Explicit transfer of compatible WM/Actor weights; fresh optimizers/critic')
+parser.add_argument('--stair_config', help='Opt-in T1.5 audited mixed flat/stair experiment design')
+parser.add_argument('--init_from_flat', help='Explicit Flat -> Stair transfer; source checkpoint is read-only')
 parser.add_argument('--init_from_motion', help='Cross-task Stage 1 initialization; never a resume')
 parser.add_argument('--init_from_bridge', help='Initialize Quintic Foot RL from an optional paired Motion-reward bridge')
 parser.add_argument('--transfer_components', choices=['wm','wm_decoder'],default='wm_decoder')
 parser.add_argument('--obs_adapter', choices=['identity','mask_reference_orientation'],default='identity')
-parser.add_argument('--motion_obs_mode', choices=['legacy_v1', 'root_xy_heading_v2'], default='root_xy_heading_v2')
+parser.add_argument('--motion_obs_mode', choices=['legacy_v1', 'root_xy_heading_v2', 'roban_proprio_v1'], default='root_xy_heading_v2')
 parser.add_argument('--motion_reward_config', help='Motion reward JSON object or JSON file; defaults to requested tracking-v2 weights')
 parser.add_argument('--freeze_decoder',action='store_true')
 parser.add_argument('--train_decoder',action='store_true',help='Explicitly finetune D during direct Foot RL; bridge always freezes D')
@@ -92,8 +96,16 @@ parser.add_argument('--reward_term_logging',action='store_true',help='Persist pe
 parser.add_argument('--paired_latent_weight',type=float,default=0.,help='Optional same-clip latent alignment; never applies to random Quintic goals')
 add_goal_args(parser)
 add_launcher_args(parser)
+add_roban_args(parser, sys.argv[1:])
 args = parser.parse_args()
 try:
+    if ROBOT_KIND == 'roban':
+        if args.goal_mode != 'roban_foot' or any((args.m34_dataset,args.stair_config,args.foot_task_config,args.curriculum_config,args.prior_config,args.init_from_motion,args.init_from_bridge,args.init_from_flat)):
+            raise ValueError('Roban uses its unified reference/task adapter; S54-only options are incompatible')
+        if args.obs_adapter != 'identity' or args.freeze_decoder or args.paired_latent_weight or args.check_foot_gradients or args.gradient_audit_every or args.critic_real_batch:
+            raise ValueError('Use Roban foot gradient tests; legacy S54 adapters/audits are incompatible')
+        from supermimic.roban_task import FootRewardConfig
+        FootRewardConfig(**dict(args.roban_reward_config, body_prior_weight=args.body_prior_weight))
     if args.m34_eval_every < 0 or not args.m34_eval_seeds or len(set(args.m34_eval_seeds)) != len(args.m34_eval_seeds) or any(s < 0 for s in args.m34_eval_seeds):
         raise ValueError('Invalid M3.4 evaluation interval or seed protocol')
     goal_spec, foot_config = resolve_goal_config(args)
@@ -104,7 +116,7 @@ try:
         raise ValueError('Paired bridge uses Motion reward/reset and its own reference-foot goal')
     if args.init_from_motion and args.goal_mode=='motion': raise ValueError('init_from_motion is a cross-task Foot initializer')
     if args.init_from_bridge and args.goal_mode!='foot_trajectory': raise ValueError('Bridge initialization targets Quintic Foot RL')
-    if sum(bool(x) for x in (args.resume,args.init_weights,args.init_from_motion,args.init_from_bridge))>1:
+    if sum(bool(x) for x in (args.resume,args.init_weights,args.init_from_motion,args.init_from_bridge,args.init_from_flat))>1:
         raise ValueError('Choose exactly one resume/initialization source')
     if args.freeze_decoder and args.train_decoder: raise ValueError('Conflicting Decoder update flags')
     if args.goal_mode=='reference_foot' and args.train_decoder: raise ValueError('Sequential bridge freezes Decoder; joint Motion training is not enabled')
@@ -143,7 +155,7 @@ except (ValueError, TypeError, OSError) as exc:
     parser.error(str(exc))
 from pathlib import Path
 log_path = Path(args.log_dir).resolve()
-if not log_path.is_relative_to(Path(REPO)/"logs") or not log_path.name.startswith("s54_"):
+if not log_path.is_relative_to(Path(REPO)/"logs") or not log_path.name.startswith("roban_" if ROBOT_KIND == "roban" else "s54_"):
     parser.error("S54 logs must be under this repository logs/s54_*; existing G1 logs are protected")
 existing_training = ((log_path/'args.json').exists() or (log_path/'train_log.csv').exists()
                      or any(log_path.glob('*.pt')))
@@ -156,11 +168,29 @@ if args.pi_batch * args.horizon < args.critic_minibatches:
 
 from supermimic.reference_selection import select_reference_files
 from supermimic.motion_prior_data import load_manifest
+stair_cfg=None
+if args.stair_config:
+    from supermimic.stair_training import read_design, contract as stair_contract
+    stair_cfg=read_design(args.stair_config)
+    if args.goal_mode!='motion' or args.m34_dataset or args.reference_manifest or args.curriculum_config:
+        parser.error('T1.5 uses Motion goals and its own explicit train assignment/sampling')
+    if not (args.init_from_flat or args.resume):parser.error('T1.5 requires Flat initialization or strict Stair resume')
+elif args.init_from_flat:
+    parser.error('init_from_flat requires stair_config and prerequisite gates')
 motion_files = []
 data_contract=None
 if task_cfg is None:
     try:
-        if args.m34_dataset:
+        if ROBOT_KIND == 'roban':
+            from supermimic.roban_runtime import select_roban_files
+            motion_files = select_roban_files(args.motion_dir, args.clips)
+        elif stair_cfg:
+            data_contract=stair_contract(stair_cfg)
+            from supermimic.m34 import entries as stair_flat_entries
+            motion_files=[str(Path(stair_cfg['flat_dataset'])/row['path'])
+                          for row in stair_flat_entries(stair_cfg['flat_dataset'],'train')[2]]
+            motion_files.append(str(stair_cfg.get('stair_npz',Path(stair_cfg['bundle'])/'test/stair_up_4.npz')))
+        elif args.m34_dataset:
             if args.goal_mode != 'motion' or args.reference_manifest or args.clips or args.m34_straight_iters < 0:
                 raise ValueError('M3.4 requires motion goals, all train clips, and no legacy manifest')
             from supermimic.m34 import entries, dataset_contract
@@ -187,13 +217,13 @@ import torch.nn as nn
 from supermimic.control import ACTION_LIMIT, bound_action, bound_bootstrap, return_upper_bound
 from supermimic.buffer import ReplayBuffer
 from supermimic.env import TrackingSim, make_sim
-from supermimic.kinematics import S54Kinematics
+from supermimic.kinematics import RobotKinematics
 from supermimic.mdp import CRITIC_EXTRA, INV_DIM, MDP, OBS_DIM, RewardCfg, resolve_motion_reward, invariant_features, normalize_xi, unflatten_state
 from supermimic.motion import MotionLib
 import supermimic.networks as networks
 from supermimic.networks import Critic, Policy, WorldModel
 from supermimic.transfer import (physical_contract,policy_contract,assert_policy_checkpoint,initialize_from_motion)
-from supermimic.s54 import (default_joint_pos_list, NUM_J, checkpoint_contract, assert_checkpoint)
+from supermimic.robot_contract import (default_joint_pos_list, NUM_J, checkpoint_contract, assert_checkpoint)
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
@@ -222,20 +252,35 @@ args.reward_config = asdict(
 os.makedirs(args.log_dir, exist_ok=True)
 
 
-kin = S54Kinematics(dev)
-if args.m34_dataset:
+kin = RobotKinematics(dev)
+terrain_provider = None
+if ROBOT_KIND == 'roban':
+    from supermimic.roban_runtime import build_task
+    motion, goals, mdp, terrain_provider = build_task(args, kin, motion_files, dev)
+    (log_path/'roban_reference_validation.json').write_text(json.dumps(motion.validation, indent=2))
+    data_contract = motion.validation
+elif stair_cfg:
+    from supermimic.stair_training import library as stair_library
+    motion=stair_library(stair_cfg,kin,dev)
+    (log_path/'stair_data_validation.json').write_text(json.dumps(motion.validation,indent=2))
+elif args.m34_dataset:
     from supermimic.m34 import motion_library
     motion = motion_library(args.m34_dataset, kin, dev, 'train')
     (log_path/'m34_data_validation.json').write_text(json.dumps(motion.validation, indent=2))
 else:
     motion = MotionLib(motion_files, kin, dev) if task_cfg is None else None
-default_q = torch.tensor(default_joint_pos_list(), device=dev)
-goals = GoalSource(motion, kin, goal_spec, foot_config,
-                command_mode='alternating' if task_cfg is None else task_cfg.command_mode)
-mdp = (
-    MDP(kin, motion, default_q, motion_reward_cfg, observation_mode=args.motion_obs_mode)
-    if task_cfg is None
-    else FootTrackingMDP(kin, default_q, goals, task_cfg))
+if ROBOT_KIND != 'roban':
+    default_q = torch.tensor(default_joint_pos_list(), device=dev)
+    goals = GoalSource(motion, kin, goal_spec, foot_config,
+                    command_mode='alternating' if task_cfg is None else task_cfg.command_mode)
+    mdp = (
+        MDP(kin, motion, default_q, motion_reward_cfg, observation_mode=args.motion_obs_mode)
+        if task_cfg is None
+        else FootTrackingMDP(kin, default_q, goals, task_cfg))
+if stair_cfg:
+    from supermimic.stair_runtime import StairTrackingMDP
+    if motion_reward_cfg.root_position_mode!='xyz':parser.error('Stair task requires explicit XYZ root reward')
+    mdp=StairTrackingMDP(kin,motion,default_q,motion_reward_cfg,observation_mode=args.motion_obs_mode)
 
 if args.goal_mode=='reference_foot':
     from supermimic.reference_foot import ReferenceFootGoalSource,PairedMotionMDP
@@ -261,19 +306,29 @@ K, Hh, HZ = args.goal_frames, args.hist, args.horizon
 GOAL_DIM = goal_spec.dim
 CRITIC_IN = mdp.critic_dim + GOAL_DIM
 
-wm = WorldModel().to(dev)
+wm = WorldModel(terrain_provider=terrain_provider).to(dev)
 if args.goal_mode=='reference_foot':
     from supermimic.networks import DualEncoderPolicy
     pi=DualEncoderPolicy(hist=Hh).to(dev)
 else:
     pi = Policy(obs_dim, GOAL_DIM, hist=Hh,obs_adapter=args.obs_adapter).to(dev)
-critic = Critic(CRITIC_IN).to(dev)
+if ROBOT_KIND == 'roban':
+    # Critic width is the E0/E1 ablation. Its initialization must not change
+    # subsequent shared reset/action-noise RNG draws merely by consuming more RNG.
+    with torch.random.fork_rng(devices=[torch.cuda.current_device()]):
+        critic = Critic(CRITIC_IN).to(dev)
+else:
+    critic = Critic(CRITIC_IN).to(dev)
 opt_wm = torch.optim.Adam(wm.parameters(), lr=args.lr)
 opt_pi = torch.optim.Adam(pi.parameters(), lr=actor_lr, betas=(0.9, 0.95))
 opt_v = torch.optim.Adam(critic.parameters(), lr=critic_lr)
 start_it, wall_offset, sim_steps = 0, 0.0, 0
 supervision_steps=0
 physics_metadata=physical_contract(obs_dim=obs_dim)
+if stair_cfg:
+    physics_metadata['solver']={**physics_metadata['solver'],'use_mujoco_contacts':False}
+    physics_metadata['collision_decimation']=1
+    physics_metadata['terrain_task']=data_contract
 transfer_report=None
 git_sha=os.environ.get('S54_SOURCE_GIT_SHA')
 if not git_sha:
@@ -290,7 +345,10 @@ if args.resume:
         print('Legacy checkpoint: applying real/imagined action consistency and valid foot return bound; '
               'network dimensions and physical task unchanged',flush=True)
     goal_spec.assert_checkpoint(ck, foot_config)
-    assert_task_checkpoint(ck, mdp)
+    if ROBOT_KIND == 'roban':
+        if ck.get('task_contract') != mdp.contract(): raise ValueError('Roban task/critic/terrain resume mismatch')
+    else:
+        assert_task_checkpoint(ck, mdp)
     assert_policy_checkpoint(ck,Hh,args.obs_adapter,not args.freeze_decoder,
                              obs_dim=obs_dim, observation_mode=args.motion_obs_mode)
     if ck.get('physical_contract',physics_metadata)!=physics_metadata: raise ValueError('Resume physics contract mismatch')
@@ -313,17 +371,34 @@ if args.resume:
 if args.init_weights:
     transfer = torch.load(args.init_weights, map_location=dev, weights_only=False)
     assert_checkpoint(transfer)
-    goal_spec.assert_checkpoint(transfer)  # representation must match; sampling/task may change explicitly
-    if transfer['args']['hist'] != args.hist: raise ValueError('Transfer requires matching Actor history')
-    if transfer.get('policy_contract',{}).get('obs_adapter','identity')!=args.obs_adapter:
-        raise ValueError('Compatible Actor transfer requires matching observation semantics')
-    if transfer.get('policy_contract', {}).get('obs_dim', OBS_DIM) != obs_dim:
-        raise ValueError('Actor observation dimension mismatch: new Root feedback requires a new 103D policy')
-    if transfer.get('physical_contract',physics_metadata)!=physics_metadata:raise ValueError('Actor transfer physics mismatch')
-    wm.load_state_dict(transfer['wm']); pi.load_state_dict(transfer['pi'])
-    pi.goal_norm.mean.zero_(); pi.goal_norm.var.fill_(1); pi.goal_norm.count.zero_()
-    print('TRANSFER: WM+Actor (goal normalization reset); fresh Critic/optimizers/replay/curriculum. Source iteration',
-          transfer['iteration'], flush=True)
+    if ROBOT_KIND == 'roban':
+        from supermimic.roban_runtime import initialize_compatible
+        transfer_report = initialize_compatible(transfer,wm,pi,physics_metadata,hist=Hh,goal_contract=goal_spec.contract())
+    else:
+        goal_spec.assert_checkpoint(transfer)  # representation must match; sampling/task may change explicitly
+        if transfer['args']['hist'] != args.hist: raise ValueError('Transfer requires matching Actor history')
+        if transfer.get('policy_contract',{}).get('obs_adapter','identity')!=args.obs_adapter:
+            raise ValueError('Compatible Actor transfer requires matching observation semantics')
+        if transfer.get('policy_contract', {}).get('obs_dim', OBS_DIM) != obs_dim:
+            raise ValueError('Actor observation dimension mismatch: new Root feedback requires a new 103D policy')
+        if transfer.get('physical_contract',physics_metadata)!=physics_metadata:raise ValueError('Actor transfer physics mismatch')
+        wm.load_state_dict(transfer['wm']); pi.load_state_dict(transfer['pi'])
+        pi.goal_norm.mean.zero_(); pi.goal_norm.var.fill_(1); pi.goal_norm.count.zero_()
+        print('TRANSFER: WM+Actor (goal normalization reset); fresh Critic/optimizers/replay/curriculum. Source iteration',
+              transfer['iteration'], flush=True)
+
+if args.init_from_flat:
+    from supermimic.stair_training import initialize_flat
+    from supermimic.m34 import sha256 as stair_sha256
+    if (stair_cfg.get('source_checkpoint_sha256') and
+            stair_sha256(args.init_from_flat)!=stair_cfg['source_checkpoint_sha256']):
+        raise ValueError('Flat initialization differs from the pinned experiment checkpoint')
+    transfer=torch.load(args.init_from_flat,map_location=dev,weights_only=False)
+    transfer_report=initialize_flat(transfer,wm,pi,physics_metadata,goal_spec,Hh,
+        normalizer_policy=stair_cfg.get('normalizer_policy','frozen_source'))
+    transfer_report['source_path']=str(Path(args.init_from_flat).resolve())
+    (log_path/'flat_to_stair_transfer.json').write_text(json.dumps(transfer_report,indent=2))
+    print('T1.5: Flat WM+MotionEncoder+SharedDecoder+normalizers copied; fresh reward-specific Critic/optimizers/replay',flush=True)
 
 if args.init_from_motion:
     transfer=torch.load(args.init_from_motion,map_location=dev,weights_only=False)
@@ -381,7 +456,7 @@ def _imag_step(S, o_hist, a_prev, f, xi, xi_n, g, ep_step, command):
 
 
 def _reward_term(S, f, a, a_prev, ep_step, command):
-    if mdp.is_foot:
+    if mdp.is_foot or getattr(mdp,'is_reference_foot',False):
         r, terms = mdp.reward(S,f,a,a_prev,terms=True,command=command,ep_step=ep_step)
         foot_reward = terms['foot_objective']
     else:
@@ -464,7 +539,7 @@ def policy_update(audit_gradients=False):
     set_requires_grad(wm, False)
     set_requires_grad(critic, False)
     B = args.pi_batch
-    audit_freeze=args.check_foot_gradients or audit_gradients or args.goal_mode=='reference_foot'
+    audit_freeze=args.check_foot_gradients or audit_gradients or args.goal_mode=='reference_foot' or args.roban_gradient_audit
     wm_versions=tuple(p._version for p in wm.parameters()) if audit_freeze else None
     decoder_versions=tuple(p._version for p in pi.dec.parameters()) if audit_freeze and args.freeze_decoder else None
     g0 = goals.goal(S, f, ep_step, command)
@@ -504,12 +579,14 @@ def policy_update(audit_gradients=False):
         loss=loss+args.paired_latent_weight*latent_loss
         supervision_steps+=HZ*B
     foot_gn = torch.zeros((), device=dev)
-    if mdp.is_foot and (args.check_foot_gradients or audit_gradients):
+    if (mdp.is_foot and (args.check_foot_gradients or audit_gradients)) or (ROBOT_KIND == 'roban' and args.roban_gradient_audit):
         # Exclude direct action costs, posture, base terms, critic and survival derivatives.
         foot_loss = -(disc*c_t.detach()*foot_reward.view(HZ,B)).sum(0).mean()
         fg = torch.autograd.grad(foot_loss,actor_parameters,retain_graph=True,allow_unused=True)
         foot_gn = torch.stack([g.detach().float().square().sum() for g in fg if g is not None]).sum().sqrt()
         if not torch.isfinite(foot_gn): raise FloatingPointError('Nonfinite pure foot Actor gradient')
+        if ROBOT_KIND == 'roban' and foot_gn <= 0:
+            raise RuntimeError('Roban primary foot reward produced no Actor gradient')
     gradient_diagnostics={}
     if audit_gradients:
         params=actor_parameters
@@ -617,9 +694,18 @@ def policy_update(audit_gradients=False):
 
 
 # ------------------------------------------------------------------------------------------------
-sim_cfg = make_sim(dev, args)
+if stair_cfg:
+    from supermimic.stair_runtime import make_stair_sim
+    sim_cfg=make_stair_sim(dev,args)
+else:
+    sim_cfg = make_sim(dev, args)
 with launch_simulation(sim_cfg, args):
-    env = TrackingSim(sim_cfg, args.num_envs, motion, mdp, gamma=args.gamma, goals=goals)
+    if stair_cfg:
+        from supermimic.stair_training import environment as stair_environment
+        env=stair_environment(sim_cfg,args.num_envs,motion,mdp,stair_cfg,gamma=args.gamma,goals=goals)
+        env.stair_iteration=start_it
+    else:
+        env = TrackingSim(sim_cfg, args.num_envs, motion, mdp, gamma=args.gamma, goals=goals)
     if args.m34_dataset:
         env.m34_iteration = start_it
         env.m34_straight_iters = args.m34_straight_iters
@@ -638,11 +724,19 @@ with launch_simulation(sim_cfg, args):
             fresh = env.ep_step == 0
             obs_hist = torch.where(fresh[:, None, None], o.unsqueeze(1).expand_as(obs_hist), torch.cat((obs_hist[:, 1:], o.unsqueeze(1)), 1))
             g = goals.goal(S, env.f, env.ep_step, env.command)
-            pi.obs_norm.update(o)
-            pi.goal_norm.update(g)
+            if not stair_cfg or stair_cfg.get('normalizer_policy')=='source_online':
+                pi.obs_norm.update(o)
+                pi.goal_norm.update(g)
             a = pi(obs_hist, g)
             a = bound_action(a + args.action_noise * torch.randn_like(a))
             out = env.step(a)
+            if stair_cfg:
+                from supermimic.stair_training import validate_transition
+                validate_transition(out,mdp,stair_cfg,log_path)
+                replay_reward=mdp.reward(unflatten_state(out['s1']),out['f']+1,out['a'],out['a_prev'])
+                error=(out['r']-replay_reward).abs().max()
+                if error>1e-5:raise RuntimeError(f'Stair real/replay reward timing mismatch: {float(error)}')
+                stats['reward_sync'].append(error)
             if args.goal_mode=='reference_foot' and not torch.equal(out['command'].start_frame+out['ep_step'],out['f']):
                 raise RuntimeError('Paired reference frame and immutable command clock diverged')
             if args.reward_term_logging:
@@ -654,8 +748,9 @@ with launch_simulation(sim_cfg, args):
             buffer.add(out)
             if curriculum: curriculum.observe(out['command'],out['ep_step'])
             S0, S1 = unflatten_state(out["s"]), unflatten_state(out["s1"])
-            wm.in_norm.update(wm.inputs(S0, out["a"], normalize_xi(out["xi"])))
-            wm.out_norm.update(wm.targets(S0, S1))
+            if not stair_cfg or stair_cfg.get('normalizer_policy')=='source_online':
+                wm.in_norm.update(wm.inputs(S0, out["a"], normalize_xi(out["xi"])))
+                wm.out_norm.update(wm.targets(S0, S1))
             sim_steps += args.num_envs
             stats["r"].append(out["r"].mean() / reward_scale)
             stats["head_error"].append(out['terms']['head_position_error'].mean())
@@ -687,7 +782,7 @@ with launch_simulation(sim_cfg, args):
 
     def save_checkpoint(label=None):
         ckpt = {"robot_contract": checkpoint_contract(), "goal_contract": goal_spec.contract(),
-                "checkpoint_schema_version":2,
+                "checkpoint_schema_version":3 if ROBOT_KIND == 'roban' else 2,
                 "task_contract": mdp.contract(),
                 "physical_contract":physics_metadata,"policy_contract":policy_contract(
                     Hh,args.obs_adapter,not args.freeze_decoder,obs_dim=obs_dim,observation_mode=args.motion_obs_mode),
@@ -711,7 +806,7 @@ with launch_simulation(sim_cfg, args):
             print('Nonfinite model/normalization state saved separately; previous latest preserved',flush=True)
             return
         atomic_save(ckpt, log_path/'last.pt')
-        if curriculum or args.m34_dataset:
+        if curriculum or args.m34_dataset or stair_cfg:
             # latest is an atomic hard-link alias of the full last.pt.
             temp=log_path/'latest.pt.tmp'
             if temp.exists(): temp.unlink()
@@ -720,6 +815,11 @@ with launch_simulation(sim_cfg, args):
         atomic_save(ckpt,log_path/f'ckpt_{current_it:06d}.pt')
         if curriculum:
             for path in sorted(log_path.glob('ckpt_*.pt'))[:-curriculum.cfg['keep_checkpoints']]: path.unlink()
+        if stair_cfg:
+            for path in sorted(log_path.glob('ckpt_*.pt'))[:-stair_cfg.get('keep_periodic_checkpoints',8)]:path.unlink()
+            if hasattr(env,'reset_validator'):
+                (log_path/'reset_statistics.json').write_text(json.dumps(env.reset_validator.stats,indent=2)+'\n')
+                (log_path/'reset_geometry_audit.json').write_text(json.dumps(env.reset_geometry_audit,indent=2)+'\n')
         free,total=torch.cuda.mem_get_info()
         (log_path/'runtime_stats.json').write_text(json.dumps(dict(iteration=current_it,gpu=torch.cuda.get_device_name(),
             torch_peak_allocated_MiB=torch.cuda.max_memory_allocated()/2**20,
@@ -736,13 +836,16 @@ with launch_simulation(sim_cfg, args):
     if log_f.tell() == 0:
         log_f.write("iteration,wall_h,sim_steps,wm_loss,wm_err8,pi_loss,v_loss,imag_rew,pi_gradnorm,imag_survival,sim_rew,ep_len,ep_ret_norm,term_frac,it_per_s,lr,head_rms_deg,head_penalty_norm,foot_actor_gradnorm,goal_sync_max_error,reward_sync_max_error,completed_episodes\n")
     t_log = time.time()
+    last_log_iteration=start_it
     agg = {"wm": [], "wm8": [], "pi": [], "v": [], "ir": [], "gn": [], "surv": [], 'fgn': []}
     diag_agg={}
     try:
         collect(args.warmup_steps, stats)
         for it in range(start_it, args.iterations):
+            if stair_cfg:env.stair_iteration=it
             if args.m34_dataset: env.m34_iteration = it
-            if STOP_REQUESTED or (args.wall_seconds is not None and elapsed()>=args.wall_seconds) or (curriculum and elapsed() >= curriculum.cfg['budget_seconds']-45):
+            reserve=stair_cfg.get('final_eval_reserve_seconds',0) if stair_cfg and args.m34_eval_every else 0
+            if STOP_REQUESTED or (args.wall_seconds is not None and elapsed()>=args.wall_seconds-reserve) or (curriculum and elapsed() >= curriculum.cfg['budget_seconds']-45):
                 print('Safe stop requested / wall-clock budget reserve reached',flush=True); break
             lr = lr_at(it)
             for o,scale in ((opt_wm,1.),(opt_pi,actor_lr/args.lr),(opt_v,critic_lr/args.lr)):
@@ -770,10 +873,11 @@ with launch_simulation(sim_cfg, args):
                     torch.cuda.synchronize(); tp3 = time.time()
                     print(f"[prof] collect {1e3*(tp1-tp0):.0f} ms ({n} steps) | wm {1e3*(tp2-tp1):.0f} ms | policy+critic {1e3*(tp3-tp2):.0f} ms", flush=True)
                 agg["pi"].append(pl), agg["v"].append(vl), agg["ir"].append(ir), agg["gn"].append(gn), agg["surv"].append(surv)
-                if args.check_foot_gradients or audit_gradients: agg['fgn'].append(fgn)
-            if (it + 1) % args.log_every == 0:
+                if args.check_foot_gradients or audit_gradients or args.roban_gradient_audit: agg['fgn'].append(fgn)
+            if (it + 1) % args.log_every == 0 or (stair_cfg and it==start_it):
                 mean = lambda x: float(sum(float(v) for v in x) / max(len(x), 1))  # noqa: E731
-                ips = args.log_every / (time.time() - t_log)
+                ips = ((it+1-last_log_iteration) if stair_cfg else args.log_every) / (time.time() - t_log)
+                last_log_iteration=it+1
                 t_log = time.time()
                 wall_h = elapsed() / 3600
                 term_frac = float(sum(float(v) for v in stats["term"]) / max(sum(float(v) for v in stats["done"]), 1))
@@ -795,6 +899,13 @@ with launch_simulation(sim_cfg, args):
                 stats = {k: [] for k in stats}
                 agg = {k: [] for k in agg}
             current_it = it+1
+            if stair_cfg and (current_it % args.log_every==0 or current_it==start_it+1):
+                free,total=torch.cuda.mem_get_info()
+                if args.max_device_memory_mib is not None and (total-free)/2**20>=args.max_device_memory_mib:
+                    STOP_REQUESTED=True
+                    print('Configured device memory limit reached; saving before safe stop',flush=True)
+                (log_path/'training_status.json').write_text(json.dumps(dict(status='running',
+                    iteration=current_it,wall_seconds=elapsed(),budget_seconds=args.wall_seconds)))
             if curriculum:
                 if current_it % args.log_every == 0:
                     gpu_stats={}
@@ -869,7 +980,7 @@ with launch_simulation(sim_cfg, args):
             if curriculum and current_it == args.wm_only_iters:
                 save_checkpoint('wm_calibrated')
                 print(f'WM-only phase complete at iteration {current_it}; saved wm_calibrated.pt; Actor/Critic updates begin next iteration',flush=True)
-            elif current_it % args.ckpt_every == 0 or current_it == args.iterations:
+            elif current_it % args.ckpt_every == 0 or current_it == args.iterations or (stair_cfg and current_it==start_it+1):
                 save_checkpoint()
             if args.m34_dataset and args.m34_eval_every and current_it % args.m34_eval_every == 0:
                 # No restart/refill: replay, optimizer, RNG and simulator state
@@ -891,6 +1002,34 @@ with launch_simulation(sim_cfg, args):
                 print(f'Iteration {current_it}: evaluation complete; continuing existing replay/optimizers', flush=True)
                 # Exclude evaluation duration from the next throughput window.
                 t_log += time.time()-evaluation_started
+            if stair_cfg and args.m34_eval_every and current_it % args.m34_eval_every == 0:
+                evaluation_dir=log_path/'evals'/f'iter_{current_it:06d}'
+                evaluation_dir.mkdir(parents=True,exist_ok=True)
+                frozen_checkpoint=evaluation_dir/'checkpoint.pt'
+                if not frozen_checkpoint.exists():
+                    save_checkpoint()
+                    os.link(log_path/'last.pt',frozen_checkpoint)
+                torch.cuda.synchronize();torch.cuda.empty_cache()
+                from supermimic.stair_evaluation import evaluate_checkpoint as evaluate_stairs
+                print(f'Iteration {current_it}: independent frozen stair/flat Newton evaluation',flush=True)
+                evaluation_started=time.time()
+                evaluation=evaluate_stairs(frozen_checkpoint,stair_cfg,evaluation_dir,args.m34_eval_seeds,
+                    timeout_seconds=min(stair_cfg.get('eval_timeout_seconds',300),
+                        max(.1,args.wall_seconds-elapsed())) if args.wall_seconds else None)
+                # Select solely on TRAIN references. The designated four-step
+                # stair is a training action; no held-out flat test is opened.
+                if evaluation['flat_retention_passed']:
+                    score=evaluation['stair_score']
+                    best_path=log_path/'best_score.json'
+                    previous=json.loads(best_path.read_text()) if best_path.exists() else {}
+                    if score>previous.get('score',-float('inf')):
+                        temp=log_path/'best.pt.tmp'
+                        if temp.exists():temp.unlink()
+                        os.link(frozen_checkpoint,temp);os.replace(temp,log_path/'best.pt')
+                        best_path.write_text(json.dumps(dict(iteration=current_it,score=score,
+                            selection='stair train return; flat train retention >= 0.85',
+                            checkpoint_sha256=evaluation['checkpoint_sha256']),indent=2)+'\n')
+                t_log+=time.time()-evaluation_started
         if curriculum and not STOP_REQUESTED:
             remaining=curriculum.cfg['budget_seconds']-elapsed()
             allowance=min(180.,elapsed()*curriculum.cfg['eval_fraction']-curriculum.eval_spent)
@@ -905,4 +1044,19 @@ with launch_simulation(sim_cfg, args):
         log_f.close()
         final_status='error' if sys.exc_info()[0] is not None else 'stopped' if STOP_REQUESTED or current_it<args.iterations else 'completed'
         (log_path/'training_status.json').write_text(json.dumps(dict(status=final_status,iteration=current_it,wall_seconds=elapsed(),
-            stop_requested=STOP_REQUESTED,budget_seconds=curriculum.cfg['budget_seconds'] if curriculum else None)))
+            stop_requested=STOP_REQUESTED,budget_seconds=curriculum.cfg['budget_seconds'] if curriculum else args.wall_seconds)))
+
+# The parent simulator is closed before the final independent physics rollout.
+# Smoke has eval_every=0: its checkpoint is evaluated by the explicit gate command.
+if stair_cfg and args.m34_eval_every:
+    periodic=log_path/'evals'/f'iter_{current_it:06d}'/'summary.json'
+    if not periodic.exists():
+        torch.cuda.empty_cache()
+        final_dir=log_path/'evals'/f'final_{current_it:06d}'
+        final_dir.mkdir(parents=True,exist_ok=True)
+        frozen=final_dir/'checkpoint.pt'
+        if not frozen.exists():os.link(log_path/'last.pt',frozen)
+        from supermimic.stair_evaluation import evaluate_checkpoint as evaluate_stairs
+        evaluate_stairs(frozen,stair_cfg,final_dir,args.m34_eval_seeds,
+            timeout_seconds=min(stair_cfg.get('eval_timeout_seconds',300),
+                max(.1,args.wall_seconds-elapsed())) if args.wall_seconds else None)

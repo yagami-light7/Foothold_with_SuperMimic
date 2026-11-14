@@ -1,0 +1,1 @@
+{"kind": "low_finite_tracking_reward", "event": 1, "count": 1, "min_normalized_reward": -41.08363723754883, "env_ids": [0], "frames": [13958], "action": "retain unchanged in replay; no physics threshold exceeded"}

@@ -1,0 +1,19 @@
+#usda 1.0
+(
+    defaultPrim = "Ground"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "Ground"
+{
+    def Plane "CollisionPlane" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {
+        uniform token axis = "Z"
+        double width = 200
+        double length = 200
+        bool physics:collisionEnabled = true
+    }
+}

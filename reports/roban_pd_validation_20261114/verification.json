@@ -1,0 +1,87 @@
+{
+  "status": "COMPLETE",
+  "current_PD_diagnosis": "fast first crossing; underdamped waist/hip/shoulder; not accepted as tuned dynamic tracking gains",
+  "production_gains_changed": false,
+  "formal_training": false,
+  "newton_fixed_base": {
+    "nv": 21,
+    "root_pose_max_drift": 0.0,
+    "step_trials": 504,
+    "sine_trials": 252,
+    "finite_saved_traces": true
+  },
+  "newton_free_root": {
+    "nv": 27,
+    "hold_trials": 10,
+    "duration_s_per_trial": 5,
+    "both_feet_measured_ground_force_in_all_trials": true
+  },
+  "metric_analytic_validation": [
+    "first_order_90pct_and_5pct_settling",
+    "analytic_underdamped_overshoot",
+    "negative_step_normalization"
+  ],
+  "source_syntax": "PASS",
+  "shell_syntax": "PASS",
+  "git_diff_check": "PASS",
+  "production_sources_preserved": {
+    "supermimic/roban.py": {
+      "sha256": "0f39da8800155822a0503802b1085d3753bfa6bfdda429c4bb8fc0d24387a620",
+      "unchanged_since_architecture_validation": true
+    },
+    "supermimic/robot.py": {
+      "sha256": "4158f7cccf54f2f9d5f1f2f5262e81b2ec5f20d3325fd917a592010f7e41c0f1",
+      "unchanged_since_architecture_validation": true
+    },
+    "supermimic/env.py": {
+      "sha256": "f1141a5d04bba067f2e8cca61ea14a63f147757ebca714efc953f6a563b4b48b",
+      "unchanged_since_architecture_validation": true
+    },
+    "supermimic/transfer.py": {
+      "sha256": "6a32efa5b849b40bf000537ac409546f4a1e810e0019c8b5a8c9476bc0abfc42",
+      "unchanged_since_architecture_validation": true
+    },
+    "supermimic/train.py": {
+      "sha256": "ae5e6d51270faa769dd27d7e77fcae939a3a655ccfba7730b16929f74ec3885a",
+      "unchanged_since_architecture_validation": true
+    }
+  },
+  "diagnostic_source_files": [
+    {
+      "path": "tools/validate_roban_pd.py",
+      "sha256": "8a25e4593e5a150b377d61aa8da9a2681fa6655a3198369e41af53df658e76e4"
+    },
+    {
+      "path": "tools/report_roban_pd.py",
+      "sha256": "05f3efa2fa31f749d86f3bb49a3ecf866be2b5e46423f5c383827a689508ded8"
+    },
+    {
+      "path": "tools/run_roban.sh",
+      "sha256": "e7255a0c3abaa78b597617fda6a675f225c9e6f7242a37ff1eb90551d54b5cfc"
+    }
+  ],
+  "raw_artifacts": [
+    {
+      "path": "fixed/summary.json",
+      "sha256": "3a8b8cc4b97e01cb091b94608d4d5b5744df671555117cc8e989adcd476f0576"
+    },
+    {
+      "path": "fixed/trajectories.npz",
+      "sha256": "89273fb8af1e9939b942a00165225cf50c20e309a43af1994d85e283fb43fa34"
+    },
+    {
+      "path": "standing/summary.json",
+      "sha256": "d074a62f0f2b2d321d638c30a5732bb5f5a7c323149bdab50e276bce051e1165"
+    },
+    {
+      "path": "standing/trajectories.npz",
+      "sha256": "458e3e357db804b3e3d11cacc3edea480e67babbc8742c991da0beb50e72c5cb"
+    }
+  ],
+  "limits": [
+    "20 ms sampling, actual torque from last substep only",
+    "fixed-chest tests use zero gravity",
+    "free-root holds are 5s at source neutral with only initial pitch perturbations",
+    "walking, single-leg support, external pushes and hardware servo/communication not validated"
+  ]
+}

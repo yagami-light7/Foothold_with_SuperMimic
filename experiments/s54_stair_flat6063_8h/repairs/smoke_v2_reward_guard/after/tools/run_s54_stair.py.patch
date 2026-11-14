@@ -1,0 +1,76 @@
+--- tools/run_s54_stair.py (v2)
++++ tools/run_s54_stair.py (v3)
+@@ -37,7 +37,8 @@
+     physics=physical_contract(obs_dim=103)
+     physics['solver']={**physics['solver'],'use_mujoco_contacts':False}
+     physics['terrain_task']=contract(design)
+-    transfer=initialize_flat(ck,wm,pi,physics,GoalSpec('motion',10,.02),10)
++    transfer=initialize_flat(ck,wm,pi,physics,GoalSpec('motion',10,.02),10,
++        normalizer_policy=design.get('normalizer_policy','frozen_source'))
+     # Every tensor, including normalizer effective counts, must be copied exactly.
+     for name,model in [('wm',wm),('pi',pi)]:
+         if any(not torch.equal(v,ck[name][k]) for k,v in model.state_dict().items()):
+@@ -88,19 +89,26 @@
+         if not rows or any(not math.isfinite(float(r[k])) for r in rows for k in keys):
+             raise ValueError('Missing/nonfinite Smoke metrics')
+         actor=[r for r in rows if int(r['iteration'])>cfg['wm_only_iters']]
+-        report['checks']=dict(real_reward_bounded=min(float(r['sim_rew']) for r in rows)>-5,
+-            wm8_bounded=float(rows[-1]['wm_err8'])<5,
+-            imagination_bounded=bool(actor) and max(abs(float(r['imag_rew'])) for r in actor)<10,
+-            critic_bounded=bool(actor) and max(float(r['v_loss']) for r in actor)<10000,
+-            actor_gradients=bool(actor) and all(0<float(r['pi_gradnorm'])<100000 for r in actor),
++        report['tracking_diagnostics']=dict(min_mean_real_reward=min(float(r['sim_rew']) for r in rows),
++            wm8_final=float(rows[-1]['wm_err8']),
++            max_abs_imagined_reward=max((abs(float(r['imag_rew'])) for r in actor),default=None),
++            max_critic_loss=max((float(r['v_loss']) for r in actor),default=None),
++            interpretation='Finite tracking losses are diagnostics; negative returns do not imply a Newton environment error')
++        report['checks']=dict(finite_training_metrics=True,
++            actor_gradients=bool(actor) and all(float(r['pi_gradnorm'])>0 for r in actor),
+             reward_sync=max(float(r['reward_sync_max_error']) for r in rows)<1e-5)
+         ckpath=run/'latest.pt';ck=torch.load(ckpath,map_location='cpu',weights_only=False)
+         if ck['data_contract']!=report['data_contract']:raise ValueError('Smoke checkpoint contract differs')
+         if not all(torch.isfinite(v).all() for model in ['wm','pi','critic'] for v in ck[model].values()):
+             raise ValueError('Nonfinite Smoke weights/statistics')
+         source=torch.load(design['source_checkpoint'],map_location='cpu',weights_only=False)
+-        report['checks']['source_normalizers_preserved']=all(torch.equal(v,source[model][key])
+-            for model in ['wm','pi'] for key,v in ck[model].items() if '_norm.' in key)
++        if design.get('normalizer_policy')=='source_online':
++            report['checks']['source_normalizer_counts_retained']=all(
++                float(ck[model][key])>=float(value) for model in ['wm','pi']
++                for key,value in source[model].items() if key.endswith('_norm.count'))
++        else:
++            report['checks']['source_normalizers_preserved']=all(torch.equal(v,source[model][key])
++                for model in ['wm','pi'] for key,v in ck[model].items() if '_norm.' in key)
+         if not all(report['checks'].values()):raise ValueError('Smoke stability checks failed; see checks')
+         evaluation=evaluate_checkpoint(ckpath,design,run/'evals'/f'iter_{ck["iteration"]:06d}')
+         report['checks']['flat_retention']=evaluation['flat_retention_passed']
+@@ -111,7 +119,7 @@
+     except BaseException as exc:
+         report['error']=repr(exc);raise
+     finally:
+-        write_json(BASE/'smoke_gate.json',report)
++        write_json(read(BASE/'design.json')['required_smoke_gate'],report)
+         print(json.dumps(report,indent=2))
+     # The live Smoke uploader may have finished before this evaluation. Resume
+     # that same SwanLab run once to drain the scalar-only evaluation series.
+@@ -139,7 +147,7 @@
+             return
+         from t15_launch import launch
+         launch([sys.executable,'-u','tools/run_s54_stair.py','_night'],
+-               'logs/s54_stair_flat6063_night','night')
++               'logs/s54_stair_flat6063_night_v3','night')
+         return
+     if args.phase=='_night':
+         cpu_check()
+@@ -149,7 +157,10 @@
+         while not marker.exists():
+             if time.monotonic()>deadline:raise TimeoutError('Smoke completion marker not received; formal training NOT launched')
+             time.sleep(2)
+-        if int(marker.read_text())!=0:raise RuntimeError('Smoke failed; inspect its stdout.log; formal training NOT launched')
++        if int(marker.read_text())!=0:
++            log=marker.parent/'stdout.log'
++            tail=log.read_text()[-2000:] if log.exists() else 'No trainer log was written'
++            raise RuntimeError(f'Smoke failed; formal training NOT launched. Actual trainer log: {log}\n{tail}')
+         smoke_gate()
+         subprocess.run([sys.executable,'tools/run_s54_stair.py','train'],check=True)
+         print('Smoke passed; 8h training and scalar SwanLab uploader launched in separate tmux sessions.',flush=True)

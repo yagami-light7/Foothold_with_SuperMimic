@@ -1,0 +1,19 @@
+--- tools/t15_stair_rollout.py (before)
++++ tools/t15_stair_rollout.py
+@@ -127,7 +127,7 @@
+         from supermimic.robot import PARAMETERS
+         torch.backends.cuda.matmul.allow_tf32=False
+         device='cuda:0';kin=S54Kinematics(device)
+-        motion=(load_stairs(args.bundle,kin,device,ids=['stair_up_4']) if args.reference=='stair' else
++        motion=(load_stairs(args.bundle,kin,device,ids=['stair_up_4'],npz_path=args.stair_npz) if args.reference=='stair' else
+             motion_library(args.flat_dataset,kin,device,'train',ids=[args.flat_id]))
+         checkpoint=torch.load(args.checkpoint,map_location=device,weights_only=False) if args.checkpoint else None
+         config=checkpoint['args'] if checkpoint else {}
+@@ -276,6 +276,7 @@
+     parser.add_argument('--mode',choices=['kinematic','pd','policy'],required=True)
+     parser.add_argument('--reference',choices=['stair','flat'],default='stair')
+     parser.add_argument('--bundle',default='/mnt/sage_data/workspace/Foothold/PMT/TCRS/outputs/s54_stair_t14/newton_import')
++    parser.add_argument('--stair-npz',help='Relocated four-step NPZ; validated against the original manifest')
+     parser.add_argument('--terrain',default='assets/terrains/stairs_straight_4_v1')
+     parser.add_argument('--flat-dataset',default='data/s54_flat_dataset/dataset_export')
+     parser.add_argument('--flat-id',default='straight_flat_18')

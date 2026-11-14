@@ -1,0 +1,22 @@
+--- before/experiments/s54_stair_flat6063_8h/smoke_design.json
++++ after/experiments/s54_stair_flat6063_8h/smoke_design.json
+@@ -48,7 +48,16 @@
+     }
+   ],
+   "scope": "single four-step training action; original flat test excluded; no stair generalization claim",
+-  "final_eval_reserve_seconds": 300,
+-  "eval_timeout_seconds": 300,
+-  "tracking_reward_warning_below": -20.0
++  "final_eval_reserve_seconds": 1200,
++  "eval_timeout_seconds": 1200,
++  "tracking_reward_warning_below": -20.0,
++  "reset_feasibility": {
++    "method": "all_collision_proxy_vs_original_terrain_rejection",
++    "clearance_m": -0.001,
++    "max_attempts": 64,
++    "fallback": "validated_same_reference_frame; reset only",
++    "reward_state": "canonical_71d_replay_quaternion",
++    "newton_collision_decimation": 1
++  },
++  "flat_ground_collider": "mesh"
+ }

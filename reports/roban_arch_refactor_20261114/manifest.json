@@ -1,0 +1,192 @@
+[
+  {
+    "path": "supermimic/roban_task.py",
+    "sha256": "b2cec2e500306688df58c98055ccd41301a4f1b751061d2cb0d23dac1023a2e4",
+    "before_sha256": null
+  },
+  {
+    "path": "supermimic/kinematics.py",
+    "sha256": "32763f778df8e9116bb4935756093411a56aeae0b8c7c30bb168f0a3a6497649",
+    "before_sha256": "7bb0f5005731fb6da076684a5684b132681e181a583ef689e7ca15b500d6325b"
+  },
+  {
+    "path": "supermimic/motion.py",
+    "sha256": "d2312ec1653ea519831a2bedab57c26c3611b1f4ab5c61b499d14fbdea54e3d5",
+    "before_sha256": "7a73a019874bcba3cabbf1dfa7fd215e65ee30ed94c9469bd9b36b4a4bcef85f"
+  },
+  {
+    "path": "supermimic/mdp.py",
+    "sha256": "8ab9725515db7e924405bba95fba7043b4a5271d8cdafa215b36ea17c6831bff",
+    "before_sha256": "dda5fc2bfb671ad3a0b3994b21879ffa7216d104c5c218b482d8fffb011c0cfc"
+  },
+  {
+    "path": "supermimic/terrain.py",
+    "sha256": "5580a2d40b723470011d02cc1c1ec3d8e48c0bff813d5ec4ba8c832077621fc3",
+    "before_sha256": null
+  },
+  {
+    "path": "supermimic/networks.py",
+    "sha256": "16e2f9f31fb2d36f8ee998c93aa501ed990bfc5fc4172fd196d6c18fdcdffece",
+    "before_sha256": "4b0e9b5c2f1b3c1094fb455228e61762418a7cf41e57b47650f1d508d6c467bb"
+  },
+  {
+    "path": "supermimic/env.py",
+    "sha256": "f1141a5d04bba067f2e8cca61ea14a63f147757ebca714efc953f6a563b4b48b",
+    "before_sha256": "62f134b689bbd45532694f2455facb4f85ad19377eb42c26b956f25a7ff5e39d"
+  },
+  {
+    "path": "supermimic/roban.py",
+    "sha256": "0f39da8800155822a0503802b1085d3753bfa6bfdda429c4bb8fc0d24387a620",
+    "before_sha256": null
+  },
+  {
+    "path": "supermimic/goals.py",
+    "sha256": "65e77da7ef9d5502743c634bf49ba16f229d956ef11c90d2bd7a7b7d8d04697e",
+    "before_sha256": "a0781001ea887c01d8e43cf684c51418838e925555a8654cb26b1268599d25ff"
+  },
+  {
+    "path": "supermimic/motion_reference.py",
+    "sha256": "5c3c9c5e3c8494b5f353b396f619b4c7513b2647659c770f780e0d63cd36a8a9",
+    "before_sha256": null
+  },
+  {
+    "path": "supermimic/robot_contract.py",
+    "sha256": "534800fdc555aeb9cb6787542f7f38f43c6f3ddbd203fcb19191bad7164bd38b",
+    "before_sha256": null
+  },
+  {
+    "path": "supermimic/roban_runtime.py",
+    "sha256": "966afa18ff2c178d90a9b56600b5a21b89be2a1e21afe3c6599d7cbb719045f3",
+    "before_sha256": null
+  },
+  {
+    "path": "supermimic/transfer.py",
+    "sha256": "6a32efa5b849b40bf000537ac409546f4a1e810e0019c8b5a8c9476bc0abfc42",
+    "before_sha256": "b010d527e8ac62fff6ede7df4e82bd9b25161072dc7da952c198b8284f0aebc3"
+  },
+  {
+    "path": "supermimic/robot.py",
+    "sha256": "4158f7cccf54f2f9d5f1f2f5262e81b2ec5f20d3325fd917a592010f7e41c0f1",
+    "before_sha256": "9ce5e8bb831e3790e664183c07b9a89169bfeab4a69c9184b30647b14ec14eb4"
+  },
+  {
+    "path": "supermimic/train.py",
+    "sha256": "ae5e6d51270faa769dd27d7e77fcae939a3a655ccfba7730b16929f74ec3885a",
+    "before_sha256": "081b163e8ea5b5ae3be99956765759eede9e736d2c9a9d220e40c55a0a87e478"
+  },
+  {
+    "path": "configs/roban/E1.json",
+    "sha256": "855e471a31b93329053a9a57723cd62bc9423bb80bff9fbc47a5f4f1b08d3c85",
+    "before_sha256": null
+  },
+  {
+    "path": "configs/roban/flat_ground.usda",
+    "sha256": "0f703785caa8680e37c515b2d8fb26e349620031f56ff6dbacbf4787c0143e9f",
+    "before_sha256": null
+  },
+  {
+    "path": "configs/roban/E2.json",
+    "sha256": "2b42f2cd37b785ae3234555f812a0a09412dfa5e93c7997a9eb79ef8f90f97da",
+    "before_sha256": null
+  },
+  {
+    "path": "configs/roban/terrain_smoke.json",
+    "sha256": "536b7c51ba24d8c1758f20afb49760a485778ef11e4e475d1d85484133a395f2",
+    "before_sha256": null
+  },
+  {
+    "path": "configs/roban/E0.json",
+    "sha256": "1a7681f8f64427b3e599848b85f078e878aba4d0fae2b15d76903280506d51ed",
+    "before_sha256": null
+  },
+  {
+    "path": "tools/prepare_roban_asset.py",
+    "sha256": "2925abb9591be790e20e1216352568c0e1ca03b778f380c586a1bce5829b2649",
+    "before_sha256": null
+  },
+  {
+    "path": "tools/roban_rollout.py",
+    "sha256": "6196f0a2dbe2bdc8a4c2f8c47f8860d26f5a749bd5ca0290f7f0b83e0f317ef3",
+    "before_sha256": null
+  },
+  {
+    "path": "tools/run_roban.sh",
+    "sha256": "5b3cd16fdb5d07619b292dcf6b1c418b12e638c07ce8118e1e6a0f897768ce85",
+    "before_sha256": null
+  },
+  {
+    "path": "tools/test_roban_foot.py",
+    "sha256": "0967ec71b89af1cea7a7681d88b2763584b11df158fcc0c15ce9ad14941fda9c",
+    "before_sha256": null
+  },
+  {
+    "path": "tools/test_roban_smoke.py",
+    "sha256": "78918c734196803fcb5526d666895f625d601654c7b2c41af7d11b162cb704b5",
+    "before_sha256": null
+  },
+  {
+    "path": "assets/roban/usd/contract.json",
+    "sha256": "ee5d95468f2f1d57ab7f4710ae31ac703897169766d712df17cf845bf32e1f34",
+    "before_sha256": null
+  },
+  {
+    "path": "assets/roban/usd/biped_s17_verified_handball_fixedhead/biped_s17_verified_handball_fixedhead.usda",
+    "sha256": "922641cd045c5cab1fb2eef72a5397ca176e09fbccee6384cf92c7b4bb0ca413",
+    "before_sha256": null
+  },
+  {
+    "path": "assets/roban/usd/biped_s17_verified_handball_fixedhead/payloads/geometries.usd",
+    "sha256": "996bc2ae4d527499f837603f4fbcf8c6cca18ab714e817575423bd06efbc34af",
+    "before_sha256": null
+  },
+  {
+    "path": "assets/roban/usd/biped_s17_verified_handball_fixedhead/payloads/materials.usda",
+    "sha256": "6971223dbab7d59bfd6bb5c5fac7aba18ddc71b75f64ce89fd8baf7a7834c1e9",
+    "before_sha256": null
+  },
+  {
+    "path": "assets/roban/usd/biped_s17_verified_handball_fixedhead/payloads/robot.usda",
+    "sha256": "f060d6480c6963cfeb484c0018628f4bed3adb2a2dfdfd34bd865bce2881dbb4",
+    "before_sha256": null
+  },
+  {
+    "path": "assets/roban/usd/biped_s17_verified_handball_fixedhead/payloads/base.usda",
+    "sha256": "1125d935b018521718410a60f73da87362fa04e0bf14ef02b4c06c2b3a12f8ca",
+    "before_sha256": null
+  },
+  {
+    "path": "assets/roban/usd/biped_s17_verified_handball_fixedhead/payloads/instances.usda",
+    "sha256": "6f64b2aef8478f55d7ea32ee73e0cdb97ece1514ccb36b2c8477bdbb76624fd5",
+    "before_sha256": null
+  },
+  {
+    "path": "assets/roban/usd/biped_s17_verified_handball_fixedhead/payloads/Physics/physics.usda",
+    "sha256": "50e35134977dd31792bce065af47eb84efb95e37fe15982868e022ba655ab044",
+    "before_sha256": null
+  },
+  {
+    "path": "assets/roban/usd/biped_s17_verified_handball_fixedhead/payloads/Physics/mujoco.usda",
+    "sha256": "a10dd27a5d603c7149658e78b08de75b4ecec84b65199b7dd4779ab0b2fa1313",
+    "before_sha256": null
+  },
+  {
+    "path": "assets/roban/usd/biped_s17_verified_handball_fixedhead/payloads/Physics/physx.usda",
+    "sha256": "c4a9a00865e391cd9bd1ceb3c2d364006312309a3d08bd92686591e86df1234b",
+    "before_sha256": null
+  },
+  {
+    "path": "docs/ROBAN_FOOT_CONDITIONED_ARCHITECTURE.md",
+    "sha256": "474508d23180551b9ebc511ffc50e91576fd1c0a0a2a7ace5e0f7327f64ceaff",
+    "before_sha256": null
+  },
+  {
+    "path": "README.md",
+    "sha256": "163c82e3212b4446018e9d934934f6b219f7a7720ad0457a3fe669891c1eea5b",
+    "before_sha256": "afdb77aa20c1f33d315d8866a8f196e9f3cb4ddcb04e71ee1ef0241dc4367241"
+  },
+  {
+    "path": ".gitignore",
+    "sha256": "485233f73854f8e8f77f7780943603f8536c6a8b61709e4098bfae778d60471f",
+    "before_sha256": "5e247932519fd162c1d15b16b9af2604a3261ea1c6a51c46082409d38fd9c7a0"
+  }
+]

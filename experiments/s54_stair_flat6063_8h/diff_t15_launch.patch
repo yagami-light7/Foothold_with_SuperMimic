@@ -1,0 +1,86 @@
+--- tools/t15_launch.py (before)
++++ tools/t15_launch.py
+@@ -11,6 +11,23 @@
+ import sys
+ 
+ ROOT=Path(__file__).resolve().parents[1]
++sys.path.insert(0,str(ROOT))
++
++
++def training_command(cfg, python):
++    cmd=[python,'-u','supermimic/train.py']
++    for name,value in cfg.items():
++        if value is True:cmd.append('--'+name)
++        elif value is not False and value is not None:
++            cmd+=['--'+name]
++            cmd+=list(map(str,value)) if isinstance(value,list) else [str(value)]
++    return cmd
++
++
++def sync_command(run_dir):
++    return [str(ROOT/'.venv-swanlab/bin/python'),'-u','tools/sync_swanlab.py',
++        '--run_dir',str(run_dir),'--project','SuperMimic-S54-Stair','--mode','online',
++        '--core_only','--follow','--completion_marker']
+ 
+ 
+ def launch(command,out,kind):
+@@ -25,8 +42,17 @@
+     stamp=datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+     session=f's54_t15_{kind}_{stamp}'
+     socket=f'/tmp/s54_t15_{os.getuid()}.sock'
+-    jobs=ROOT/'results/s54_stair_t15_20261110/jobs';jobs.mkdir(parents=True,exist_ok=True)
++    jobs=out.parent/'t15_jobs';jobs.mkdir(parents=True,exist_ok=True)
+     script=jobs/f'{session}.sh'
++    target_log=(out/('stdout.log' if kind=='train' else 'swanlab_stdout.log')
++                if kind in ['train','sync'] else out.parent/(out.name+'.log'))
++    # Do not start a second writer/uploader for the same run while it is alive.
++    for path in jobs.glob('*.json'):
++        previous=json.loads(path.read_text())
++        if previous.get('command')==command or previous.get('stdout')==str(target_log):
++            alive=subprocess.run([tmux,'-S',previous['socket'],'has-session','-t',previous['session']],
++                                 env=env,capture_output=True)
++            if alive.returncode==0:raise RuntimeError(f"Job already running: {previous['session']}")
+     if kind in ['train','sync']:
+         out.mkdir(parents=True,exist_ok=True)
+         log=out/('stdout.log' if kind=='train' else 'swanlab_stdout.log')
+@@ -52,6 +78,9 @@
+     sub=parser.add_subparsers(dest='phase',required=True)
+     train=sub.add_parser('train');train.add_argument('--config',required=True)
+     train.add_argument('--resume');train.add_argument('--iterations',type=int)
++    train.add_argument('--wall-seconds',type=float)
++    train.add_argument('--with-swanlab',action='store_true')
++    train.add_argument('--dry-run',action='store_true')
+     roll=sub.add_parser('rollout');roll.add_argument('--out',required=True)
+     roll.add_argument('rollout_args',nargs=argparse.REMAINDER)
+     sync=sub.add_parser('sync');sync.add_argument('--run-dir',required=True)
+@@ -60,20 +89,22 @@
+         cfg=json.loads(Path(args.config).read_text())
+         if args.resume:cfg.pop('init_from_flat',None);cfg['resume']=args.resume
+         if args.iterations:cfg['iterations']=args.iterations
+-        cmd=[args.python,'-u','supermimic/train.py']
+-        for name,value in cfg.items():
+-            if value is True:cmd.append('--'+name)
+-            elif value is not False and value is not None:
+-                cmd.extend(['--'+name,str(value)])
++        if args.wall_seconds:cfg['wall_seconds']=args.wall_seconds
++        from supermimic.stair_training import read_design
++        read_design(cfg['stair_config'])
++        cmd=training_command(cfg,args.python)
++        if args.dry_run:
++            print(shlex.join(cmd))
++            if args.with_swanlab:print(shlex.join(sync_command(cfg['log_dir'])))
++            return
+         launch(cmd,cfg['log_dir'],'train')
++        if args.with_swanlab:launch(sync_command(cfg['log_dir']),cfg['log_dir'],'sync')
+     elif args.phase=='rollout':
+         rest=args.rollout_args
+         if rest and rest[0]=='--':rest=rest[1:]
+         launch([args.python,'-u','tools/t15_stair_rollout.py',*rest,'--out',args.out],args.out,'rollout')
+     else:
+-        launch([str(ROOT/'.venv-swanlab/bin/python'),'-u','tools/sync_swanlab.py',
+-            '--run_dir',args.run_dir,'--project','SuperMimic-S54-Stair','--mode','online',
+-            '--core_only','--follow','--completion_marker'],args.run_dir,'sync')
++        launch(sync_command(args.run_dir),args.run_dir,'sync')
+ 
+ 
+ if __name__=='__main__':main()

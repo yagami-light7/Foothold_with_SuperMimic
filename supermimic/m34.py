@@ -51,8 +51,10 @@ def entries(root, split='train'):
     return meta, manifest, selected
 
 
-def load(root, row, meta, manifest):
-    path = Path(root)/row['path']
+def load(root, row, meta, manifest, *, npz_path=None):
+    # A relocated file still has to satisfy the ORIGINAL split and byte/content
+    # hashes. This supports a standalone stair NPZ with its contract elsewhere.
+    path = Path(npz_path) if npz_path is not None else Path(root)/row['path']
     if sha256(path) != manifest['file_sha256'].get(row['path']):
         raise ValueError(f'NPZ checksum mismatch: {path}')
     with np.load(path, allow_pickle=False) as z:
@@ -97,19 +99,19 @@ def dataset_contract(root):
                 motions={r['id']: r['motion_content_sha256'] for r in selected})
 
 
-def motion_library(root, kin, device, split='train', ids=None):
+def motion_library(root, kin, device, split='train', ids=None, *, source_files=None):
     import torch
     # train.py enables TF32 for network throughput. FK contract validation and
     # reference construction need full float32 mantissas, not TF32 matmuls.
     previous = torch.backends.cuda.matmul.allow_tf32
     try:
         torch.backends.cuda.matmul.allow_tf32 = False
-        return _motion_library(root, kin, device, split, ids)
+        return _motion_library(root, kin, device, split, ids, source_files=source_files)
     finally:
         torch.backends.cuda.matmul.allow_tf32 = previous
 
 
-def _motion_library(root, kin, device, split='train', ids=None):
+def _motion_library(root, kin, device, split='train', ids=None, *, source_files=None):
     """Build the existing MotionLib interface after all-body FK/velocity checks."""
     import torch
     from .motion import MotionLib, BIN_FRAMES
@@ -128,6 +130,8 @@ def _motion_library(root, kin, device, split='train', ids=None):
         selected = [r for r in selected if r['id'] in ids]
     if not selected:
         raise ValueError('No motions selected')
+    if source_files is not None and set(source_files) != {r['id'] for r in selected}:
+        raise ValueError('Relocated source files must match exactly the selected motion IDs')
     # Reuse goal/time/bin methods without running the legacy CSV resampler.
     m = MotionLib.__new__(MotionLib)
     m.device = device
@@ -141,7 +145,8 @@ def _motion_library(root, kin, device, split='train', ids=None):
     lens = []
     root_index = meta['body_names'].index(meta['root_body_name'])
     for row in selected:
-        d = load(root, row, meta, manifest)
+        d = load(root, row, meta, manifest,
+                 npz_path=None if source_files is None else source_files[row['id']])
         tensor = lambda a: torch.as_tensor(a, dtype=torch.float32, device=device)
         p = tensor(d['body_pos_w'][:, root_index]); R = quat_to_mat(tensor(d['body_quat_w'][:, root_index]))
         v = tensor(d['body_lin_vel_w'][:, root_index]); w = tensor(d['body_ang_vel_w'][:, root_index])

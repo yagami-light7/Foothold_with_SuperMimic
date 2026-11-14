@@ -1,0 +1,777 @@
+{
+  "joint_names": [
+    "waist_yaw_joint",
+    "leg_l1_joint",
+    "leg_l2_joint",
+    "leg_l3_joint",
+    "leg_l4_joint",
+    "leg_l5_joint",
+    "leg_l6_joint",
+    "leg_r1_joint",
+    "leg_r2_joint",
+    "leg_r3_joint",
+    "leg_r4_joint",
+    "leg_r5_joint",
+    "leg_r6_joint",
+    "zarm_l1_joint",
+    "zarm_l2_joint",
+    "zarm_l3_joint",
+    "zarm_l4_joint",
+    "zarm_r1_joint",
+    "zarm_r2_joint",
+    "zarm_r3_joint",
+    "zarm_r4_joint"
+  ],
+  "physics": {
+    "version": 1,
+    "robot": {
+      "robot": "roban_s22_0901",
+      "joint_names": [
+        "waist_yaw_joint",
+        "leg_l1_joint",
+        "leg_l2_joint",
+        "leg_l3_joint",
+        "leg_l4_joint",
+        "leg_l5_joint",
+        "leg_l6_joint",
+        "leg_r1_joint",
+        "leg_r2_joint",
+        "leg_r3_joint",
+        "leg_r4_joint",
+        "leg_r5_joint",
+        "leg_r6_joint",
+        "zarm_l1_joint",
+        "zarm_l2_joint",
+        "zarm_l3_joint",
+        "zarm_l4_joint",
+        "zarm_r1_joint",
+        "zarm_r2_joint",
+        "zarm_r3_joint",
+        "zarm_r4_joint"
+      ],
+      "tracked_bodies": [
+        "base_link",
+        "waist_yaw_link",
+        "leg_l1_link",
+        "leg_l2_link",
+        "leg_l3_link",
+        "leg_l4_link",
+        "leg_l5_link",
+        "leg_l6_link",
+        "leg_r1_link",
+        "leg_r2_link",
+        "leg_r3_link",
+        "leg_r4_link",
+        "leg_r5_link",
+        "leg_r6_link",
+        "zarm_l1_link",
+        "zarm_l2_link",
+        "zarm_l3_link",
+        "zarm_l4_link",
+        "l_handball",
+        "zarm_r1_link",
+        "zarm_r2_link",
+        "zarm_r3_link",
+        "zarm_r4_link",
+        "r_handball",
+        "zhead_1_link",
+        "head_radar",
+        "zhead_2_link",
+        "head_camera_base",
+        "camera_bottom_screw_frame",
+        "camera_left_ir_frame",
+        "camera_left_ir_optical_frame",
+        "camera_right_ir_frame",
+        "camera_right_ir_optical_frame",
+        "camera_color_frame",
+        "camera_color_optical_frame",
+        "camera_depth_frame",
+        "camera_depth_optical_frame"
+      ],
+      "source_mjcf_sha256": "05ef4d4946803de21c0445d11187b7c4316e57654d7b929a57943741c4d553ab",
+      "foot_frames": [
+        {
+          "body": "leg_l6_link",
+          "sole": [
+            0.047499999999999994,
+            0.0,
+            -0.04
+          ],
+          "heel": -0.05500000000000001,
+          "toe": 0.15,
+          "corners": [
+            [
+              -0.05500000000000001,
+              -0.04,
+              -0.04
+            ],
+            [
+              -0.05500000000000001,
+              0.04,
+              -0.04
+            ],
+            [
+              0.15,
+              -0.04,
+              -0.04
+            ],
+            [
+              0.15,
+              0.04,
+              -0.04
+            ]
+          ]
+        },
+        {
+          "body": "leg_r6_link",
+          "sole": [
+            0.047499999999999994,
+            0.0,
+            -0.04
+          ],
+          "heel": -0.05500000000000001,
+          "toe": 0.15,
+          "corners": [
+            [
+              -0.05500000000000001,
+              -0.04,
+              -0.04
+            ],
+            [
+              -0.05500000000000001,
+              0.04,
+              -0.04
+            ],
+            [
+              0.15,
+              -0.04,
+              -0.04
+            ],
+            [
+              0.15,
+              0.04,
+              -0.04
+            ]
+          ]
+        }
+      ]
+    },
+    "state_dim": 55,
+    "state": "root_link_world_pose_velocity; canonical_q_qd; quaternion_wxyz",
+    "obs_dim": 75,
+    "action_dim": 21,
+    "xi_dim": 25,
+    "wm_input": 101,
+    "wm_output": 54,
+    "control_dt": 0.02,
+    "gravity": [
+      0.0,
+      0.0,
+      -9.81
+    ],
+    "solver": {
+      "num_substeps": 4,
+      "njmax": 500,
+      "nconmax": 128,
+      "cone": "pyramidal",
+      "integrator": "implicitfast",
+      "use_mujoco_contacts": true
+    },
+    "sim_mjcf_sha256": "05ef4d4946803de21c0445d11187b7c4316e57654d7b929a57943741c4d553ab",
+    "actuators": {
+      "waist_yaw_joint": {
+        "effort": 80.0,
+        "velocity": 12.0,
+        "armature": 0.003,
+        "stiffness": 200.0,
+        "damping": 1.5491933384829668
+      },
+      "leg_l1_joint": {
+        "effort": 150.0,
+        "velocity": 14.6,
+        "armature": 0.003,
+        "stiffness": 200.0,
+        "damping": 1.5491933384829668
+      },
+      "leg_l2_joint": {
+        "effort": 150.0,
+        "velocity": 14.6,
+        "armature": 0.003,
+        "stiffness": 200.0,
+        "damping": 1.5491933384829668
+      },
+      "leg_l3_joint": {
+        "effort": 70.0,
+        "velocity": 12.0,
+        "armature": 0.003,
+        "stiffness": 200.0,
+        "damping": 1.5491933384829668
+      },
+      "leg_l4_joint": {
+        "effort": 150.0,
+        "velocity": 14.6,
+        "armature": 0.003,
+        "stiffness": 200.0,
+        "damping": 1.5491933384829668
+      },
+      "leg_l5_joint": {
+        "effort": 74.0,
+        "velocity": 17.0,
+        "armature": 0.003,
+        "stiffness": 200.0,
+        "damping": 1.5491933384829668
+      },
+      "leg_l6_joint": {
+        "effort": 74.0,
+        "velocity": 17.0,
+        "armature": 0.003,
+        "stiffness": 200.0,
+        "damping": 1.5491933384829668
+      },
+      "leg_r1_joint": {
+        "effort": 150.0,
+        "velocity": 14.6,
+        "armature": 0.003,
+        "stiffness": 200.0,
+        "damping": 1.5491933384829668
+      },
+      "leg_r2_joint": {
+        "effort": 150.0,
+        "velocity": 14.6,
+        "armature": 0.003,
+        "stiffness": 200.0,
+        "damping": 1.5491933384829668
+      },
+      "leg_r3_joint": {
+        "effort": 70.0,
+        "velocity": 12.0,
+        "armature": 0.003,
+        "stiffness": 200.0,
+        "damping": 1.5491933384829668
+      },
+      "leg_r4_joint": {
+        "effort": 150.0,
+        "velocity": 14.6,
+        "armature": 0.003,
+        "stiffness": 200.0,
+        "damping": 1.5491933384829668
+      },
+      "leg_r5_joint": {
+        "effort": 74.0,
+        "velocity": 17.0,
+        "armature": 0.003,
+        "stiffness": 200.0,
+        "damping": 1.5491933384829668
+      },
+      "leg_r6_joint": {
+        "effort": 74.0,
+        "velocity": 17.0,
+        "armature": 0.003,
+        "stiffness": 200.0,
+        "damping": 1.5491933384829668
+      },
+      "zarm_l1_joint": {
+        "effort": 14.1,
+        "velocity": 10.5,
+        "armature": 0.003,
+        "stiffness": 80.0,
+        "damping": 0.9797958971132712
+      },
+      "zarm_l2_joint": {
+        "effort": 37.0,
+        "velocity": 15.0,
+        "armature": 0.003,
+        "stiffness": 80.0,
+        "damping": 0.9797958971132712
+      },
+      "zarm_l3_joint": {
+        "effort": 37.0,
+        "velocity": 15.0,
+        "armature": 0.003,
+        "stiffness": 80.0,
+        "damping": 0.9797958971132712
+      },
+      "zarm_l4_joint": {
+        "effort": 37.0,
+        "velocity": 15.0,
+        "armature": 0.003,
+        "stiffness": 80.0,
+        "damping": 0.9797958971132712
+      },
+      "zarm_r1_joint": {
+        "effort": 14.1,
+        "velocity": 10.5,
+        "armature": 0.003,
+        "stiffness": 80.0,
+        "damping": 0.9797958971132712
+      },
+      "zarm_r2_joint": {
+        "effort": 37.0,
+        "velocity": 15.0,
+        "armature": 0.003,
+        "stiffness": 80.0,
+        "damping": 0.9797958971132712
+      },
+      "zarm_r3_joint": {
+        "effort": 37.0,
+        "velocity": 15.0,
+        "armature": 0.003,
+        "stiffness": 80.0,
+        "damping": 0.9797958971132712
+      },
+      "zarm_r4_joint": {
+        "effort": 37.0,
+        "velocity": 15.0,
+        "armature": 0.003,
+        "stiffness": 80.0,
+        "damping": 0.9797958971132712
+      }
+    },
+    "action_scale": [
+      0.1,
+      0.1875,
+      0.1875,
+      0.0875,
+      0.1875,
+      0.0925,
+      0.0925,
+      0.1875,
+      0.1875,
+      0.0875,
+      0.1875,
+      0.0925,
+      0.0925,
+      0.0440625,
+      0.115625,
+      0.115625,
+      0.115625,
+      0.0440625,
+      0.115625,
+      0.115625,
+      0.115625
+    ],
+    "backend_versions": {
+      "newton": "1.8.0.dev0",
+      "mujoco-warp": "3.15.0",
+      "warp-lang": "1.17.0"
+    }
+  },
+  "backend": "Newton/MJWarp",
+  "actual_torque_source": "solver.mjw_data.qfrc_actuator, generalized hinge force; last substep only",
+  "control_dt_s": 0.02,
+  "physics_substeps": 4,
+  "sample_period_s": 0.02,
+  "mode": "standing",
+  "rows": [
+    {
+      "pitch_deg": 0.0
+    },
+    {
+      "pitch_deg": -1.0
+    },
+    {
+      "pitch_deg": 1.0
+    },
+    {
+      "pitch_deg": -2.0
+    },
+    {
+      "pitch_deg": 2.0
+    }
+  ],
+  "test_gravity": [
+    0.0,
+    0.0,
+    -9.81
+  ],
+  "kp": [
+    200.0,
+    200.0,
+    200.0,
+    200.0,
+    200.0,
+    200.0,
+    200.0,
+    200.0,
+    200.0,
+    200.0,
+    200.0,
+    200.0,
+    200.0,
+    80.0,
+    80.0,
+    80.0,
+    80.0,
+    80.0,
+    80.0,
+    80.0,
+    80.0
+  ],
+  "baseline_kd": [
+    1.5491933384829668,
+    1.5491933384829668,
+    1.5491933384829668,
+    1.5491933384829668,
+    1.5491933384829668,
+    1.5491933384829668,
+    1.5491933384829668,
+    1.5491933384829668,
+    1.5491933384829668,
+    1.5491933384829668,
+    1.5491933384829668,
+    1.5491933384829668,
+    1.5491933384829668,
+    0.9797958971132712,
+    0.9797958971132712,
+    0.9797958971132712,
+    0.9797958971132712,
+    0.9797958971132712,
+    0.9797958971132712,
+    0.9797958971132712,
+    0.9797958971132712
+  ],
+  "inertia_probe_kd": [
+    12.56142786364932,
+    12.340472710340055,
+    14.990990966397924,
+    2.7051926019708525,
+    6.877229505729106,
+    1.509173129982214,
+    1.1736117321075588,
+    9.164413458507799,
+    14.990990966397927,
+    2.5423768952081507,
+    6.844972802585734,
+    1.5091339217616115,
+    1.173611732107559,
+    3.7745711836458016,
+    3.869173907114703,
+    0.9323255869881847,
+    1.2961540182141738,
+    3.6932551951590886,
+    3.8854061327564686,
+    0.8986420065113709,
+    1.2961540182141738
+  ],
+  "fixed_base_mass_diagonal_kg_m2": [
+    [
+      0.33614191136559435,
+      0.29801329791616804,
+      0.5732903320271026,
+      0.014689705528128181,
+      0.12065378998589542,
+      0.005810431155184181,
+      0.0035136849432155547,
+      0.29801329791616804,
+      0.5732903320271027,
+      0.014689705528128164,
+      0.12065378998589542,
+      0.005810431155184181,
+      0.0035136849432155738,
+      0.09551304776215473,
+      0.09644436952980066,
+      0.005130382801373559,
+      0.010714382901356817,
+      0.09551304776215473,
+      0.09644436952980065,
+      0.005130382801373554,
+      0.010714382901356817
+    ],
+    [
+      0.40252415809608555,
+      0.46769410788552146,
+      0.5812879104218046,
+      0.018668538300402635,
+      0.12083010884746472,
+      0.005810213102704879,
+      0.003513684943215572,
+      0.21425120928183383,
+      0.5788799567717383,
+      0.016488980299204686,
+      0.11952462415341432,
+      0.005809911208703016,
+      0.0035136849432155677,
+      0.08991806704237248,
+      0.09414838460315728,
+      0.006103751446956302,
+      0.010714382901356817,
+      0.08533727097076026,
+      0.09627793888049478,
+      0.005150238876701422,
+      0.010714382901356814
+    ],
+    [
+      0.5048757127326654,
+      0.3884879252924685,
+      0.5587095645800546,
+      0.033078235141844096,
+      0.11696289759830623,
+      0.005803011910391166,
+      0.0035136849432156,
+      0.12319557684127663,
+      0.5655514150675517,
+      0.029420267096411986,
+      0.1183153971729763,
+      0.0058071186846769705,
+      0.003513684943215617,
+      0.09086344145669177,
+      0.09547517043046722,
+      0.005543565051995301,
+      0.010714382901356814,
+      0.08699065010567346,
+      0.09590294079388151,
+      0.005357146465143625,
+      0.01071438290135682
+    ]
+  ],
+  "postures": [
+    [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      -0.10502536594867706,
+      -0.3862318694591522,
+      -0.3474973142147064,
+      -0.4278821647167206,
+      0.22269105911254883,
+      0.024419378489255905,
+      0.023900672793388367,
+      0.40764719247817993,
+      -0.1301833689212799,
+      0.3881501853466034,
+      0.16563808917999268,
+      -0.13387440145015717,
+      -0.03801284357905388,
+      -0.016942862421274185,
+      0.14316126704216003,
+      -0.22942715883255005,
+      -0.3740564286708832,
+      -0.5143428444862366,
+      -0.23523300886154175,
+      0.4267607629299164,
+      -0.053982291370630264
+    ],
+    [
+      -0.025367936119437218,
+      -0.33224064111709595,
+      -0.12541481852531433,
+      0.134779155254364,
+      0.4632719159126282,
+      -0.3676866888999939,
+      0.14970369637012482,
+      0.4806552231311798,
+      -0.389763742685318,
+      -0.12189222127199173,
+      0.41229280829429626,
+      -0.25196295976638794,
+      -0.09921053051948547,
+      -0.0488981194794178,
+      0.12910033762454987,
+      -0.18162813782691956,
+      -0.24112774431705475,
+      -0.09138485789299011,
+      -0.2083820402622223,
+      0.21072547137737274,
+      -0.17838655412197113
+    ]
+  ],
+  "posture_names": [
+    "source_neutral",
+    "Neutral_FW_frame_0",
+    "Neutral_FW_frame_50"
+  ],
+  "source_mjcf_sha256": "05ef4d4946803de21c0445d11187b7c4316e57654d7b929a57943741c4d553ab",
+  "runtime_model_nv": 27,
+  "runtime_model_neq": 0,
+  "passive_damping": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.20000000298023224,
+    0.20000000298023224,
+    0.20000000298023224,
+    0.20000000298023224,
+    0.20000000298023224,
+    0.20000000298023224,
+    0.20000000298023224,
+    0.20000000298023224,
+    0.20000000298023224,
+    0.20000000298023224,
+    0.20000000298023224,
+    0.20000000298023224,
+    0.20000000298023224,
+    0.20000000298023224,
+    0.20000000298023224,
+    0.20000000298023224,
+    0.20000000298023224,
+    0.20000000298023224,
+    0.20000000298023224,
+    0.20000000298023224,
+    0.20000000298023224
+  ],
+  "screening_criteria": {
+    "t90_s": 0.15,
+    "overshoot_pct": 20.0,
+    "settling_5pct_s": 0.4,
+    "final_mean_error_rad": 0.005
+  },
+  "criteria_scope": "Engineering screening thresholds, not Roban hardware specifications",
+  "results": [],
+  "standing": [
+    {
+      "profile": "baseline",
+      "initial_pitch_deg": 0.0,
+      "fall_time_s": null,
+      "duration_s": 5.0,
+      "joint_rmse_before_fall_rad": 0.025753454715320312,
+      "max_tilt_before_fall_deg": 12.055451393127441,
+      "final_root_height_m": 0.7651875615119934,
+      "saturation_fraction_before_fall": 0.0,
+      "feet_with_measured_ground_force": 2,
+      "peak_foot_ground_vertical_force_N": 392.99441623687744,
+      "nonfoot_ground_contact_samples_before_fall": 0
+    },
+    {
+      "profile": "baseline",
+      "initial_pitch_deg": -1.0,
+      "fall_time_s": null,
+      "duration_s": 5.0,
+      "joint_rmse_before_fall_rad": 0.025567787365066822,
+      "max_tilt_before_fall_deg": 12.628294944763184,
+      "final_root_height_m": 0.7650036811828613,
+      "saturation_fraction_before_fall": 0.0,
+      "feet_with_measured_ground_force": 2,
+      "peak_foot_ground_vertical_force_N": 326.47920989990234,
+      "nonfoot_ground_contact_samples_before_fall": 0
+    },
+    {
+      "profile": "baseline",
+      "initial_pitch_deg": 1.0,
+      "fall_time_s": null,
+      "duration_s": 5.0,
+      "joint_rmse_before_fall_rad": 0.02622845245922147,
+      "max_tilt_before_fall_deg": 11.498380661010742,
+      "final_root_height_m": 0.7654016613960266,
+      "saturation_fraction_before_fall": 0.0,
+      "feet_with_measured_ground_force": 2,
+      "peak_foot_ground_vertical_force_N": 420.4717311859131,
+      "nonfoot_ground_contact_samples_before_fall": 0
+    },
+    {
+      "profile": "baseline",
+      "initial_pitch_deg": -2.0,
+      "fall_time_s": null,
+      "duration_s": 5.0,
+      "joint_rmse_before_fall_rad": 0.0255028086619746,
+      "max_tilt_before_fall_deg": 13.124495506286621,
+      "final_root_height_m": 0.7657657861709595,
+      "saturation_fraction_before_fall": 0.0,
+      "feet_with_measured_ground_force": 2,
+      "peak_foot_ground_vertical_force_N": 377.6201972961426,
+      "nonfoot_ground_contact_samples_before_fall": 0
+    },
+    {
+      "profile": "baseline",
+      "initial_pitch_deg": 2.0,
+      "fall_time_s": null,
+      "duration_s": 5.0,
+      "joint_rmse_before_fall_rad": 0.0265255196722555,
+      "max_tilt_before_fall_deg": 10.829019546508789,
+      "final_root_height_m": 0.7650342583656311,
+      "saturation_fraction_before_fall": 0.0,
+      "feet_with_measured_ground_force": 2,
+      "peak_foot_ground_vertical_force_N": 385.8612847328186,
+      "nonfoot_ground_contact_samples_before_fall": 0
+    },
+    {
+      "profile": "inertia_damping_probe",
+      "initial_pitch_deg": 0.0,
+      "fall_time_s": null,
+      "duration_s": 5.0,
+      "joint_rmse_before_fall_rad": 0.02606445658639501,
+      "max_tilt_before_fall_deg": 11.52550220489502,
+      "final_root_height_m": 0.7654789090156555,
+      "saturation_fraction_before_fall": 0.0,
+      "feet_with_measured_ground_force": 2,
+      "peak_foot_ground_vertical_force_N": 392.9944648742676,
+      "nonfoot_ground_contact_samples_before_fall": 0
+    },
+    {
+      "profile": "inertia_damping_probe",
+      "initial_pitch_deg": -1.0,
+      "fall_time_s": null,
+      "duration_s": 5.0,
+      "joint_rmse_before_fall_rad": 0.025781948440849325,
+      "max_tilt_before_fall_deg": 12.068002700805664,
+      "final_root_height_m": 0.7652637958526611,
+      "saturation_fraction_before_fall": 0.0,
+      "feet_with_measured_ground_force": 2,
+      "peak_foot_ground_vertical_force_N": 321.71690464019775,
+      "nonfoot_ground_contact_samples_before_fall": 0
+    },
+    {
+      "profile": "inertia_damping_probe",
+      "initial_pitch_deg": 1.0,
+      "fall_time_s": null,
+      "duration_s": 5.0,
+      "joint_rmse_before_fall_rad": 0.026165945959048073,
+      "max_tilt_before_fall_deg": 10.853476524353027,
+      "final_root_height_m": 0.76541668176651,
+      "saturation_fraction_before_fall": 0.0,
+      "feet_with_measured_ground_force": 2,
+      "peak_foot_ground_vertical_force_N": 458.3422441482544,
+      "nonfoot_ground_contact_samples_before_fall": 0
+    },
+    {
+      "profile": "inertia_damping_probe",
+      "initial_pitch_deg": -2.0,
+      "fall_time_s": null,
+      "duration_s": 5.0,
+      "joint_rmse_before_fall_rad": 0.025552492051083495,
+      "max_tilt_before_fall_deg": 12.525975227355957,
+      "final_root_height_m": 0.765651524066925,
+      "saturation_fraction_before_fall": 0.0,
+      "feet_with_measured_ground_force": 2,
+      "peak_foot_ground_vertical_force_N": 388.5524787902832,
+      "nonfoot_ground_contact_samples_before_fall": 0
+    },
+    {
+      "profile": "inertia_damping_probe",
+      "initial_pitch_deg": 2.0,
+      "fall_time_s": null,
+      "duration_s": 5.0,
+      "joint_rmse_before_fall_rad": 0.026003985496794033,
+      "max_tilt_before_fall_deg": 10.10873031616211,
+      "final_root_height_m": 0.7649021744728088,
+      "saturation_fraction_before_fall": 0.0,
+      "feet_with_measured_ground_force": 2,
+      "peak_foot_ground_vertical_force_N": 395.29868245124817,
+      "nonfoot_ground_contact_samples_before_fall": 0
+    }
+  ],
+  "status": "MEASURED",
+  "production_gains_changed": false
+}

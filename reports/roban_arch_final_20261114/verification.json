@@ -1,0 +1,186 @@
+{
+  "status": "PASS",
+  "formal_training": false,
+  "unit_tests": {
+    "passed": 17,
+    "failed": 0,
+    "log": "unit_tests.log"
+  },
+  "historical_regression": {
+    "passed": 35,
+    "failed": 0,
+    "log": "historical_regression.log"
+  },
+  "extra_s54_cpu_diagnostic": {
+    "status": "PASS",
+    "report": "s54_cpu_regression.json"
+  },
+  "legacy_motion_prior_fixture": {
+    "status": "BLOCKED_PREEXISTING_PATH",
+    "reason": "Historical manifest points to missing pre-migration supermimic_s54_main/data paths; left unchanged",
+    "log": "legacy_motion_prior_fixture_failure.log"
+  },
+  "architecture_smoke": "summary.json",
+  "body_prior_scale": "body_prior_scale.json",
+  "checkpoint_host": "/mnt/sage_data/workspace/Foothold/MySupermimic/logs/roban_arch_final_20261114_E1/last.pt",
+  "preserved_originals": "/mnt/sage_data/workspace/Foothold/MySupermimic/reports/roban_arch_refactor_20261114/before",
+  "source_files": [
+    {
+      "path": "supermimic/roban_task.py",
+      "sha256": "b2cec2e500306688df58c98055ccd41301a4f1b751061d2cb0d23dac1023a2e4"
+    },
+    {
+      "path": "supermimic/kinematics.py",
+      "sha256": "32763f778df8e9116bb4935756093411a56aeae0b8c7c30bb168f0a3a6497649"
+    },
+    {
+      "path": "supermimic/motion.py",
+      "sha256": "d2312ec1653ea519831a2bedab57c26c3611b1f4ab5c61b499d14fbdea54e3d5"
+    },
+    {
+      "path": "supermimic/mdp.py",
+      "sha256": "8ab9725515db7e924405bba95fba7043b4a5271d8cdafa215b36ea17c6831bff"
+    },
+    {
+      "path": "supermimic/terrain.py",
+      "sha256": "5580a2d40b723470011d02cc1c1ec3d8e48c0bff813d5ec4ba8c832077621fc3"
+    },
+    {
+      "path": "supermimic/networks.py",
+      "sha256": "16e2f9f31fb2d36f8ee998c93aa501ed990bfc5fc4172fd196d6c18fdcdffece"
+    },
+    {
+      "path": "supermimic/env.py",
+      "sha256": "f1141a5d04bba067f2e8cca61ea14a63f147757ebca714efc953f6a563b4b48b"
+    },
+    {
+      "path": "supermimic/roban.py",
+      "sha256": "0f39da8800155822a0503802b1085d3753bfa6bfdda429c4bb8fc0d24387a620"
+    },
+    {
+      "path": "supermimic/goals.py",
+      "sha256": "65e77da7ef9d5502743c634bf49ba16f229d956ef11c90d2bd7a7b7d8d04697e"
+    },
+    {
+      "path": "supermimic/motion_reference.py",
+      "sha256": "5c3c9c5e3c8494b5f353b396f619b4c7513b2647659c770f780e0d63cd36a8a9"
+    },
+    {
+      "path": "supermimic/robot_contract.py",
+      "sha256": "534800fdc555aeb9cb6787542f7f38f43c6f3ddbd203fcb19191bad7164bd38b"
+    },
+    {
+      "path": "supermimic/roban_runtime.py",
+      "sha256": "966afa18ff2c178d90a9b56600b5a21b89be2a1e21afe3c6599d7cbb719045f3"
+    },
+    {
+      "path": "supermimic/transfer.py",
+      "sha256": "6a32efa5b849b40bf000537ac409546f4a1e810e0019c8b5a8c9476bc0abfc42"
+    },
+    {
+      "path": "supermimic/robot.py",
+      "sha256": "4158f7cccf54f2f9d5f1f2f5262e81b2ec5f20d3325fd917a592010f7e41c0f1"
+    },
+    {
+      "path": "supermimic/train.py",
+      "sha256": "ae5e6d51270faa769dd27d7e77fcae939a3a655ccfba7730b16929f74ec3885a"
+    },
+    {
+      "path": "configs/roban/E1.json",
+      "sha256": "855e471a31b93329053a9a57723cd62bc9423bb80bff9fbc47a5f4f1b08d3c85"
+    },
+    {
+      "path": "configs/roban/flat_ground.usda",
+      "sha256": "0f703785caa8680e37c515b2d8fb26e349620031f56ff6dbacbf4787c0143e9f"
+    },
+    {
+      "path": "configs/roban/E2.json",
+      "sha256": "2b42f2cd37b785ae3234555f812a0a09412dfa5e93c7997a9eb79ef8f90f97da"
+    },
+    {
+      "path": "configs/roban/terrain_smoke.json",
+      "sha256": "536b7c51ba24d8c1758f20afb49760a485778ef11e4e475d1d85484133a395f2"
+    },
+    {
+      "path": "configs/roban/E0.json",
+      "sha256": "1a7681f8f64427b3e599848b85f078e878aba4d0fae2b15d76903280506d51ed"
+    },
+    {
+      "path": "tools/prepare_roban_asset.py",
+      "sha256": "2925abb9591be790e20e1216352568c0e1ca03b778f380c586a1bce5829b2649"
+    },
+    {
+      "path": "tools/roban_rollout.py",
+      "sha256": "6196f0a2dbe2bdc8a4c2f8c47f8860d26f5a749bd5ca0290f7f0b83e0f317ef3"
+    },
+    {
+      "path": "tools/run_roban.sh",
+      "sha256": "5b3cd16fdb5d07619b292dcf6b1c418b12e638c07ce8118e1e6a0f897768ce85"
+    },
+    {
+      "path": "tools/test_roban_foot.py",
+      "sha256": "dc3db2383ab8ea311098df307ab3f0369f9f7bd7f0a3b2cf8eb2c24c841fbe4d"
+    },
+    {
+      "path": "tools/test_roban_smoke.py",
+      "sha256": "78918c734196803fcb5526d666895f625d601654c7b2c41af7d11b162cb704b5"
+    },
+    {
+      "path": "assets/roban/usd/contract.json",
+      "sha256": "ee5d95468f2f1d57ab7f4710ae31ac703897169766d712df17cf845bf32e1f34"
+    },
+    {
+      "path": "assets/roban/usd/biped_s17_verified_handball_fixedhead/biped_s17_verified_handball_fixedhead.usda",
+      "sha256": "922641cd045c5cab1fb2eef72a5397ca176e09fbccee6384cf92c7b4bb0ca413"
+    },
+    {
+      "path": "assets/roban/usd/biped_s17_verified_handball_fixedhead/payloads/geometries.usd",
+      "sha256": "996bc2ae4d527499f837603f4fbcf8c6cca18ab714e817575423bd06efbc34af"
+    },
+    {
+      "path": "assets/roban/usd/biped_s17_verified_handball_fixedhead/payloads/materials.usda",
+      "sha256": "6971223dbab7d59bfd6bb5c5fac7aba18ddc71b75f64ce89fd8baf7a7834c1e9"
+    },
+    {
+      "path": "assets/roban/usd/biped_s17_verified_handball_fixedhead/payloads/robot.usda",
+      "sha256": "f060d6480c6963cfeb484c0018628f4bed3adb2a2dfdfd34bd865bce2881dbb4"
+    },
+    {
+      "path": "assets/roban/usd/biped_s17_verified_handball_fixedhead/payloads/base.usda",
+      "sha256": "1125d935b018521718410a60f73da87362fa04e0bf14ef02b4c06c2b3a12f8ca"
+    },
+    {
+      "path": "assets/roban/usd/biped_s17_verified_handball_fixedhead/payloads/instances.usda",
+      "sha256": "6f64b2aef8478f55d7ea32ee73e0cdb97ece1514ccb36b2c8477bdbb76624fd5"
+    },
+    {
+      "path": "assets/roban/usd/biped_s17_verified_handball_fixedhead/payloads/Physics/physics.usda",
+      "sha256": "50e35134977dd31792bce065af47eb84efb95e37fe15982868e022ba655ab044"
+    },
+    {
+      "path": "assets/roban/usd/biped_s17_verified_handball_fixedhead/payloads/Physics/mujoco.usda",
+      "sha256": "a10dd27a5d603c7149658e78b08de75b4ecec84b65199b7dd4779ab0b2fa1313"
+    },
+    {
+      "path": "assets/roban/usd/biped_s17_verified_handball_fixedhead/payloads/Physics/physx.usda",
+      "sha256": "c4a9a00865e391cd9bd1ceb3c2d364006312309a3d08bd92686591e86df1234b"
+    },
+    {
+      "path": "docs/ROBAN_FOOT_CONDITIONED_ARCHITECTURE.md",
+      "sha256": "9afe17e0db3a65f8aed99383efb034ce0b4e8c1e663bfa4f9cfd53d48c644f1e"
+    },
+    {
+      "path": "README.md",
+      "sha256": "163c82e3212b4446018e9d934934f6b219f7a7720ad0457a3fe669891c1eea5b"
+    },
+    {
+      "path": ".gitignore",
+      "sha256": "485233f73854f8e8f77f7780943603f8536c6a8b61709e4098bfae778d60471f"
+    }
+  ],
+  "limitations": [
+    "Untrained smoke policy falls at step 75 in all four evaluation episodes",
+    "Unlabelled source masks contact/touchdown truth and body prior quality; E2 is an interface test",
+    "Pillar/stair providers tested as static queries; Newton scene validated on flat only"
+  ]
+}

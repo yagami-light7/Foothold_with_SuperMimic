@@ -1,0 +1,94 @@
+--- supermimic/stair_training.py (v2)
++++ supermimic/stair_training.py (v3)
+@@ -21,8 +21,8 @@
+         raise ValueError('This experiment is explicitly authorized for four-step reference only')
+     if cfg['assignment']!='single_motion_finetuning; stair_up_4 is training, not heldout':
+         raise ValueError('Explicit training designation required; upstream test split must not be relabeled silently')
+-    if cfg.get('normalizer_policy', 'frozen_source') != 'frozen_source':
+-        raise ValueError('This transfer experiment preserves source normalization; count recapping is disabled')
++    if cfg.get('normalizer_policy', 'frozen_source') not in ('frozen_source','source_online'):
++        raise ValueError('Preserve full source statistics at initialization; count recapping is disabled')
+     stages=cfg['sampling_stages']
+     if (not stages or any(not 0<s['stair_fraction']<1 for s in stages)
+             or any(a['until_iteration']>=b['until_iteration'] for a,b in zip(stages,stages[1:]))):
+@@ -124,7 +124,9 @@
+         reset_noise=cfg.get('reset_noise',False),mixed_flat=True,environment_class=MixedTrackingSim,**kwargs)
+ 
+ 
+-def initialize_flat(checkpoint,wm,pi,physics,goal_spec,hist):
++def initialize_flat(checkpoint,wm,pi,physics,goal_spec,hist,*,normalizer_policy='frozen_source'):
++    if normalizer_policy not in ('frozen_source','source_online'):
++        raise ValueError('Unknown transfer normalization policy')
+     assert_checkpoint(checkpoint);goal_spec.assert_checkpoint(checkpoint)
+     if checkpoint['args']['hist']!=hist or checkpoint['policy_contract']['obs_dim']!=103:
+         raise ValueError('Flat observation/history contract differs')
+@@ -140,8 +142,9 @@
+     wm.load_state_dict(checkpoint['wm']);pi.load_state_dict(checkpoint['pi'])
+     # Preserve the complete source statistics. The previous exploratory Smoke
+     # recapped 32M samples to 10K, moving both policy inputs and WM output scales
+-    # during collection. That experiment was not accepted. Freezing is explicit
+-    # in collect(), in the checkpoint contract, and on resume.
++    # during collection. That experiment was not accepted. The experiment may
++    # freeze statistics or use the original TRAIN-only online update, always
++    # retaining the full source count instead of recapping it.
+     counts={}
+     for label,normalizer in [('policy_obs',pi.obs_norm),('motion_goal',pi.goal_norm),
+                              ('wm_input',wm.in_norm),('wm_output',wm.out_norm)]:
+@@ -151,9 +154,12 @@
+         source_sim_steps=checkpoint['sim_steps'],source_physics=source,target_physics=physics,
+         copied=['WorldModel','MotionEncoder','SharedDecoder','all normalizer means/variances'],
+         normalizer_effective_count=counts,
+-        normalizer_policy='frozen_source',
++        normalizer_policy=normalizer_policy,
+         fresh=['Critic (fixed-world/XYZ/slip reward changed)','optimizers','replay','sampling statistics'],
+         reason='Preserve source policy interface; recalibrate WM from real terrain transitions; no reference transitions as WM labels')
++
++
++_REWARD_DIAGNOSTIC_EVENTS = {}
+ 
+ 
+ def validate_transition(out, mdp, cfg, log_path):
+@@ -167,12 +173,38 @@
+     state=unflatten_state(out['s1'])
+     values=dict(root_speed_m_s=state[2].norm(dim=-1),root_angvel_rad_s=state[3].norm(dim=-1),
+                 joint_speed_rad_s=state[5].abs().amax(-1),normalized_reward=out['r']/mdp.max_step_reward)
+-    bad=~torch.isfinite(out['s1']).all(-1)|~torch.isfinite(out['r'])
++    bad=~torch.isfinite(out['r'])
++    for key in ('s','s1','a','a_prev','xi'):
++        if key in out:bad |= ~torch.isfinite(out[key]).reshape(len(bad),-1).all(-1)
+     for key,limit in limits.items():
+-        bad |= values[key]<limit if key=='normalized_reward' else values[key]>limit
++        if key!='normalized_reward':bad |= values[key]>limit
++
++    def snapshot(ids):
++        payload={key:value[ids].detach().cpu() for key,value in out.items()
++                 if isinstance(value,torch.Tensor) and value.ndim and value.shape[0]==len(bad)}
++        payload['diagnostic_values']={k:v[ids].detach().cpu() for k,v in values.items()}
++        payload['reward_terms']={k:v[ids].detach().cpu() for k,v in out.get('terms',{}).items()}
++        return payload
++
+     if bad.any():
+         ids=bad.nonzero().flatten()
+-        payload={key:value[ids].detach().cpu() for key,value in out.items() if isinstance(value,torch.Tensor) and value.ndim and value.shape[0]==len(bad)}
+-        payload['diagnostic_values']={k:v[ids].detach().cpu() for k,v in values.items()}
+-        torch.save(payload,Path(log_path)/'failure_physics_transition.pt')
++        torch.save(snapshot(ids),Path(log_path)/'failure_physics_transition.pt')
+         raise FloatingPointError(f'Extreme Newton transition at envs {ids.tolist()}; saved failure_physics_transition.pt')
++
++    # Tracking penalties are unbounded below. A finite negative reward is useful
++    # learning feedback, not evidence of a numerical/contact explosion. Keep it
++    # intact in replay and save a bounded diagnostic sample instead of aborting.
++    threshold=cfg.get('tracking_reward_warning_below',limits.get('normalized_reward',-20.))
++    low=values['normalized_reward']<threshold
++    if low.any():
++        path=Path(log_path);event=_REWARD_DIAGNOSTIC_EVENTS.get(str(path),0)+1
++        _REWARD_DIAGNOSTIC_EVENTS[str(path)]=event
++        if event<=16 or event%1000==0:
++            ids=low.nonzero().flatten();selected=ids[:5]
++            with (path/'tracking_reward_diagnostics.jsonl').open('a') as sink:
++                sink.write(json.dumps(dict(kind='low_finite_tracking_reward',event=event,
++                    count=int(low.sum()),min_normalized_reward=float(values['normalized_reward'].min()),
++                    env_ids=selected.tolist(),frames=out['f'][selected].tolist(),
++                    action='retain unchanged in replay; no physics threshold exceeded'))+'\n')
++            sample_path=path/'tracking_low_reward_sample.pt'
++            if event==1 and not sample_path.exists():torch.save(snapshot(selected),sample_path)

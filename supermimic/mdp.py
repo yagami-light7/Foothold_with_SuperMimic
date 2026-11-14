@@ -17,7 +17,7 @@ from .kinematics import S54Kinematics
 from .motion import CONTROL_DT, MotionLib
 from .rotations import mat_to_6d, quat_to_mat, mat_to_quat, rot_angle_sq, yaw_mat
 
-from .s54 import NUM_J, XI_DIM, TRACKED_BODIES, JOINT_OFFSET, COM_OFFSET, HEAD_JOINT_NAMES, JOINT_NAMES, FOOT_BODY_NAMES
+from .robot_contract import NUM_J, XI_DIM, TRACKED_BODIES, JOINT_OFFSET, COM_OFFSET, HEAD_JOINT_NAMES, JOINT_NAMES, FOOT_BODY_NAMES
 
 STATE_DIM = 3 + 4 + 3 + 3 + 2 * NUM_J
 # Legacy/independent-Foot interface. Motion training selects MDP.obs_dim=103.

@@ -9,7 +9,7 @@ import torch
 from .foot_trajectory import AlternatingConfig, query, sample_alternating, command_time
 from .motion import CONTROL_DT
 from .rotations import mat_to_6d, mat_to_quat, quat_to_mat, yaw_mat
-from .s54 import FOOT_BODY_NAMES, GOAL_FRAME_DIM
+from .robot_contract import FOOT_BODY_NAMES, GOAL_FRAME_DIM
 
 FOOT_FRAME_DIM = 23
 
@@ -21,7 +21,7 @@ class GoalSpec:
     dt: float | None = None
 
     def __post_init__(self):
-        if self.mode not in ('motion', 'foot_trajectory','reference_foot') or not isinstance(self.frames, int) or self.frames < 1:
+        if self.mode not in ('motion', 'foot_trajectory','reference_foot', 'roban_foot') or not isinstance(self.frames, int) or self.frames < 1:
             raise ValueError('Invalid goal mode or number of future samples')
         dt = (CONTROL_DT if self.mode == 'motion' else 0.1) if self.dt is None else self.dt
         if not 0 < dt < float('inf'):
@@ -39,10 +39,14 @@ class GoalSpec:
         return self.frames * self.frame_dim
 
     def contract(self):
-        return dict(version=2 if self.mode=='reference_foot' else 1, **asdict(self), frame_dim=self.frame_dim, dim=self.dim,
+        value = dict(version=3 if self.mode=='roban_foot' else 2 if self.mode=='reference_foot' else 1, **asdict(self), frame_dim=self.frame_dim, dim=self.dim,
                     coordinates='reference_heading' if self.mode == 'motion' else 'current_root_yaw',
                     rotation='6d_columns', quaternion='wxyz',
-                    observation_reference='motion_root' if self.mode == 'motion' else 'fixed_command_heading')
+                    observation_reference='proprio_only_sole_goals' if self.mode == 'roban_foot' else 'motion_root' if self.mode == 'motion' else 'fixed_command_heading')
+        if self.mode == 'roban_foot':
+            value.update(foot_frame='model_collision_sole',stance='fixed_at_planned_touchdown',
+                         contact='planned_schedule; truth_validity_is_privileged')
+        return value
 
     def assert_checkpoint(self, checkpoint, foot_config=None):
         saved = checkpoint.get('goal_contract')
@@ -60,7 +64,7 @@ class GoalSpec:
 
 
 def add_goal_args(parser):
-    parser.add_argument('--goal_mode', choices=['motion', 'foot_trajectory','reference_foot'], default='motion')
+    parser.add_argument('--goal_mode', choices=['motion', 'foot_trajectory','reference_foot','roban_foot'], default='motion')
     parser.add_argument('--goal_dt', type=float, default=None, help='Future sample spacing: motion=0.02, foot=0.1 seconds')
     parser.add_argument('--foot_config', default=None, help='AlternatingConfig JSON; motion mode does not use it')
 
@@ -110,7 +114,7 @@ class GoalSource:
         if self.is_foot:
             # Extract the existing grounding implementation without changing its geometry.
             from .foot_geometry import FootGeometry
-            from .s54 import model_contract
+            from .robot_contract import model_contract
             geometry = FootGeometry(model_contract()[0])
             import numpy as np
             self.ankle_height = [0.003 - geometry.local_low(side, np.eye(3)) for side in (0, 1)]

@@ -7,7 +7,7 @@ set -euo pipefail
 # 1. Experiment configuration (edit here)
 # ============================================================================
 CONTAINER_NAME="${CONTAINER_NAME:-supermimic_s54}"
-MOTION_DIR="data/retarget_data/reference_startup_fixed"
+MOTION_DIR="library/motion_reference/kuavo_s54/retarget_data/reference_startup_fixed"
 # Use clip stems, not BVH paths. CLIPS=() selects all accepted top-level CSVs.
 # Examples: CLIPS=("dance1_subject1" "walk1_subject1") or CLIPS=("dance*")
 CLIPS=("dance1_subject1")

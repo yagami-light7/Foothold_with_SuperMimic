@@ -1,0 +1,261 @@
+{
+  "status": "REPAIR_VERIFIED_FORMAL_TRAINING_RUNNING",
+  "updated_at": "2026-11-10T18:50:06.852508+00:00",
+  "formal_training": {
+    "run": "logs/s54_stair_flat6063_8h",
+    "status": {
+      "status": "running",
+      "iteration": 100,
+      "wall_seconds": 218.74111145199277,
+      "budget_seconds": 28800.0
+    },
+    "first_checkpoint": "logs/s54_stair_flat6063_8h/ckpt_000001.pt",
+    "first_checkpoint_sha256": "ca23af895a9b19f098ba66c06a1d2435e924afdb444de3a0817c0179c133ae25",
+    "first_checkpoint_all_model_tensors_finite": true,
+    "wm_optimizer_step": 16,
+    "actor_optimizer_steps": 0,
+    "critic_optimizer_steps": 0,
+    "interpretation": "Original 1000-iteration WM-only phase; actor/critic updates are intentionally pending",
+    "actual_runtime_core_parameter_mismatches": {},
+    "train_and_swanlab_tmux_alive_verified": true,
+    "no_physics_failure_capture": true
+  },
+  "current_tests_passed": {
+    "test_s54_stair_experiment.py": 14,
+    "test_s54_root_feedback.py": 11
+  },
+  "current_test_count": 25,
+  "gpu_smoke": {
+    "run": "logs/s54_stair_flat6063_smoke_v8",
+    "status": "completed",
+    "iteration": 64,
+    "wall_seconds": 170.025390883995,
+    "stop_requested": false,
+    "budget_seconds": 900.0
+  },
+  "gpu_smoke_runtime": {
+    "iteration": 64,
+    "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "torch_peak_allocated_MiB": 4192.10107421875,
+    "torch_peak_reserved_MiB": 4338.0,
+    "device_used_at_checkpoint_MiB": 5361.125,
+    "device_total_MiB": 7805.5625,
+    "wall_seconds": 170.0252077329933,
+    "note": "Torch peaks exclude Warp; device snapshot includes Warp"
+  },
+  "independent_gate": "smoke_gate_v8.json",
+  "independent_eval": "logs/s54_stair_flat6063_smoke_v8/evals/iter_000064",
+  "orchestration_retry": "logs/s54_stair_flat6063_night_v8_eval_retry.log",
+  "core_parameter_match_count": 39,
+  "reward_formula_unchanged": true,
+  "reward_replay_sync_max_error": 0.0,
+  "physical_speed_limits_unchanged": true,
+  "terrain_geometry_unchanged": true,
+  "original_flat_checkpoint_unchanged": true,
+  "protected_sha256": {
+    "release/S54-SuperMimic-Flat-6000/checkpoints/ckpt_006063.pt": "e49e968a1a6bd7c5fcef53290b805fafb011bea5533e9bc0c050e5130e0bbe88",
+    "data/s54_stair_dataset/stair_up_4.npz": "288d3abd2fd37d3d299a17272bcf4d99a6fac0fc28dcb3e10e1c830a633bbf65",
+    "assets/terrains/stairs_straight_4_v1/terrain_mesh.npz": "1503c3e9481b92e0a6979631d3fd7748d21f7978954c48dc7cffb8b5cc6a43b2"
+  },
+  "repair_snapshot": "experiments/s54_stair_flat6063_8h/repairs/smoke_v3_reset_penetration",
+  "changed_code_and_config_sha256": {
+    "supermimic/env.py": "62f134b689bbd45532694f2455facb4f85ad19377eb42c26b956f25a7ff5e39d",
+    "supermimic/stair_reset.py": "95c18ce72a8d0a5ebc11a986f72541ff18e60f868b0edd455c8a1d8e059d8808",
+    "supermimic/stair_runtime.py": "476c24297698dc6a9678d3a2c97facf7a0297d16c88271cff8a6de23b6640f6e",
+    "supermimic/stair_training.py": "6b1b5c2d5bdb0de5b324f8014a690bf41f398480e1a480335bd07587a3d22181",
+    "supermimic/stair_evaluation.py": "6d53211e447b3604bbc4df546534056290ecf8d7a24bde0b3d510836232d85cc",
+    "supermimic/train.py": "083dd00923b15c6070d0cfc5d6b0ee41a33d30a5df6d9a877b7d8edae63d1fd7",
+    "tools/diagnose_s54_stair_reset.py": "e3b698b2430c6b9aee68e4c21202a24e1251f2453c8009cdcda4185defb59a8f",
+    "tools/run_s54_stair.py": "3fdf0d4639167e497444c01166d09f4e5557c7dbb431d378cdf44f759638c61e",
+    "tools/t15_stair_rollout.py": "faebca4e14c790218e7b11a654d2eb0a2cd0cfafb412b702e6b616f30f18ca35",
+    "tools/test_s54_stair_experiment.py": "1fe9799a5644b214cba450595c3d70d432ac2d7d88bee7973ecd229c0e1e6ab9",
+    "experiments/s54_stair_flat6063_8h/train.json": "93146ac803258e119886c2b71628fb785ae31ae7dcb0e6f1274943eab21a8f76",
+    "experiments/s54_stair_flat6063_8h/smoke.json": "c9bc21cd4eae8f73ba5cf59a255fdb538bc3a4363441218cad7913643ad640e9",
+    "experiments/s54_stair_flat6063_8h/design.json": "2981ce6f04c8e760ee20af5392dc55a2404bfda929127d6527fe8b5e4103c21a",
+    "experiments/s54_stair_flat6063_8h/smoke_design.json": "419afb8adedc61c4daeb4c7fe1993af3f8a1462a7314ae17b92b40dfef2120d6",
+    "experiments/s54_stair_flat6063_8h/flat_training_profile.json": "7548d2ac212512f0e54124ad6431aa4e08a9b5b4a6804c293f95169dd585fe8c",
+    "experiments/s54_stair_flat6063_8h/reward.json": "9d81c0bce412672f2767273e8cf487106301b4fe3de0d9fea28ec44b93724e84"
+  },
+  "scope": "single four-step training action; no stair convergence or generalization claim",
+  "independent_gate_result": {
+    "passed": true,
+    "data_contract": {
+      "format": "s54_stair_t15_mixed_train_v2",
+      "flat": {
+        "format": "s54_flat_m3_4_v1",
+        "split": "train",
+        "fps": 50,
+        "metadata_sha256": "2bbbd3a9dbd271bd8fbfbc5d1446cc45ba37e0f61f8bcde57c3a3e960eadaea1",
+        "manifest_sha256": "96e3d0f118bf7da65e8cd12e3a0e58d90fb23d921553cbe2716f178b2813c367",
+        "motions": {
+          "spin_flat_02": "883f1c8be16e3180288a3daa46589f08de5dd899ecef16f99520e7015b7a0220",
+          "spin_flat_03": "8d5bb67da9ab92fca851859cd26bc50a72889cce94d05e1c02713d1018180d61",
+          "spin_flat_05": "775eb17fe553458b5e51c8a5f7fa0c3ee99960a967f4ef70909049074288b099",
+          "spin_flat_06": "f4b0ea50f159369108a7fd1db95e4cedfe868c031216622319a8b4db3752b55a",
+          "turn_flat_10": "493a91f848102c37b20958ed9f4ad3ee7bb4d8cba433bc33b32c0d9b0ec61ea3",
+          "turn_flat_11": "3f06845c500469c1a2eb3f07985b0a6227a279a8c102472c74a34236a92060b5",
+          "turn_flat_12": "8838d3ec1a242d702e24a3c20fdab90654116a71d9f4b69e834ed9fc14d76f4a",
+          "turn_flat_14": "796f982e04ab05d2e9978a80f273b79e5e079381efba2d5c0aff9e760cd7bbb1",
+          "turn_flat_15": "25bac2964273f14900847ea9ad903341c40d51f14bdc8a11106d9e8b75a09ecc",
+          "turn_flat_16": "06a7e503ab095e62079f63fffc97b989299a725e38e2904839f1c431620e6b3c",
+          "straight_flat_18": "b2f921e7cc81c5c044330c6e85cfc02e14f6d92782f9663f394747d95c0560f2",
+          "straight_flat_19": "12eb73c05531b4ec97ff89e41b0a2d9841eaa7b561bbdac89587cd338f1cd8d7",
+          "straight_flat_20": "63b3bf42168d17b4e156116d4904a3d9308d840f9546fe542f3b00990389d6fb",
+          "straight_flat_21": "d33bb33bdf3e551edd0ebe4193a0a780995354dd10595378f902a0c7b5cd25fb"
+        }
+      },
+      "stair_ids": [
+        "stair_up_4"
+      ],
+      "excluded_ids": [
+        "stair_up_2"
+      ],
+      "stair_npz_sha256": "288d3abd2fd37d3d299a17272bcf4d99a6fac0fc28dcb3e10e1c830a633bbf65",
+      "terrain_mesh_sha256": "1503c3e9481b92e0a6979631d3fd7748d21f7978954c48dc7cffb8b5cc6a43b2",
+      "source_metadata_sha256": "4595d60e9f0f915e809af3c4ae19ec861b25a929ce0ee4fa9dbe2c30d6b5bc23",
+      "explicit_assignment": "single_motion_finetuning; stair_up_4 is training, not heldout",
+      "flat_world_translation_m": [
+        20.0,
+        0.0,
+        0.0
+      ],
+      "stair_world_transform": "identity",
+      "split": "experiment_train",
+      "source_checkpoint_sha256": "e49e968a1a6bd7c5fcef53290b805fafb011bea5533e9bc0c050e5130e0bbe88",
+      "normalizer_policy": "source_online",
+      "reset_noise": true,
+      "flat_sampling": "equal mode then equal clip",
+      "sampling_stages": [
+        {
+          "name": "A",
+          "until_iteration": 1000,
+          "stair_fraction": 0.2
+        },
+        {
+          "name": "B",
+          "until_iteration": 6000,
+          "stair_fraction": 0.6
+        },
+        {
+          "name": "C",
+          "until_iteration": 1000000000,
+          "stair_fraction": 0.5
+        }
+      ],
+      "reset_feasibility": {
+        "method": "all_collision_proxy_vs_original_terrain_rejection",
+        "clearance_m": -0.001,
+        "max_attempts": 64,
+        "fallback": "validated_same_reference_frame; reset only",
+        "reward_state": "canonical_71d_replay_quaternion",
+        "newton_collision_decimation": 1
+      },
+      "flat_ground_collider": "mesh"
+    },
+    "checks": {
+      "finite_training_metrics": true,
+      "actor_gradients": true,
+      "reward_sync": true,
+      "source_normalizer_counts_retained": true,
+      "flat_retention": true
+    },
+    "purpose": "technical stability gate, not stair convergence",
+    "tracking_diagnostics": {
+      "min_mean_real_reward": 0.705725,
+      "wm8_final": 0.190934,
+      "max_abs_imagined_reward": 0.835513,
+      "max_critic_loss": 0.589471,
+      "interpretation": "Finite tracking losses are diagnostics; negative returns do not imply a Newton environment error"
+    },
+    "smoke_checkpoint_sha256": "005cc53a8b70516f77a26bead2ba139e47c0b75065e095ff709773596fa884d7",
+    "evaluation": "logs/s54_stair_flat6063_smoke_v8/evals/iter_000064/summary.json"
+  },
+  "independent_smoke_scores": {
+    "StairTrain": {
+      "mean_normalized_return": 0.11185832094633952,
+      "returns": [
+        0.20319020748138428,
+        0.1318913996219635,
+        0.0004933557356707752
+      ],
+      "survived": [
+        false,
+        false,
+        false
+      ]
+    },
+    "FlatTrain_straight_flat_18": {
+      "mean_normalized_return": 0.919845461845398,
+      "returns": [
+        0.942618191242218,
+        0.9284578561782837,
+        0.8884603381156921
+      ],
+      "survived": [
+        true,
+        true,
+        true
+      ]
+    },
+    "FlatTrain_turn_flat_10": {
+      "mean_normalized_return": 0.9468466639518738,
+      "returns": [
+        0.9552080631256104,
+        0.9496668577194214,
+        0.9356650710105896
+      ],
+      "survived": [
+        true,
+        true,
+        true
+      ]
+    },
+    "FlatTrain_spin_flat_02": {
+      "mean_normalized_return": 0.9511519074440002,
+      "returns": [
+        0.9673358798027039,
+        0.9541487693786621,
+        0.9319710731506348
+      ],
+      "survived": [
+        true,
+        true,
+        true
+      ]
+    }
+  },
+  "swanlab": {
+    "mode": "online",
+    "project": "SuperMimic-S54-Stair",
+    "experiment_name": "s54_stair_flat6063_8h",
+    "clips": [
+      "spin_flat_02",
+      "spin_flat_03",
+      "spin_flat_05",
+      "spin_flat_06",
+      "turn_flat_10",
+      "turn_flat_11",
+      "turn_flat_12",
+      "turn_flat_14",
+      "turn_flat_15",
+      "turn_flat_16",
+      "straight_flat_18",
+      "straight_flat_19",
+      "straight_flat_20",
+      "straight_flat_21",
+      "stair_up_4"
+    ],
+    "last_step": 1,
+    "evaluations": {},
+    "run_id": "9f95eb54e9684e1b",
+    "resume": "allow",
+    "status": "running",
+    "updated_at": "2026-11-10T18:47:10.631111+00:00",
+    "url": "https://swanlab.cn/@yagami_light/SuperMimic-S54-Stair/runs/9f95eb54e9684e1b",
+    "media_uploaded": false
+  },
+  "formal_tmux_jobs": [
+    "logs/t15_jobs/s54_t15_train_20261111_024548_070238.json",
+    "logs/t15_jobs/s54_t15_sync_20261111_024548_089143.json"
+  ]
+}

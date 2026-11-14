@@ -1,0 +1,59 @@
+--- before/supermimic/train.py
++++ after/supermimic/train.py
+@@ -301,6 +301,7 @@
+ physics_metadata=physical_contract(obs_dim=obs_dim)
+ if stair_cfg:
+     physics_metadata['solver']={**physics_metadata['solver'],'use_mujoco_contacts':False}
++    physics_metadata['collision_decimation']=1
+     physics_metadata['terrain_task']=data_contract
+ transfer_report=None
+ git_sha=os.environ.get('S54_SOURCE_GIT_SHA')
+@@ -781,6 +782,9 @@
+             for path in sorted(log_path.glob('ckpt_*.pt'))[:-curriculum.cfg['keep_checkpoints']]: path.unlink()
+         if stair_cfg:
+             for path in sorted(log_path.glob('ckpt_*.pt'))[:-stair_cfg.get('keep_periodic_checkpoints',8)]:path.unlink()
++            if hasattr(env,'reset_validator'):
++                (log_path/'reset_statistics.json').write_text(json.dumps(env.reset_validator.stats,indent=2)+'\n')
++                (log_path/'reset_geometry_audit.json').write_text(json.dumps(env.reset_geometry_audit,indent=2)+'\n')
+         free,total=torch.cuda.mem_get_info()
+         (log_path/'runtime_stats.json').write_text(json.dumps(dict(iteration=current_it,gpu=torch.cuda.get_device_name(),
+             torch_peak_allocated_MiB=torch.cuda.max_memory_allocated()/2**20,
+@@ -797,6 +801,7 @@
+     if log_f.tell() == 0:
+         log_f.write("iteration,wall_h,sim_steps,wm_loss,wm_err8,pi_loss,v_loss,imag_rew,pi_gradnorm,imag_survival,sim_rew,ep_len,ep_ret_norm,term_frac,it_per_s,lr,head_rms_deg,head_penalty_norm,foot_actor_gradnorm,goal_sync_max_error,reward_sync_max_error,completed_episodes\n")
+     t_log = time.time()
++    last_log_iteration=start_it
+     agg = {"wm": [], "wm8": [], "pi": [], "v": [], "ir": [], "gn": [], "surv": [], 'fgn': []}
+     diag_agg={}
+     try:
+@@ -834,9 +839,10 @@
+                     print(f"[prof] collect {1e3*(tp1-tp0):.0f} ms ({n} steps) | wm {1e3*(tp2-tp1):.0f} ms | policy+critic {1e3*(tp3-tp2):.0f} ms", flush=True)
+                 agg["pi"].append(pl), agg["v"].append(vl), agg["ir"].append(ir), agg["gn"].append(gn), agg["surv"].append(surv)
+                 if args.check_foot_gradients or audit_gradients: agg['fgn'].append(fgn)
+-            if (it + 1) % args.log_every == 0:
++            if (it + 1) % args.log_every == 0 or (stair_cfg and it==start_it):
+                 mean = lambda x: float(sum(float(v) for v in x) / max(len(x), 1))  # noqa: E731
+-                ips = args.log_every / (time.time() - t_log)
++                ips = ((it+1-last_log_iteration) if stair_cfg else args.log_every) / (time.time() - t_log)
++                last_log_iteration=it+1
+                 t_log = time.time()
+                 wall_h = elapsed() / 3600
+                 term_frac = float(sum(float(v) for v in stats["term"]) / max(sum(float(v) for v in stats["done"]), 1))
+@@ -858,7 +864,7 @@
+                 stats = {k: [] for k in stats}
+                 agg = {k: [] for k in agg}
+             current_it = it+1
+-            if stair_cfg and current_it % args.log_every==0:
++            if stair_cfg and (current_it % args.log_every==0 or current_it==start_it+1):
+                 free,total=torch.cuda.mem_get_info()
+                 if args.max_device_memory_mib is not None and (total-free)/2**20>=args.max_device_memory_mib:
+                     STOP_REQUESTED=True
+@@ -939,7 +945,7 @@
+             if curriculum and current_it == args.wm_only_iters:
+                 save_checkpoint('wm_calibrated')
+                 print(f'WM-only phase complete at iteration {current_it}; saved wm_calibrated.pt; Actor/Critic updates begin next iteration',flush=True)
+-            elif current_it % args.ckpt_every == 0 or current_it == args.iterations:
++            elif current_it % args.ckpt_every == 0 or current_it == args.iterations or (stair_cfg and current_it==start_it+1):
+                 save_checkpoint()
+             if args.m34_dataset and args.m34_eval_every and current_it % args.m34_eval_every == 0:
+                 # No restart/refill: replay, optimizer, RNG and simulator state

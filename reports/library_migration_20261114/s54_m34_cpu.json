@@ -1,0 +1,29 @@
+{
+  "status": "PASS",
+  "train_only_npz_opened": 14,
+  "frames": 13714,
+  "fk": {
+    "samples": 32,
+    "all_bodies": 30,
+    "max_pos_m": 6.831885433793013e-07,
+    "max_rot_rad": 2.6250103326546295e-07,
+    "max_linvel_m_s": 7.680361817096197e-07,
+    "max_angvel_rad_s": 8.724276602037522e-07
+  },
+  "algorithm": {
+    "state_dim": 71,
+    "obs_dim": 99,
+    "goal_frame_dim": 73,
+    "xi_dim": 33,
+    "critic_dim": 330,
+    "roundtrip_max_error": 5.960464477539063e-08,
+    "wm_loss": 0.008609567768871784,
+    "pi_loss": -0.6855405569076538,
+    "v_loss": 0.5701245665550232,
+    "wm_gradnorm": 0.12079521268606186,
+    "pi_gradnorm": 0.026152340695261955,
+    "v_gradnorm": 2.4893264770507812,
+    "imagined_horizon": 8,
+    "warning": "CPU one-update gradient/shape diagnostic with reference increments; not Newton training or evaluation"
+  }
+}

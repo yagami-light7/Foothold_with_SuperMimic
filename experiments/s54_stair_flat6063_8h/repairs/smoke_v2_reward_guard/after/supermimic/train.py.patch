@@ -1,0 +1,30 @@
+--- supermimic/train.py (v2)
++++ supermimic/train.py (v3)
+@@ -360,7 +360,8 @@
+             stair_sha256(args.init_from_flat)!=stair_cfg['source_checkpoint_sha256']):
+         raise ValueError('Flat initialization differs from the pinned experiment checkpoint')
+     transfer=torch.load(args.init_from_flat,map_location=dev,weights_only=False)
+-    transfer_report=initialize_flat(transfer,wm,pi,physics_metadata,goal_spec,Hh)
++    transfer_report=initialize_flat(transfer,wm,pi,physics_metadata,goal_spec,Hh,
++        normalizer_policy=stair_cfg.get('normalizer_policy','frozen_source'))
+     transfer_report['source_path']=str(Path(args.init_from_flat).resolve())
+     (log_path/'flat_to_stair_transfer.json').write_text(json.dumps(transfer_report,indent=2))
+     print('T1.5: Flat WM+MotionEncoder+SharedDecoder+normalizers copied; fresh reward-specific Critic/optimizers/replay',flush=True)
+@@ -687,7 +688,7 @@
+             fresh = env.ep_step == 0
+             obs_hist = torch.where(fresh[:, None, None], o.unsqueeze(1).expand_as(obs_hist), torch.cat((obs_hist[:, 1:], o.unsqueeze(1)), 1))
+             g = goals.goal(S, env.f, env.ep_step, env.command)
+-            if not stair_cfg:
++            if not stair_cfg or stair_cfg.get('normalizer_policy')=='source_online':
+                 pi.obs_norm.update(o)
+                 pi.goal_norm.update(g)
+             a = pi(obs_hist, g)
+@@ -711,7 +712,7 @@
+             buffer.add(out)
+             if curriculum: curriculum.observe(out['command'],out['ep_step'])
+             S0, S1 = unflatten_state(out["s"]), unflatten_state(out["s1"])
+-            if not stair_cfg:
++            if not stair_cfg or stair_cfg.get('normalizer_policy')=='source_online':
+                 wm.in_norm.update(wm.inputs(S0, out["a"], normalize_xi(out["xi"])))
+                 wm.out_norm.update(wm.targets(S0, S1))
+             sim_steps += args.num_envs

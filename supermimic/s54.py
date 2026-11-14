@@ -7,10 +7,10 @@ import mujoco
 import numpy as np
 
 REPO = Path(__file__).resolve().parents[1]
-SOURCE_MJCF = REPO / "data/s54_description/xml/biped_s54.xml"
-MJCF_PATH = REPO / "data/s54_description/xml/s54_sim.xml"
-URDF_PATH = REPO / "data/s54_description/urdf/biped_s54.urdf"
-USD_DIR = REPO / "data/s54_newton_usd"
+SOURCE_MJCF = REPO / "library/model/kuavo_s54/xml/biped_s54.xml"
+MJCF_PATH = REPO / "library/model/kuavo_s54/xml/s54_sim.xml"
+URDF_PATH = REPO / "library/model/kuavo_s54/urdf/biped_s54.urdf"
+USD_DIR = REPO / "library/model/kuavo_s54/usd"
 USD_PATH = USD_DIR / "s54_sim/s54_sim.usda"
 ROBOT_ID = "kuavo_s54_leju_gmr_v1"
 SOURCE_FPS = 30.0

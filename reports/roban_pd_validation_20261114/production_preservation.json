@@ -1,0 +1,22 @@
+{
+  "supermimic/roban.py": {
+    "sha256": "0f39da8800155822a0503802b1085d3753bfa6bfdda429c4bb8fc0d24387a620",
+    "unchanged_since_architecture_validation": true
+  },
+  "supermimic/robot.py": {
+    "sha256": "4158f7cccf54f2f9d5f1f2f5262e81b2ec5f20d3325fd917a592010f7e41c0f1",
+    "unchanged_since_architecture_validation": true
+  },
+  "supermimic/env.py": {
+    "sha256": "f1141a5d04bba067f2e8cca61ea14a63f147757ebca714efc953f6a563b4b48b",
+    "unchanged_since_architecture_validation": true
+  },
+  "supermimic/transfer.py": {
+    "sha256": "6a32efa5b849b40bf000537ac409546f4a1e810e0019c8b5a8c9476bc0abfc42",
+    "unchanged_since_architecture_validation": true
+  },
+  "supermimic/train.py": {
+    "sha256": "ae5e6d51270faa769dd27d7e77fcae939a3a655ccfba7730b16929f74ec3885a",
+    "unchanged_since_architecture_validation": true
+  }
+}

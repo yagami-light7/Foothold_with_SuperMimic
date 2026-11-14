@@ -1,0 +1,45 @@
+{
+  "motion": {
+    "source_frames": 11785,
+    "clips": [
+      "dance1_subject1",
+      "walk1_subject1"
+    ],
+    "source_fps": 30.0,
+    "control_frames": 19640,
+    "control_fps": 50
+  },
+  "fk": {
+    "samples": 16,
+    "all_bodies": 30,
+    "max_pos_m": 7.376721392911473e-07,
+    "max_rot_rad": 2.0628143589297129e-07,
+    "max_linvel_m_s": 8.875337875148961e-07,
+    "max_angvel_rad_s": 1.1023996853927264e-06
+  },
+  "contacts": {
+    "backend": "native MuJoCo CPU only",
+    "feet_contacted": [
+      "leg_l6_link",
+      "leg_r6_link"
+    ],
+    "max_normal_and_tangent_force_N": 4725.264556909042,
+    "root_drop_m": 0.9479232044254862
+  },
+  "core": {
+    "state_dim": 71,
+    "obs_dim": 99,
+    "goal_frame_dim": 73,
+    "xi_dim": 33,
+    "critic_dim": 330,
+    "roundtrip_max_error": 5.960464477539063e-08,
+    "wm_loss": 0.009315812028944492,
+    "pi_loss": -0.6640366315841675,
+    "v_loss": 0.5668801069259644,
+    "wm_gradnorm": 0.06564664095640182,
+    "pi_gradnorm": 0.02294778637588024,
+    "v_gradnorm": 2.655085563659668,
+    "imagined_horizon": 8,
+    "warning": "CPU one-update gradient/shape diagnostic with reference increments; not Newton training or evaluation"
+  }
+}

@@ -8,7 +8,7 @@ import torch
 
 from .mdp import OBS_DIM, MOTION_OBS_DIM, STATE_DIM, INV_DIM, RewardCfg, motion_reward_contract
 from .motion import CONTROL_DT
-from .s54 import (JOINT_NAMES, NUM_J, XI_DIM, MJCF_PATH, checkpoint_contract,
+from .robot_contract import (JOINT_NAMES, NUM_J, XI_DIM, MJCF_PATH, checkpoint_contract,
                   assert_checkpoint, actuator_parameters)
 
 SIMULATION = dict(num_substeps=4, njmax=500, nconmax=128, cone='pyramidal',
@@ -24,7 +24,7 @@ def physical_contract(obs_dim=OBS_DIM):
     return dict(version=1, robot=checkpoint_contract(), state_dim=STATE_DIM,
                 state='root_link_world_pose_velocity; canonical_q_qd; quaternion_wxyz',
                 obs_dim=obs_dim, action_dim=NUM_J, xi_dim=XI_DIM, wm_input=INV_DIM+NUM_J+XI_DIM,
-                wm_output=70, control_dt=CONTROL_DT, gravity=[0.,0.,-9.81], solver=SIMULATION,
+                wm_output=12+2*NUM_J, control_dt=CONTROL_DT, gravity=[0.,0.,-9.81], solver=SIMULATION,
                 sim_mjcf_sha256=hashlib.sha256(MJCF_PATH.read_bytes()).hexdigest(),
                 actuators=params, action_scale=[.25*params[n]['effort']/params[n]['stiffness'] for n in JOINT_NAMES],
                 backend_versions=versions)
@@ -33,10 +33,15 @@ def physical_contract(obs_dim=OBS_DIM):
 def policy_contract(hist, adapter='identity', decoder_trainable=True, *, obs_dim=OBS_DIM, observation_mode='legacy_v1'):
     if adapter not in ('identity', 'mask_reference_orientation'):
         raise ValueError('Unknown observation adapter')
+    if observation_mode == 'roban_proprio_v1':
+        if obs_dim != 3*NUM_J+6 or adapter != 'identity':
+            raise ValueError('Roban actor uses only proprioception')
+        return dict(version=3,hist=hist,obs_dim=obs_dim,z_dim=32,action_dim=NUM_J,
+                    obs_adapter=adapter,decoder_trainable=decoder_trainable,observation_mode=observation_mode)
     expected_dim = MOTION_OBS_DIM if observation_mode == 'root_xy_heading_v2' else OBS_DIM
     if observation_mode not in ('legacy_v1', 'root_xy_heading_v2') or obs_dim != expected_dim:
         raise ValueError('Policy observation mode/dimension mismatch')
-    value = dict(version=1, hist=hist, obs_dim=obs_dim, z_dim=32, action_dim=29,
+    value = dict(version=1, hist=hist, obs_dim=obs_dim, z_dim=32, action_dim=NUM_J,
                 obs_adapter=adapter, decoder_trainable=decoder_trainable,
                 obs_reference_masked_channels=list(range(93,99)) if adapter != 'identity' else [])
     if observation_mode != 'legacy_v1':

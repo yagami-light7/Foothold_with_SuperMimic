@@ -1,0 +1,64 @@
+--- before/tools/test_s54_stair_experiment.py
++++ after/tools/test_s54_stair_experiment.py
+@@ -19,6 +19,7 @@
+ from supermimic.stair_evaluation import evaluate_checkpoint
+ from sync_swanlab import evaluation_metrics
+ from t15_launch import training_command
++from supermimic.stair_reset import TerrainResetValidator,segment_box_distance_squared
+ 
+ 
+ class StairExperimentTests(unittest.TestCase):
+@@ -87,6 +88,53 @@
+         for key in ['num_envs','buffer_steps','wm_batch','wm_batches','pi_batch','horizon','lr','actor_lr','warmup_steps']:
+             self.assertEqual(smoke[key],cfg[key])
+ 
++    def test_segment_box_distance_handles_crossing_parallel_and_point(self):
++        start=torch.tensor([[-2.,2.,0.],[-2.,0.,0.],[2.,2.,2.]])
++        end=torch.tensor([[2.,2.,0.],[2.,0.,0.],[2.,2.,2.]])
++        distance=segment_box_distance_squared(start,end,torch.full_like(start,-1.),torch.ones_like(start))
++        self.assertTrue(torch.allclose(distance,torch.tensor([1.,0.,3.])))
++
++    def test_saved_reset_explosions_are_rejected_before_physics(self):
++        capture=ROOT/'logs/s54_stair_flat6063_smoke_v3/failure_physics_transition.pt'
++        if not capture.exists():self.skipTest('Local v3 diagnostic capture unavailable')
++        from supermimic.stair_training import library
++        from supermimic.mdp import unflatten_state
++        kin=S54Kinematics('cpu');motion=library(self.cfg,kin,'cpu')
++        validator=TerrainResetValidator(kin,self.cfg['terrain'],clearance=-.001,max_attempts=64)
++        data=torch.load(capture,map_location='cpu',weights_only=False)
++        state=unflatten_state(data['s']);original=data['s'].clone()
++        self.assertFalse(validator.valid(state).any())
++        torch.manual_seed(54)
++        accepted=validator.condition(state,motion.ref_state(data['f']))
++        self.assertTrue(validator.valid(accepted).all())
++        self.assertTrue(torch.equal(data['s'],original))
++
++    def test_all_stair_nominal_frames_meet_original_geometry_tolerance(self):
++        kin=S54Kinematics('cpu')
++        motion=load_stairs(self.cfg['bundle'],kin,'cpu',ids=['stair_up_4'],npz_path=self.cfg['stair_npz'])
++        validator=TerrainResetValidator(kin,self.cfg['terrain'],clearance=-.001)
++        self.assertTrue(validator.valid(motion.ref_state(torch.arange(436))).all())
++
++    def test_mesh_flat_ground_preserves_original_box_surfaces(self):
++        import numpy as np
++        from supermimic.stair_runtime import flat_zone_mesh
++        from supermimic.stair_data import geometry_tools
++        mesh=flat_zone_mesh()
++        self.assertTrue(np.array_equal(mesh.bounds,np.array([[8.,-12.,-.1],[32.,12.,0.]])))
++        rng=np.random.default_rng(54)
++        points=rng.uniform([8.,-12.],[32.,12.],(1024,2))
++        self.assertTrue(np.all(geometry_tools().top_surface(mesh,points)==0.))
++        self.assertTrue(mesh.is_watertight)
++        self.assertAlmostEqual(mesh.volume,24*24*.1)
++
++    def test_newton_contact_refresh_preserves_clock_and_substeps(self):
++        from supermimic.stair_runtime import make_stair_sim
++        cfg=make_stair_sim('cuda:0',SimpleNamespace())
++        self.assertEqual(cfg.dt,.02)
++        self.assertEqual(cfg.physics.num_substeps,4)
++        self.assertEqual(cfg.physics.collision_decimation,1)
++        self.assertFalse(cfg.physics.solver_cfg.use_mujoco_contacts)
++
+     def test_seed_list_becomes_separate_cli_arguments(self):
+         command=training_command({'m34_eval_seeds':[0,1,2],'no_compile':True},'python')
+         self.assertEqual(command[command.index('--m34_eval_seeds')+1:][:3],['0','1','2'])

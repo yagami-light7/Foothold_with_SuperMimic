@@ -22,10 +22,10 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationContext
 from isaaclab.utils import configclass, instantiate, replace
 
-from .mdp import MAX_STEP_REWARD, MDP, flatten_state
+from .mdp import MAX_STEP_REWARD, MDP, flatten_state, unflatten_state
 from .motion import CONTROL_DT, MotionLib
-from .robot import S54_CFG, action_scale
-from .s54 import (JOINT_NAMES, NUM_J, XI_DIM, JOINT_OFFSET, COM_OFFSET, COM_BODY,
+from .robot import ROBOT_CFG, action_scale
+from .robot_contract import (ROBOT_KIND, REPO, JOINT_NAMES, NUM_J, XI_DIM, JOINT_OFFSET, COM_OFFSET, COM_BODY, FOOT_BODY_NAMES,
                   TRACKED_BODIES, ROOT_BODY, name_mapping, USD_PATH, MJCF_PATH, checkpoint_contract)
 from .rotations import mat_to_quat, quat_to_mat, so3_exp
 from .goals import GoalSource
@@ -34,8 +34,10 @@ from .transfer import SIMULATION
 
 @configclass
 class TrackingSceneCfg(InteractiveSceneCfg):
-    ground = AssetBaseCfg(prim_path="/World/ground", spawn=sim_utils.GroundPlaneCfg())
-    robot = replace(S54_CFG, prim_path="{ENV_REGEX_NS}/Robot")
+    ground = AssetBaseCfg(prim_path="/World/ground", spawn=(
+        sim_utils.GroundPlaneCfg(usd_path=str(REPO/'configs/roban/flat_ground.usda'), color=None)
+        if ROBOT_KIND == 'roban' else sim_utils.GroundPlaneCfg()))
+    robot = replace(ROBOT_CFG, prim_path="{ENV_REGEX_NS}/Robot")
 
 
 def make_sim(device: str, args) -> SimulationContext:
@@ -75,8 +77,8 @@ class TrackingSim:
         canonical_to_sim, sim_to_canonical = name_mapping(self.robot.joint_names)
         self.canonical_to_sim = torch.tensor(canonical_to_sim, device=self.device)
         self.sim_to_canonical = torch.tensor(sim_to_canonical, device=self.device)
-        assert all(n in self.robot.body_names for n in TRACKED_BODIES)
-        print("S54 mapping (canonical CSV → simulator):", dict(zip(JOINT_NAMES, canonical_to_sim)), flush=True)
+        assert all(n in self.robot.body_names for n in (TRACKED_BODIES if ROBOT_KIND == 's54' else [ROOT_BODY, COM_BODY, *FOOT_BODY_NAMES]))
+        print("Robot mapping (canonical reference → simulator):", dict(zip(JOINT_NAMES, canonical_to_sim)), flush=True)
         self.N = num_envs
         self.motion, self.mdp, self.gamma = motion, mdp, gamma
         self.goals = goals if goals is not None else GoalSource(motion, mdp.kin)
@@ -212,6 +214,8 @@ class TrackingSim:
                  torch.empty(n, device=dev).uniform_(-0.78, 0.78)), -1)  # fmt: skip
             q = q + torch.empty_like(q).uniform_(-0.1, 0.1)
         q = torch.clamp(q, self.mdp.kin.q_lo, self.mdp.kin.q_hi)
+        if not self.mdp.is_foot:
+            p,R,v,w,q,qd=self.prepare_motion_reset((p,R,v,w,q,qd),frames)
         quat = mat_to_quat(R)
         pose = torch.cat((p + self.scene.env_origins[env_ids], quat[:, 1:4], quat[:, 0:1]), -1)
         self.robot.write_root_link_pose_to_sim_index(root_pose=pose, env_ids=env_ids)
@@ -241,6 +245,10 @@ class TrackingSim:
             self.command_id[env_ids] = torch.arange(n, device=dev) + self._next_command_id
             self._next_command_id += n
 
+    def prepare_motion_reset(self,state,frames):
+        """Optional terrain feasibility hook; original Flat resets are unchanged."""
+        return state
+
     def refresh(self):
         """Propagate written states so that ``state()`` is consistent after a reset."""
         self.sim.forward()
@@ -266,8 +274,10 @@ class TrackingSim:
         self.sim.step(render=False)
         self.scene.update(CONTROL_DT)
         S1 = self.state()
+        saved_s1=flatten_state(S1)
+        reward_state=(unflatten_state(saved_s1) if getattr(self.mdp,'canonical_replay_reward',False) else S1)
         f1 = f + 1
-        r, terms = self.mdp.reward(S1, f1, a, a_prev, terms=True, command=command, ep_step=ep_step+1)
+        r, terms = self.mdp.reward(reward_state, f1, a, a_prev, terms=True, command=command, ep_step=ep_step+1)
         term = self.mdp.termination(S1, f1, command=command, ep_step=ep_step+1)
         timeout = ep_step + 1 >= self.max_episode_steps
         if not self.mdp.is_foot:
@@ -275,7 +285,7 @@ class TrackingSim:
             timeout = timeout | (f1 >= clip_end)
         done = term | timeout
         out = {
-            "s": flatten_state(S), "a": a.clone(), "a_prev": a_prev, "f": f, "s1": flatten_state(S1), "r": r,
+            "s": flatten_state(S), "a": a.clone(), "a_prev": a_prev, "f": f, "s1": saved_s1, "r": r,
             "term": term, "timeout": timeout, "done": done, "ep_step": ep_step, "xi": xi, "terms": terms,
         }  # fmt: skip
         if self.goals.is_foot:

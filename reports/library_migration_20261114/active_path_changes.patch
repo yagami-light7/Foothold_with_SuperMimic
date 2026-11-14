@@ -1,0 +1,458 @@
+--- before/supermimic/s54.py
++++ supermimic/s54.py
+@@ -7,10 +7,10 @@
+ import numpy as np
+ 
+ REPO = Path(__file__).resolve().parents[1]
+-SOURCE_MJCF = REPO / "data/s54_description/xml/biped_s54.xml"
+-MJCF_PATH = REPO / "data/s54_description/xml/s54_sim.xml"
+-URDF_PATH = REPO / "data/s54_description/urdf/biped_s54.urdf"
+-USD_DIR = REPO / "data/s54_newton_usd"
++SOURCE_MJCF = REPO / "library/model/kuavo_s54/xml/biped_s54.xml"
++MJCF_PATH = REPO / "library/model/kuavo_s54/xml/s54_sim.xml"
++URDF_PATH = REPO / "library/model/kuavo_s54/urdf/biped_s54.urdf"
++USD_DIR = REPO / "library/model/kuavo_s54/usd"
+ USD_PATH = USD_DIR / "s54_sim/s54_sim.usda"
+ ROBOT_ID = "kuavo_s54_leju_gmr_v1"
+ SOURCE_FPS = 30.0
+--- before/supermimic/evaluate.py
++++ supermimic/evaluate.py
+@@ -40,7 +40,7 @@
+ add_launcher_args(parser)
+ args = parser.parse_args()
+ saved_config = json.loads(open(os.path.join(args.run_dir, 'args.json')).read())
+-args.motion_dir = args.motion_dir or saved_config.get('motion_dir') or os.path.join(REPO, 'data/retarget_data/reference_startup_fixed')
++args.motion_dir = args.motion_dir or saved_config.get('motion_dir') or os.path.join(REPO, 'library/motion_reference/kuavo_s54/retarget_data/reference_startup_fixed')
+ from supermimic.reference_selection import select_reference_files
+ foot_run = saved_config.get('goal_mode','motion') == 'foot_trajectory'
+ if not foot_run and (args.duration_s is not None or args.seeds or args.reset_noise or args.diagnostics or args.controller != 'policy'):
+--- before/supermimic/train.py
++++ supermimic/train.py
+@@ -59,7 +59,7 @@
+ parser.add_argument("--lr_decay_iters", type=int, default=250_000)
+ parser.add_argument("--ckpt_every", type=int, default=30)
+ parser.add_argument("--log_every", type=int, default=10)
+-parser.add_argument("--motion_dir", type=str, default=os.path.join(REPO, "data", "retarget_data", "reference_startup_fixed"))
++parser.add_argument("--motion_dir", type=str, default=os.path.join(REPO, "library", "motion_reference", "kuavo_s54", "retarget_data", "reference_startup_fixed"))
+ parser.add_argument('--m34_dataset', help='M3.4 dataset_export root; strictly train split, native 50 Hz NPZ')
+ parser.add_argument('--m34_straight_iters', type=int, default=1000, help='Straight emphasis before equal three-class sampling')
+ parser.add_argument('--m34_eval_every', type=int, default=1000, help='Independent frozen train/test Newton eval interval; 0 disables')
+--- before/tools/render_s54_m34_eval.py
++++ tools/render_s54_m34_eval.py
+@@ -137,7 +137,7 @@
+ def main():
+     parser = argparse.ArgumentParser(description=__doc__)
+     parser.add_argument('--evaluation', type=Path, required=True, help='Completed per-split results.json')
+-    parser.add_argument('--dataset', type=Path, default=Path('data/s54_flat_dataset/dataset_export'))
++    parser.add_argument('--dataset', type=Path, default=Path('library/motion_reference/kuavo_s54/datasets/s54_flat_dataset/dataset_export'))
+     parser.add_argument('--out', type=Path, required=True)
+     parser.add_argument('--width', type=int, default=960)
+     parser.add_argument('--height', type=int, default=540)
+--- before/tools/run_s54_smoke.sh
++++ tools/run_s54_smoke.sh
+@@ -14,12 +14,12 @@
+ python tools/mjcf_to_usd.py | tee results/s54/import.log
+ python tools/test_env_s54.py --num_envs 1 | tee results/s54/newton_1env.log
+ python tools/test_env_s54.py --num_envs 16 | tee results/s54/newton_16env.log
+-python supermimic/train.py --motion_dir data/retarget_data/reference --log_dir logs/s54_smoke \
++python supermimic/train.py --motion_dir library/motion_reference/kuavo_s54/retarget_data/reference --log_dir logs/s54_smoke \
+   --num_envs 16 --iterations 30 --buffer_steps 64 --warmup_steps 32 \
+   --wm_window 8 --wm_batches 1 --wm_batch 64 --pi_batch 32 --horizon 8 --wm_only_iters 10 \
+   --ckpt_every 30 --log_every 10 --amp bf16 --no_compile 2>&1 | tee logs/s54_smoke/stdout.log
+ python tools/check_s54_run.py
+-python supermimic/evaluate.py --run_dir logs/s54_smoke --motion_dir data/retarget_data/reference \
++python supermimic/evaluate.py --run_dir logs/s54_smoke --motion_dir library/motion_reference/kuavo_s54/retarget_data/reference \
+   --ckpt logs/s54_smoke/ckpt_000030.pt --record logs/s54_smoke/traj_30.npz | tee logs/s54_smoke/evaluate.log
+ python tools/check_s54_run.py --require_eval
+ MUJOCO_GL=egl python tools/render.py logs/s54_smoke/traj_30.npz logs/s54_smoke/dance_30.mp4 \
+--- before/tools/repair_s54_collisions.py
++++ tools/repair_s54_collisions.py
+@@ -18,8 +18,8 @@
+ 
+ def main():
+     p = argparse.ArgumentParser(description=__doc__)
+-    p.add_argument('--input_dir', type=Path, default=REPO / 'data/retarget_data/reference_grounded')
+-    p.add_argument('--out_dir', type=Path, default=REPO / 'data/retarget_data/reference_safe')
++    p.add_argument('--input_dir', type=Path, default=REPO / 'library/motion_reference/kuavo_s54/retarget_data/reference_grounded')
++    p.add_argument('--out_dir', type=Path, default=REPO / 'library/motion_reference/kuavo_s54/retarget_data/reference_safe')
+     p.add_argument('--clips', nargs='+')
+     p.add_argument('--all', action='store_true')
+     p.add_argument('--skip_existing', action='store_true')
+@@ -28,7 +28,7 @@
+     p.add_argument('--collision_config', type=Path, default=REPO / 'configs/s54_self_collision.json')
+     a = p.parse_args()
+     src, out = a.input_dir.resolve(), a.out_dir.resolve()
+-    if not out.is_relative_to(REPO) or out == src or out in (REPO, REPO / 'data', REPO / 'data/retarget_data'):
++    if not out.is_relative_to(REPO) or out == src or out in (REPO, REPO / 'library', REPO / 'library/motion_reference/kuavo_s54/retarget_data'):
+         p.error('Use a separate output directory inside the S54 workspace')
+     if not a.clips and not a.all:
+         p.error('Select --clips or --all')
+--- before/tools/generate_s54_reference.py
++++ tools/generate_s54_reference.py
+@@ -128,7 +128,7 @@
+     select.add_argument('--clips', nargs='+', help='Clip stems or quoted glob patterns, e.g. walk1_subject1 or "walk*"')
+     select.add_argument('--all', action='store_true', help='Generate all local LAFAN1 BVHs sequentially')
+     p.add_argument('--exclude', nargs='*', default=[], help='Clip stems or glob patterns to exclude')
+-    p.add_argument('--out_dir', type=Path, default=REPO / 'data/retarget_data/reference_startup_fixed')
++    p.add_argument('--out_dir', type=Path, default=REPO / 'library/motion_reference/kuavo_s54/retarget_data/reference_startup_fixed')
+     p.add_argument('--config', type=Path, default=REPO / 'configs/s54_upper_body_retarget.json')
+     p.add_argument('--ground_config', type=Path, default=REPO / 'configs/s54_grounding.json')
+     p.add_argument('--collision_config', type=Path, default=REPO / 'configs/s54_self_collision.json')
+@@ -140,10 +140,10 @@
+     p.add_argument('--dry_run', action='store_true', help='List selected clips and outputs without running IK')
+     p.add_argument('--max_frames', type=int, help='Explicit prefix probe, not a full clip export')
+     a = p.parse_args()
+-    root = (a.bvh_dir or REPO / 'data/retarget_data/raw').resolve()
++    root = (a.bvh_dir or REPO / 'library/motion_reference/kuavo_s54/retarget_data/raw').resolve()
+     out = a.out_dir.resolve()
+     if (not out.is_relative_to(REPO)
+-            or out in (REPO, REPO / 'data', REPO / 'data/retarget_data')
++            or out in (REPO, REPO / 'library', REPO / 'library/motion_reference/kuavo_s54/retarget_data')
+             or out == root or root in out.parents):
+         p.error('Use an independent output directory inside the S54 workspace')
+     if a.max_frames is not None and a.max_frames < 2:
+--- before/tools/test_s54_m34.py
++++ tools/test_s54_m34.py
+@@ -14,7 +14,7 @@
+ 
+ 
+ def main():
+-    root = Path('data/s54_flat_dataset/dataset_export')
++    root = Path('library/motion_reference/kuavo_s54/datasets/s54_flat_dataset/dataset_export')
+     opened = []
+     original = np.load
+     def guarded(path, *args, **kwargs):
+--- before/tools/test_reset.py
++++ tools/test_reset.py
+@@ -10,7 +10,7 @@
+ from supermimic.motion import MotionLib
+ from supermimic.s54 import default_joint_pos_list, NUM_J, XI_DIM
+ dev = "cuda:0"
+-kin = S54Kinematics(dev); motion = MotionLib.from_dir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "retarget_data", "reference"), kin, dev)
++kin = S54Kinematics(dev); motion = MotionLib.from_dir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "library", "motion_reference", "kuavo_s54", "retarget_data", "reference"), kin, dev)
+ mdp = MDP(kin, motion, torch.tensor(default_joint_pos_list(), device=dev))
+ sim_cfg = make_sim(dev, args)
+ with launch_simulation(sim_cfg, args):
+--- before/tools/test_foot_trajectory.py
++++ tools/test_foot_trajectory.py
+@@ -13,7 +13,7 @@
+ from supermimic.foot_trajectory import AlternatingConfig, FootstepCommand, query, sample_alternating
+ from supermimic.goals import GoalSource, GoalSpec, foot_goal, resolve_goal_config
+ from supermimic.rotations import axis_angle_to_mat, mat_to_quat, quat_to_mat, so3_exp, yaw_mat
+-MOTION_DIR = 'data/retarget_data/reference_startup_fixed'
++MOTION_DIR = 'library/motion_reference/kuavo_s54/retarget_data/reference_startup_fixed'
+ 
+ 
+ def command(B=2, dtype=torch.float64):
+@@ -266,7 +266,7 @@
+ 
+ if __name__=='__main__':
+     parser=argparse.ArgumentParser(description=__doc__)
+-    parser.add_argument('--motion_dir',default='data/retarget_data/reference_startup_fixed')
++    parser.add_argument('--motion_dir',default='library/motion_reference/kuavo_s54/retarget_data/reference_startup_fixed')
+     parser.add_argument('--out',default='results/s54/foot_trajectory_cpu.json')
+     args,remaining=parser.parse_known_args();MOTION_DIR=args.motion_dir
+     torch.set_num_threads(4)
+--- before/tools/test_env_s54.py
++++ tools/test_env_s54.py
+@@ -6,7 +6,7 @@
+ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+ from isaaclab.app import add_launcher_args, launch_simulation
+ p=argparse.ArgumentParser();p.add_argument('--num_envs',type=int,default=1);p.add_argument('--steps',type=int,default=60)
+-p.add_argument('--motion_dir',default='data/retarget_data/reference');p.add_argument('--out',default=None)
++p.add_argument('--motion_dir',default='library/motion_reference/kuavo_s54/retarget_data/reference');p.add_argument('--out',default=None)
+ add_launcher_args(p);args=p.parse_args()
+ if not 1<=args.num_envs<=16:p.error('S54 initial smoke is limited to 1–16 envs')
+ if not 20<=args.steps<=100:p.error('Use 20–100 steps')
+--- before/tools/compare_s54_reference.py
++++ tools/compare_s54_reference.py
+@@ -26,7 +26,7 @@
+ 
+ def main():
+     p = argparse.ArgumentParser(description=__doc__)
+-    p.add_argument('--candidate_dir', type=Path, default=Path('data/retarget_data/reference_startup_fixed'))
++    p.add_argument('--candidate_dir', type=Path, default=Path('library/motion_reference/kuavo_s54/retarget_data/reference_startup_fixed'))
+     p.add_argument('--baseline', type=Path, help='Baseline PKL/CSV; defaults to candidate_dir/baseline/<clip>_30fps.pkl')
+     p.add_argument('--clip', default='dance1_subject1')
+     p.add_argument('--out', type=Path, default=Path('results/s54/upper_body_comparison.mp4'))
+--- before/tools/bench.py
++++ tools/bench.py
+@@ -10,7 +10,7 @@
+ torch.backends.cuda.matmul.allow_tf32 = True
+ dev = "cuda:0"
+ kin = S54Kinematics(dev)
+-motion = MotionLib.from_dir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "retarget_data", "reference"), kin, dev)
++motion = MotionLib.from_dir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "library", "motion_reference", "kuavo_s54", "retarget_data", "reference"), kin, dev)
+ mdp = MDP(kin, motion, torch.tensor(default_joint_pos_list(), device=dev))
+ wm = WorldModel().to(dev)
+ B = 2048
+--- before/tools/preview_s54_reference.py
++++ tools/preview_s54_reference.py
+@@ -19,7 +19,7 @@
+ 
+ def main():
+  p=argparse.ArgumentParser();p.add_argument('--seconds',type=float,default=5);p.add_argument('--start',type=float,default=0)
+- p.add_argument('--motion_dir',default='data/retarget_data/reference_startup_fixed');p.add_argument('--clip',help='Clip stem; defaults to the first clip')
++ p.add_argument('--motion_dir',default='library/motion_reference/kuavo_s54/retarget_data/reference_startup_fixed');p.add_argument('--clip',help='Clip stem; defaults to the first clip')
+  p.add_argument('--width',type=int,default=480);p.add_argument('--height',type=int,default=360);p.add_argument('--fps',type=int,default=30)
+  p.add_argument('--out',default='results/s54/reference_preview.mp4');a=p.parse_args()
+  torch.set_num_threads(4);motion=MotionLib.from_dir(a.motion_dir,S54Kinematics(),'cpu')
+--- before/tools/test_s54_self_collision.py
++++ tools/test_s54_self_collision.py
+@@ -14,7 +14,7 @@
+ 
+ 
+ def main():
+-    source = REPO / 'data/retarget_data/reference_grounded/dance1_subject1.csv'
++    source = REPO / 'library/motion_reference/kuavo_s54/retarget_data/reference_grounded/dance1_subject1.csv'
+     q = np.loadtxt(source, delimiter=',', ndmin=2)[:, 7:34]
+     model, _ = model_contract()
+     g = CollisionGeometry(model)
+--- before/tools/copy_s54_sources.py
++++ tools/copy_s54_sources.py
+@@ -18,14 +18,14 @@
+ 
+ def main():
+     p=argparse.ArgumentParser();p.add_argument('--gmr',type=Path,default=REPO.parent/'Leju-GMR');a=p.parse_args()
+-    src=a.gmr/'assets/kuavo_s54';dst=REPO/'data/s54_description'
++    src=a.gmr/'assets/kuavo_s54';dst=REPO/'library/model/kuavo_s54'
+     copy_same_or_new(src/'xml/biped_s54.xml',dst/'xml/biped_s54.xml')
+     copy_same_or_new(src/'urdf/biped_s54.urdf',dst/'urdf/biped_s54.urdf')
+     for mesh in (src/'meshes').rglob('*'):
+         if mesh.is_file():copy_same_or_new(mesh,dst/'meshes'/mesh.relative_to(src/'meshes'))
+     motions=sorted((a.gmr/'assets/lafan1_bvh').glob('*.bvh'))
+     if not motions:raise FileNotFoundError(a.gmr/'assets/lafan1_bvh')
+-    for motion in motions:copy_same_or_new(motion,REPO/'data/retarget_data/raw'/motion.name)
++    for motion in motions:copy_same_or_new(motion,REPO/'library/motion_reference/kuavo_s54/retarget_data/raw'/motion.name)
+     print(f'PASS source assets and {len(motions)} raw BVHs copied/verified; no external writes')
+ 
+ 
+--- before/tools/audit_s54_retarget.py
++++ tools/audit_s54_retarget.py
+@@ -88,9 +88,9 @@
+ 
+ def main():
+     parser = argparse.ArgumentParser(description=__doc__)
+-    parser.add_argument('--raw_dir', type=Path, default=REPO/'data/retarget_data/raw')
++    parser.add_argument('--raw_dir', type=Path, default=REPO/'library/motion_reference/kuavo_s54/retarget_data/raw')
+     parser.add_argument('--motion_dirs', type=Path, nargs='+', default=[
+-        REPO/'data/retarget_data/reference_safe', REPO/'data/retarget_data/reference_startup_fixed'])
++        REPO/'library/motion_reference/kuavo_s54/retarget_data/reference_safe', REPO/'library/motion_reference/kuavo_s54/retarget_data/reference_startup_fixed'])
+     parser.add_argument('--out', type=Path, default=REPO/'results/s54/retarget_inventory')
+     parser.add_argument('--required_clips', nargs='*', default=[])
+     args = parser.parse_args()
+--- before/tools/retarget_s54_upper_body.py
++++ tools/retarget_s54_upper_body.py
+@@ -174,11 +174,11 @@
+     p.add_argument('--baseline', type=Path)
+     p.add_argument('--human_npz', type=Path, help='Optional cache from diagnose_s54_human.py')
+     p.add_argument('--config', type=Path, default=REPO / 'configs/s54_upper_body_retarget.json')
+-    p.add_argument('--out_dir', type=Path, default=REPO / 'data/retarget_data/reference')
++    p.add_argument('--out_dir', type=Path, default=REPO / 'library/motion_reference/kuavo_s54/retarget_data/reference')
+     p.add_argument('--max_frames', type=int, help='Prefix for a quick probe; does not change source FPS')
+     a = p.parse_args()
+-    a.bvh = a.bvh or REPO / 'data/retarget_data/raw/dance1_subject1.bvh'
+-    a.baseline = a.baseline or REPO / 'data/retarget_data/reference/baseline/dance1_subject1_30fps.pkl'
++    a.bvh = a.bvh or REPO / 'library/motion_reference/kuavo_s54/retarget_data/raw/dance1_subject1.bvh'
++    a.baseline = a.baseline or REPO / 'library/motion_reference/kuavo_s54/retarget_data/reference/baseline/dance1_subject1_30fps.pkl'
+     cfg = json.loads(a.config.read_text())
+     if cfg['temporal_mode'] not in ('causal', 'offline_projection'):
+         raise ValueError('temporal_mode must be causal or offline_projection')
+--- before/tools/test_s54_reference_gate.py
++++ tools/test_s54_reference_gate.py
+@@ -14,7 +14,7 @@
+ 
+ 
+ def main():
+-    source = REPO / 'data/retarget_data/reference_grounded'
++    source = REPO / 'library/motion_reference/kuavo_s54/retarget_data/reference_grounded'
+     clip, stem = 'dance1_subject1', 'known_collision'
+     cache = REPO / '.cache'
+     cache.mkdir(exist_ok=True)
+--- before/tools/view_s54_stair_reference.py
++++ tools/view_s54_stair_reference.py
+@@ -17,7 +17,7 @@
+     parser=argparse.ArgumentParser(description=__doc__)
+     parser.add_argument('--bundle',type=Path,default=ROOT/'results/s54_stair_t15_20261110/data/newton_import')
+     parser.add_argument('--terrain',type=Path,default=ROOT/'assets/terrains/stairs_straight_4_v1')
+-    parser.add_argument('--stair-npz',type=Path,default=ROOT/'data/s54_stair_dataset/stair_up_4.npz')
++    parser.add_argument('--stair-npz',type=Path,default=ROOT/'library/motion_reference/kuavo_s54/datasets/s54_stair_dataset/stair_up_4.npz')
+     parser.add_argument('--speed',type=float,default=1.,help='Playback speed; 1 = native 50 Hz, .5 = half speed')
+     parser.add_argument('--loops',type=int,default=0,help='0 loops until the window closes')
+     parser.add_argument('--start-frame',type=int,default=0)
+--- before/tools/prepare_s54_motion.py
++++ tools/prepare_s54_motion.py
+@@ -17,7 +17,7 @@
+ 
+ def prepare(src, dst, expected_frames=None, raw_dir=None):
+     src, dst = Path(src).resolve(), Path(dst).resolve()
+-    raw_dir = Path(raw_dir).resolve() if raw_dir is not None else REPO / "data/retarget_data/reference/raw"
++    raw_dir = Path(raw_dir).resolve() if raw_dir is not None else REPO / "library/motion_reference/kuavo_s54/retarget_data/reference/raw"
+     raw_dir.mkdir(parents=True, exist_ok=True)
+     preserved = raw_dir / src.name
+     if preserved.exists() and sha(preserved) != sha(src):
+@@ -77,8 +77,8 @@
+ 
+ if __name__ == "__main__":
+     p = argparse.ArgumentParser()
+-    p.add_argument("--input", type=Path, default=REPO / "data/retarget_data/reference/raw/dance1_subject1.csv")
+-    p.add_argument("--output", type=Path, default=REPO / "data/retarget_data/reference/dance1_subject1.csv")
++    p.add_argument("--input", type=Path, default=REPO / "library/motion_reference/kuavo_s54/retarget_data/reference/raw/dance1_subject1.csv")
++    p.add_argument("--output", type=Path, default=REPO / "library/motion_reference/kuavo_s54/retarget_data/reference/dance1_subject1.csv")
+     p.add_argument("--expected_frames", type=int, default=None)
+     p.add_argument("--raw_dir", type=Path, help="Separate raw archive for an independent reference dataset")
+     a=p.parse_args(); prepare(a.input,a.output,a.expected_frames,a.raw_dir)
+--- before/tools/view_s54_reference.py
++++ tools/view_s54_reference.py
+@@ -21,7 +21,7 @@
+ 
+ def main():
+     parser = argparse.ArgumentParser(description=__doc__)
+-    parser.add_argument('--motion_dir', type=Path, default=REPO / 'data/retarget_data/reference_startup_fixed')
++    parser.add_argument('--motion_dir', type=Path, default=REPO / 'library/motion_reference/kuavo_s54/retarget_data/reference_startup_fixed')
+     parser.add_argument('--clip', default='dance1_subject1')
+     parser.add_argument('--start', type=float, default=0.)
+     parser.add_argument('--speed', type=float, default=1.)
+--- before/tools/validate_s54_upper_body.py
++++ tools/validate_s54_upper_body.py
+@@ -20,7 +20,7 @@
+ 
+ def main():
+     p = argparse.ArgumentParser(description=__doc__)
+-    p.add_argument('--motion_dir', type=Path, default=Path('data/retarget_data/reference'))
++    p.add_argument('--motion_dir', type=Path, default=Path('library/motion_reference/kuavo_s54/retarget_data/reference'))
+     p.add_argument('--baseline', type=Path, help='Baseline PKL/CSV; defaults to the newly generated dance1 baseline PKL')
+     p.add_argument('--out', type=Path, default=Path('results/s54/upper_body_validation.json'))
+     a = p.parse_args()
+--- before/tools/view_s54_foot_trajectory.py
++++ tools/view_s54_foot_trajectory.py
+@@ -26,7 +26,7 @@
+ p.add_argument('--num_envs',type=int,default=1)
+ p.add_argument('--steps',type=int,default=100)
+ p.add_argument('--goal_frames',type=int,default=10)
+-p.add_argument('--motion_dir',default='data/retarget_data/reference_startup_fixed')
++p.add_argument('--motion_dir',default='library/motion_reference/kuavo_s54/retarget_data/reference_startup_fixed')
+ p.add_argument('--seed',type=int,default=54)
+ p.add_argument('--out',default='results/s54/foot_trajectory_newton.json')
+ p.add_argument('--video',help='Optional MP4 from newton_gl; requires --viz newton_gl')
+--- before/tools/diagnose_s54_reference.py
++++ tools/diagnose_s54_reference.py
+@@ -395,14 +395,14 @@
+     a = p.parse_args(); a.out.mkdir(parents=True, exist_ok=True); torch.set_num_threads(4)
+     pkl = pickle.load((a.gmr / 'output/kuavo_s54/pkl/dance1_subject1_30fps.pkl').open('rb'))
+     raw = np.loadtxt(a.gmr / 'output/kuavo_s54/csv/dance1_subject1.csv', delimiter=',')
+-    full = np.loadtxt('data/retarget_data/reference/dance1_subject1.csv', delimiter=',')
++    full = np.loadtxt('library/motion_reference/kuavo_s54/retarget_data/reference/dance1_subject1.csv', delimiter=',')
+     if raw.shape != (len(pkl['root_pos']), 34) or full.shape != (len(raw), 36): raise ValueError('Unexpected S54 reference shapes')
+     source = mj.MjModel.from_xml_path(str(a.gmr / 'assets/kuavo_s54/xml/biped_s54.xml'))
+     actual_names = [source.joint(j).name for j in range(source.njnt) if source.jnt_type[j] != mj.mjtJoint.mjJNT_FREE]
+     if actual_names != JOINT_NAMES: raise ValueError('Source joint names/order differs from S54 contract')
+     recording = dict(np.load(a.run_dir / 'traj_10000.npz', allow_pickle=False))
+     if list(recording['joint_names']) != JOINT_NAMES: raise ValueError('NPZ joint names/order differs')
+-    fps = float(pkl['fps']); kin = S54Kinematics(); motion = MotionLib.from_dir('data/retarget_data/reference', kin, 'cpu')
++    fps = float(pkl['fps']); kin = S54Kinematics(); motion = MotionLib.from_dir('library/motion_reference/kuavo_s54/retarget_data/reference', kin, 'cpu')
+     report = {'pipeline':pipeline(pkl, raw, full, motion, recording, a.out)}
+     print('Data/time alignment complete', flush=True)
+     report['feet'], body = foot_analysis(source, full[:, :3], full[:, 3:7], full[:, 7:], fps, a.out, a.out / 'human_targets.npz')
+--- before/tools/m34_rollout.py
++++ tools/m34_rollout.py
+@@ -11,7 +11,7 @@
+ from isaaclab.app import add_launcher_args, launch_simulation
+ 
+ p = argparse.ArgumentParser(description=__doc__)
+-p.add_argument('--dataset', default='data/s54_flat_dataset/dataset_export')
++p.add_argument('--dataset', default='library/motion_reference/kuavo_s54/datasets/s54_flat_dataset/dataset_export')
+ p.add_argument('--split', choices=['train', 'test'], default='train')
+ p.add_argument('--checkpoint')
+ p.add_argument('--out', required=True)
+--- before/tools/t15_stair_rollout.py
++++ tools/t15_stair_rollout.py
+@@ -279,7 +279,7 @@
+     parser.add_argument('--bundle',default='/mnt/sage_data/workspace/Foothold/PMT/TCRS/outputs/s54_stair_t14/newton_import')
+     parser.add_argument('--stair-npz',help='Relocated four-step NPZ; validated against the original manifest')
+     parser.add_argument('--terrain',default='assets/terrains/stairs_straight_4_v1')
+-    parser.add_argument('--flat-dataset',default='data/s54_flat_dataset/dataset_export')
++    parser.add_argument('--flat-dataset',default='library/motion_reference/kuavo_s54/datasets/s54_flat_dataset/dataset_export')
+     parser.add_argument('--flat-id',default='straight_flat_18')
+     parser.add_argument('--checkpoint')
+     parser.add_argument('--contacts',choices=['newton','mujoco'],default='newton')
+--- before/tools/test_s54_cpu.py
++++ tools/test_s54_cpu.py
+@@ -125,7 +125,7 @@
+ 
+ def main():
+     ap=argparse.ArgumentParser();ap.add_argument('--samples',type=int,default=128);ap.add_argument('--skip_core',action='store_true')
+-    ap.add_argument('--motion_dir',default='data/retarget_data/reference_safe')
++    ap.add_argument('--motion_dir',default='library/motion_reference/kuavo_s54/retarget_data/reference_safe')
+     ap.add_argument('--out',type=Path,default=Path('results/s54/cpu_tests.json'));a=ap.parse_args()
+     torch.set_num_threads(4)
+     kin=S54Kinematics();motion=MotionLib.from_dir(a.motion_dir,kin,'cpu')
+--- before/tools/prepare_s54_motion_prior.py
++++ tools/prepare_s54_motion_prior.py
+@@ -21,7 +21,7 @@
+ 
+ def main():
+     p=argparse.ArgumentParser(description=__doc__)
+-    p.add_argument('--motion_dir',default='data/retarget_data/reference_startup_fixed')
++    p.add_argument('--motion_dir',default='library/motion_reference/kuavo_s54/retarget_data/reference_startup_fixed')
+     p.add_argument('--clips',nargs='+',default=['walk*','dance*'])
+     p.add_argument('--heldout',nargs='+',default=['dance1_subject1'])
+     p.add_argument('--seed',type=int,default=54)
+--- before/configs/s54_m34_4060.json
++++ configs/s54_m34_4060.json
+@@ -1,5 +1,5 @@
+ {
+-  "dataset": "data/s54_flat_dataset/dataset_export",
++  "dataset": "library/motion_reference/kuavo_s54/datasets/s54_flat_dataset/dataset_export",
+   "num_envs": 2048,
+   "iterations": 10000,
+   "buffer_steps": 1024,
+--- before/run_train.sh
++++ run_train.sh
+@@ -7,7 +7,7 @@
+ # 1. Experiment configuration (edit here)
+ # ============================================================================
+ CONTAINER_NAME="${CONTAINER_NAME:-supermimic_s54}"
+-MOTION_DIR="data/retarget_data/reference_startup_fixed"
++MOTION_DIR="library/motion_reference/kuavo_s54/retarget_data/reference_startup_fixed"
+ # Use clip stems, not BVH paths. CLIPS=() selects all accepted top-level CSVs.
+ # Examples: CLIPS=("dance1_subject1" "walk1_subject1") or CLIPS=("dance*")
+ CLIPS=("dance1_subject1")
+--- before/experiments/s54_stair_flat6063_8h/design.json
++++ experiments/s54_stair_flat6063_8h/design.json
+@@ -1,6 +1,6 @@
+ {
+   "terrain": "assets/terrains/stairs_straight_4_v1",
+-  "flat_dataset": "data/s54_flat_dataset/dataset_export",
++  "flat_dataset": "library/motion_reference/kuavo_s54/datasets/s54_flat_dataset/dataset_export",
+   "train_stair_ids": [
+     "stair_up_4"
+   ],
+@@ -18,7 +18,7 @@
+   },
+   "contact_pipeline": "newton",
+   "bundle": "results/s54_stair_t15_20261110/data/newton_import",
+-  "stair_npz": "data/s54_stair_dataset/stair_up_4.npz",
++  "stair_npz": "library/motion_reference/kuavo_s54/datasets/s54_stair_dataset/stair_up_4.npz",
+   "source_checkpoint": "release/S54-SuperMimic-Flat-6000/checkpoints/ckpt_006063.pt",
+   "source_checkpoint_sha256": "e49e968a1a6bd7c5fcef53290b805fafb011bea5533e9bc0c050e5130e0bbe88",
+   "training_enabled": true,
+--- before/experiments/s54_stair_flat6063_8h/smoke_design.json
++++ experiments/s54_stair_flat6063_8h/smoke_design.json
+@@ -1,6 +1,6 @@
+ {
+   "terrain": "assets/terrains/stairs_straight_4_v1",
+-  "flat_dataset": "data/s54_flat_dataset/dataset_export",
++  "flat_dataset": "library/motion_reference/kuavo_s54/datasets/s54_flat_dataset/dataset_export",
+   "train_stair_ids": [
+     "stair_up_4"
+   ],
+@@ -18,7 +18,7 @@
+   },
+   "contact_pipeline": "newton",
+   "bundle": "results/s54_stair_t15_20261110/data/newton_import",
+-  "stair_npz": "data/s54_stair_dataset/stair_up_4.npz",
++  "stair_npz": "library/motion_reference/kuavo_s54/datasets/s54_stair_dataset/stair_up_4.npz",
+   "source_checkpoint": "release/S54-SuperMimic-Flat-6000/checkpoints/ckpt_006063.pt",
+   "source_checkpoint_sha256": "e49e968a1a6bd7c5fcef53290b805fafb011bea5533e9bc0c050e5130e0bbe88",
+   "training_enabled": true,

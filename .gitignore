@@ -5,8 +5,12 @@ __pycache__/
 build_*.log
 # upstream checkout (pinned commit cloned by tools/setup.sh)
 IsaacLab/
-# third-party data (downloaded by tools/download_data.sh) and generated assets
+# Deprecated layout: do not add new assets here.
 data/
+# Local asset collections; entry-point metadata and library/README.md are tracked.
+/library/model/
+/library/motion_reference/
+/library/manifests/
 # training runs: checkpoints, logs
 logs/
 *.pt
@@ -45,3 +49,6 @@ events.out.tfevents.*
 *.ckpt
 *.onnx
 *.log
+
+# Generated Roban Newton asset; regenerate with tools/run_roban.sh prepare
+assets/roban/usd/

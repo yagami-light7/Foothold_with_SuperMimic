@@ -21,7 +21,7 @@ from supermimic.foot_trajectory import AlternatingConfig
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--motion_dir',default='data/retarget_data/reference_startup_fixed')
+    p.add_argument('--motion_dir',default='library/motion_reference/kuavo_s54/retarget_data/reference_startup_fixed')
     p.add_argument('--clips',nargs='+',default=['walk*','dance*'])
     p.add_argument('--heldout',nargs='+',default=['dance1_subject1'])
     p.add_argument('--seed',type=int,default=54)

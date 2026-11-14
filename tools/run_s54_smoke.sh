@@ -14,12 +14,12 @@ OPENBLAS_NUM_THREADS=1 python tools/test_s54_cpu.py | tee results/s54/cpu_tests.
 python tools/mjcf_to_usd.py | tee results/s54/import.log
 python tools/test_env_s54.py --num_envs 1 | tee results/s54/newton_1env.log
 python tools/test_env_s54.py --num_envs 16 | tee results/s54/newton_16env.log
-python supermimic/train.py --motion_dir data/retarget_data/reference --log_dir logs/s54_smoke \
+python supermimic/train.py --motion_dir library/motion_reference/kuavo_s54/retarget_data/reference --log_dir logs/s54_smoke \
   --num_envs 16 --iterations 30 --buffer_steps 64 --warmup_steps 32 \
   --wm_window 8 --wm_batches 1 --wm_batch 64 --pi_batch 32 --horizon 8 --wm_only_iters 10 \
   --ckpt_every 30 --log_every 10 --amp bf16 --no_compile 2>&1 | tee logs/s54_smoke/stdout.log
 python tools/check_s54_run.py
-python supermimic/evaluate.py --run_dir logs/s54_smoke --motion_dir data/retarget_data/reference \
+python supermimic/evaluate.py --run_dir logs/s54_smoke --motion_dir library/motion_reference/kuavo_s54/retarget_data/reference \
   --ckpt logs/s54_smoke/ckpt_000030.pt --record logs/s54_smoke/traj_30.npz | tee logs/s54_smoke/evaluate.log
 python tools/check_s54_run.py --require_eval
 MUJOCO_GL=egl python tools/render.py logs/s54_smoke/traj_30.npz logs/s54_smoke/dance_30.mp4 \

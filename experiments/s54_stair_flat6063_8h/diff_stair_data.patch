@@ -1,0 +1,23 @@
+--- supermimic/stair_data.py (before)
++++ supermimic/stair_data.py
+@@ -24,14 +24,17 @@
+     return module
+ 
+ 
+-def load_stairs(bundle, kin, device='cpu', ids=None):
++def load_stairs(bundle, kin, device='cpu', ids=None, *, npz_path=None):
+     # The upstream bundle is explicitly evaluation-only. A later training
+     # designation must be a separate, hashed experiment manifest, never mutation.
+-    motion = m34.motion_library(bundle, kin, device, split='test', ids=ids)
++    if npz_path is not None and ids != ['stair_up_4']:
++        raise ValueError('Standalone stair import requires the explicit four-step ID')
++    sources = None if npz_path is None else {'stair_up_4': npz_path}
++    motion = m34.motion_library(bundle, kin, device, split='test', ids=ids, source_files=sources)
+     meta, manifest, _ = m34.entries(bundle, 'test')
+     contacts = []
+     for row in motion.rows:
+-        data = m34.load(bundle, row, meta, manifest)
++        data = m34.load(bundle, row, meta, manifest, npz_path=npz_path)
+         contacts.append(np.stack([data['left_contact'], data['right_contact']], -1))
+     motion.contacts = torch.as_tensor(np.concatenate(contacts), device=device)
+     return motion
