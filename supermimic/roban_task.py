@@ -83,7 +83,11 @@ class RobanFootGoals:
         R=mat_to_6d(Ht@ref['foot_R'])
         feet=torch.cat((p,R,ref['contact'][...,None].to(p.dtype),ref['phase'][...,None]),-1)
         offsets=torch.arange(1,self.spec.frames+1,device=p.device,dtype=p.dtype)*self.spec.dt
-        return torch.cat((feet.flatten(-2),offsets[None,:,None].expand(len(p),-1,-1)),-1).flatten(1)
+        sample_dt=offsets[None,:,None].expand(len(p),-1,-1)
+        if getattr(self.motion,'foot_goal_source',None)=='pmt_planned_ankle_to_sole':
+            # PMT's explicit scene clock also bounds the advertised future time.
+            sample_dt=((frames-f[:,None]).to(p.dtype)*CONTROL_DT)[...,None]
+        return torch.cat((feet.flatten(-2),sample_dt),-1).flatten(1)
 
     def obs(self,mdp,S,a_prev,xi,f,command=None):
         return mdp.obs(S,a_prev,xi,f)

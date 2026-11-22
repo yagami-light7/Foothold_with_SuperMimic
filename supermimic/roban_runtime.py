@@ -26,10 +26,11 @@ def configure_robot(argv):
     p=argparse.ArgumentParser(add_help=False)
     p.add_argument('--robot',choices=['s54','roban'])
     p.add_argument('--roban_config')
+    p.add_argument('--m4_reference')
     args,_=p.parse_known_args(argv)
-    kind=args.robot or ('roban' if args.roban_config else 's54')
-    if args.roban_config and kind!='roban':
-        raise ValueError('--roban_config requires --robot roban')
+    kind=args.robot or ('roban' if args.roban_config or args.m4_reference else 's54')
+    if (args.roban_config or args.m4_reference) and kind!='roban':
+        raise ValueError('--roban_config and --m4_reference require --robot roban')
     os.environ['SUPERMIMIC_ROBOT']=kind
     return kind
 
@@ -37,6 +38,7 @@ def configure_robot(argv):
 def add_roban_args(parser,argv):
     parser.add_argument('--robot',choices=['s54','roban'],default='s54')
     parser.add_argument('--roban_config',help='Trainer-consumed Roban experiment JSON')
+    parser.add_argument('--m4_reference',help='Path to the original M3.7.1 F2 reference.npz')
     parser.add_argument('--reference_fps',type=float,help='Explicit source FPS when registry/NPZ has no provenance')
     parser.add_argument('--critic_use_body_reference',action=__import__('argparse').BooleanOptionalAction,default=False)
     parser.add_argument('--body_prior_weight',type=float,default=0.0)
@@ -63,6 +65,9 @@ def add_roban_args(parser,argv):
 
 
 def build_task(args,kin,files,device):
+    if getattr(args, 'm4_reference', None):
+        from .integration.m4_task import build_m4_task
+        return build_m4_task(args,kin,files,device)
     import torch
     from .motion_reference import MotionReferenceProvider
     from .roban import default_joint_pos_list

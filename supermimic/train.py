@@ -94,10 +94,12 @@ parser.add_argument('--prior_config',help='Optional upper-body prior config; def
 parser.add_argument('--wall_seconds',type=float,help='Safe wall-clock stop, including initialization; finite bounded experiments')
 parser.add_argument('--reward_term_logging',action='store_true',help='Persist per-term mean/std and weighted prior contributions locally')
 parser.add_argument('--paired_latent_weight',type=float,default=0.,help='Optional same-clip latent alignment; never applies to random Quintic goals')
+parser.add_argument('--m4_early_iteration', type=int, default=8, help='M4 保留的早期检查点迭代')
 add_goal_args(parser)
 add_launcher_args(parser)
 add_roban_args(parser, sys.argv[1:])
 args = parser.parse_args()
+m4 = bool(args.m4_reference)
 try:
     if ROBOT_KIND == 'roban':
         if args.goal_mode != 'roban_foot' or any((args.m34_dataset,args.stair_config,args.foot_task_config,args.curriculum_config,args.prior_config,args.init_from_motion,args.init_from_bridge,args.init_from_flat)):
@@ -106,6 +108,9 @@ try:
             raise ValueError('Use Roban foot gradient tests; legacy S54 adapters/audits are incompatible')
         from supermimic.roban_task import FootRewardConfig
         FootRewardConfig(**dict(args.roban_reward_config, body_prior_weight=args.body_prior_weight))
+    if m4 and (ROBOT_KIND != 'roban' or args.init_weights or args.no_critic
+               or args.reward_term_logging or args.wm_use_terrain or args.m4_early_iteration < 1):
+        raise ValueError('M4 使用 Roban 平地任务和完整 SuperMimic 更新，仅支持同任务恢复')
     if args.m34_eval_every < 0 or not args.m34_eval_seeds or len(set(args.m34_eval_seeds)) != len(args.m34_eval_seeds) or any(s < 0 for s in args.m34_eval_seeds):
         raise ValueError('Invalid M3.4 evaluation interval or seed protocol')
     goal_spec, foot_config = resolve_goal_config(args)
@@ -155,9 +160,17 @@ except (ValueError, TypeError, OSError) as exc:
     parser.error(str(exc))
 from pathlib import Path
 log_path = Path(args.log_dir).resolve()
-if not log_path.is_relative_to(Path(REPO)/"logs") or not log_path.name.startswith("roban_" if ROBOT_KIND == "roban" else "s54_"):
-    parser.error("S54 logs must be under this repository logs/s54_*; existing G1 logs are protected")
-existing_training = ((log_path/'args.json').exists() or (log_path/'train_log.csv').exists()
+if m4:
+    if not log_path.is_relative_to(Path(REPO)/"outputs/m4_0") or log_path.name != "checkpoints":
+        parser.error("M4 检查点目录必须位于 outputs/m4_0 下，且目录名为 checkpoints")
+    metrics_path = log_path.parent/'logs'/'train.csv'
+    args_path = log_path.parent/'config'/'train.json'
+else:
+    if not log_path.is_relative_to(Path(REPO)/"logs") or not log_path.name.startswith("roban_" if ROBOT_KIND == "roban" else "s54_"):
+        parser.error("S54 logs must be under this repository logs/s54_*; existing G1 logs are protected")
+    metrics_path = log_path/'train_log.csv'
+    args_path = log_path/'args.json'
+existing_training = (args_path.exists() or metrics_path.exists()
                      or any(log_path.glob('*.pt')))
 if not args.resume and existing_training:
     parser.error("Training artifacts already exist: use a fresh s54_* run or --resume last.pt")
@@ -181,7 +194,12 @@ motion_files = []
 data_contract=None
 if task_cfg is None:
     try:
-        if ROBOT_KIND == 'roban':
+        if m4:
+            reference = Path(args.m4_reference).resolve(strict=True)
+            args.m4_reference = str(reference)
+            args.motion_dir = None
+            motion_files = [str(reference)]
+        elif ROBOT_KIND == 'roban':
             from supermimic.roban_runtime import select_roban_files
             motion_files = select_roban_files(args.motion_dir, args.clips)
         elif stair_cfg:
@@ -200,14 +218,14 @@ if task_cfg is None:
         elif args.reference_manifest:
             motion_files,data_contract=load_manifest(args.reference_manifest,args.manifest_split)
         else: motion_files = select_reference_files(args.motion_dir, args.clips)
-    except (FileNotFoundError, ValueError) as exc:
+    except (OSError, ValueError) as exc:
         parser.error(str(exc))
 else:
     if args.m34_dataset: parser.error('M3.4 uses the original Motion encoder, not a Foot task')
     args.motion_dir = None
     args.foot_task_config = asdict(task_cfg)
 # Record the resolved names, including when all clips or a glob was requested.
-args.clips = [Path(path).stem for path in motion_files]
+args.clips = ['F2'] if m4 else [Path(path).stem for path in motion_files]
 print(f"Training clips ({len(args.clips)}): {', '.join(args.clips)}" if task_cfg is None else
       f'Independent S54 foot task: {task_cfg.command_mode}; no Motion reference loaded', flush=True)
 
@@ -257,7 +275,10 @@ terrain_provider = None
 if ROBOT_KIND == 'roban':
     from supermimic.roban_runtime import build_task
     motion, goals, mdp, terrain_provider = build_task(args, kin, motion_files, dev)
-    (log_path/'roban_reference_validation.json').write_text(json.dumps(motion.validation, indent=2))
+    if m4:
+        goal_spec = goals.spec
+    else:
+        (log_path/'roban_reference_validation.json').write_text(json.dumps(motion.validation, indent=2))
     data_contract = motion.validation
 elif stair_cfg:
     from supermimic.stair_training import library as stair_library
@@ -418,9 +439,10 @@ if args.goal_mode=='reference_foot':
     for parameter in pi.motion_enc.parameters():parameter.requires_grad_(False)
 actor_parameters=tuple(p for p in pi.parameters() if p.requires_grad)
 
-args_temp=log_path/'args.json.tmp'
-args_temp.write_text(json.dumps(vars(args),indent=2))
-os.replace(args_temp,log_path/'args.json')
+if not m4:
+    args_temp=log_path/'args.json.tmp'
+    args_temp.write_text(json.dumps(vars(args),indent=2))
+    os.replace(args_temp,log_path/'args.json')
 
 
 # per-component floors on the error normalization (pos, rot, lin vel, ang vel, q, qd increments)
@@ -462,7 +484,11 @@ def _reward_term(S, f, a, a_prev, ep_step, command):
     else:
         r = mdp.reward(S,f,a,a_prev)
         foot_reward = torch.zeros_like(r)
-    return r, mdp.soft_termination(S,f,command=command,ep_step=ep_step), foot_reward
+    done = mdp.soft_termination(S,f,command=command,ep_step=ep_step)
+    if m4:
+        # 参考结束后没有下一步，想象轨迹的 Critic 同样在终点停止 bootstrap。
+        done = torch.where(f >= motion.clip_end[motion.clip_id[f]], 1., done)
+    return r, done, foot_reward
 
 
 def _critic_input(S, f, xi_n, g, ep_step, command):
@@ -697,6 +723,9 @@ def policy_update(audit_gradients=False):
 if stair_cfg:
     from supermimic.stair_runtime import make_stair_sim
     sim_cfg=make_stair_sim(dev,args)
+elif m4:
+    from supermimic.integration.m4_task import M4TrackingSim, make_m4_sim
+    sim_cfg = make_m4_sim(dev, args)
 else:
     sim_cfg = make_sim(dev, args)
 with launch_simulation(sim_cfg, args):
@@ -704,6 +733,12 @@ with launch_simulation(sim_cfg, args):
         from supermimic.stair_training import environment as stair_environment
         env=stair_environment(sim_cfg,args.num_envs,motion,mdp,stair_cfg,gamma=args.gamma,goals=goals)
         env.stair_iteration=start_it
+    elif m4:
+        env = M4TrackingSim(sim_cfg, args.num_envs, motion, mdp, gamma=args.gamma, goals=goals)
+        args_path.parent.mkdir(parents=True, exist_ok=True)
+        args_temp = args_path.with_suffix('.tmp')
+        args_temp.write_text(json.dumps(vars(args), indent=2)+'\n')
+        os.replace(args_temp, args_path)
     else:
         env = TrackingSim(sim_cfg, args.num_envs, motion, mdp, gamma=args.gamma, goals=goals)
     if args.m34_dataset:
@@ -755,7 +790,11 @@ with launch_simulation(sim_cfg, args):
             stats["r"].append(out["r"].mean() / reward_scale)
             stats["head_error"].append(out['terms']['head_position_error'].mean())
             stats["head_penalty"].append(out['terms']['head_penalty'].mean() / reward_scale)
-            if goals.is_foot and (args.check_foot_gradients or args.goal_mode=='reference_foot'):
+            if m4:
+                stats['foot_error_sq'].append(out['terms']['foot_rmse'].square().mean())
+                stats['root_error_sq'].append(out['terms']['root_position_error'].square().mean())
+            if goals.is_foot and (args.check_foot_gradients or args.goal_mode=='reference_foot'
+                                  or (m4 and sim_steps == startup_steps + args.num_envs)):
                 restored = goals.goal(S0,out['f'],out['ep_step'],out['command'])
                 recomputed = mdp.reward(S1,out['f']+1,out['a'],out['a_prev'],
                                         command=out['command'],ep_step=out['ep_step']+1)
@@ -766,8 +805,12 @@ with launch_simulation(sim_cfg, args):
                 stats['goal_sync'].append(goal_error)
                 stats['reward_sync'].append(reward_error)
             if "ep_len" in out:
-                stats["ep_len"].append(out["ep_len"].mean())
-                stats["ep_ret"].append(out["ep_ret_norm"].mean())
+                if m4:
+                    stats["ep_len"].append(out["ep_len"].sum())
+                    stats["ep_ret"].append(out["ep_ret_norm"].sum())
+                else:
+                    stats["ep_len"].append(out["ep_len"].mean())
+                    stats["ep_ret"].append(out["ep_ret_norm"].mean())
                 stats["term"].append(out["term"].float().sum())
                 stats["done"].append(out["done"].float().sum())
 
@@ -777,11 +820,12 @@ with launch_simulation(sim_cfg, args):
     t_start = time.monotonic() - wall_offset - (time.monotonic()-PROCESS_START)
     def elapsed(): return time.monotonic()-t_start
     current_it = start_it
+    startup_steps = sim_steps
     step_acc = float(ck.get('step_acc',0.)) if args.resume else 0.
     if args.resume and 'rng' in ck: restore_rng(ck['rng'])
 
-    def save_checkpoint(label=None):
-        ckpt = {"robot_contract": checkpoint_contract(), "goal_contract": goal_spec.contract(),
+    def save_checkpoint(label=None, *, initial=False):
+        ckpt = {"robot_contract": physics_metadata['robot'] if m4 else checkpoint_contract(), "goal_contract": goal_spec.contract(),
                 "checkpoint_schema_version":3 if ROBOT_KIND == 'roban' else 2,
                 "task_contract": mdp.contract(),
                 "physical_contract":physics_metadata,"policy_contract":policy_contract(
@@ -802,8 +846,18 @@ with launch_simulation(sim_cfg, args):
         finite=all(torch.isfinite(value).all() for model in (wm,pi,critic)
                    for value in model.state_dict().values() if value.is_floating_point())
         if not finite:
+            if m4:
+                raise FloatingPointError('M4 模型或归一化状态出现非有限值')
             atomic_save(ckpt,log_path/'failure_nonfinite.pt')
             print('Nonfinite model/normalization state saved separately; previous latest preserved',flush=True)
+            return
+        if m4:
+            if initial:
+                atomic_save(ckpt, log_path/'initial.pt')
+                return
+            atomic_save(ckpt, log_path/'last.pt')
+            if current_it == args.m4_early_iteration and not (log_path/'early.pt').exists():
+                os.link(log_path/'last.pt', log_path/'early.pt')
             return
         atomic_save(ckpt, log_path/'last.pt')
         if curriculum or args.m34_dataset or stair_cfg:
@@ -828,15 +882,26 @@ with launch_simulation(sim_cfg, args):
             wall_seconds=elapsed(),note='Torch peaks exclude Warp; device snapshot includes Warp'),indent=2))
 
     stats = {"r": [], "head_error": [], "head_penalty": [], "ep_len": [], "ep_ret": [], "term": [], "done": [], 'goal_sync': [], 'reward_sync': []}
+    if m4:
+        stats.update(foot_error_sq=[], root_error_sq=[])
+        if not args.resume:
+            # 随机初始化基线须保存于任何采样、归一化和训练更新之前。
+            save_checkpoint(initial=True)
     # Replay is deliberately not checkpointed. Refill it on resume as well as on
     # the first run; otherwise sampling the fresh empty buffer fails immediately.
     # Fresh replay after resume: refill, then a short WM-only recovery before Actor updates.
     recovery_until = start_it + (args.recovery_wm_iters if args.resume else 0)
-    log_f = open(os.path.join(args.log_dir, "train_log.csv"), "a")
+    metrics_path.parent.mkdir(parents=True, exist_ok=True)
+    log_f = metrics_path.open("a")
     if log_f.tell() == 0:
-        log_f.write("iteration,wall_h,sim_steps,wm_loss,wm_err8,pi_loss,v_loss,imag_rew,pi_gradnorm,imag_survival,sim_rew,ep_len,ep_ret_norm,term_frac,it_per_s,lr,head_rms_deg,head_penalty_norm,foot_actor_gradnorm,goal_sync_max_error,reward_sync_max_error,completed_episodes\n")
+        columns = "iteration,wall_h,sim_steps,wm_loss,wm_err8,pi_loss,v_loss,imag_rew,pi_gradnorm,imag_survival,sim_rew,ep_len,ep_ret_norm,term_frac,it_per_s,lr,head_rms_deg,head_penalty_norm,foot_actor_gradnorm,goal_sync_max_error,reward_sync_max_error,completed_episodes"
+        if m4:
+            columns += ",num_envs,collect_fps,train_fps,device_used_mib,torch_peak_mib,survival_rate,foot_rmse_m,root_rmse_m"
+        log_f.write(columns+'\n')
     t_log = time.time()
     last_log_iteration=start_it
+    last_log_steps = sim_steps
+    last_collection_seconds = 0.
     agg = {"wm": [], "wm8": [], "pi": [], "v": [], "ir": [], "gn": [], "surv": [], 'fgn': []}
     diag_agg={}
     try:
@@ -845,7 +910,8 @@ with launch_simulation(sim_cfg, args):
             if stair_cfg:env.stair_iteration=it
             if args.m34_dataset: env.m34_iteration = it
             reserve=stair_cfg.get('final_eval_reserve_seconds',0) if stair_cfg and args.m34_eval_every else 0
-            if STOP_REQUESTED or (args.wall_seconds is not None and elapsed()>=args.wall_seconds-reserve) or (curriculum and elapsed() >= curriculum.cfg['budget_seconds']-45):
+            budget_time = time.monotonic()-PROCESS_START if m4 else elapsed()
+            if STOP_REQUESTED or (args.wall_seconds is not None and budget_time>=args.wall_seconds-reserve) or (curriculum and elapsed() >= curriculum.cfg['budget_seconds']-45):
                 print('Safe stop requested / wall-clock budget reserve reached',flush=True); break
             lr = lr_at(it)
             for o,scale in ((opt_wm,1.),(opt_pi,actor_lr/args.lr),(opt_v,critic_lr/args.lr)):
@@ -874,9 +940,10 @@ with launch_simulation(sim_cfg, args):
                     print(f"[prof] collect {1e3*(tp1-tp0):.0f} ms ({n} steps) | wm {1e3*(tp2-tp1):.0f} ms | policy+critic {1e3*(tp3-tp2):.0f} ms", flush=True)
                 agg["pi"].append(pl), agg["v"].append(vl), agg["ir"].append(ir), agg["gn"].append(gn), agg["surv"].append(surv)
                 if args.check_foot_gradients or audit_gradients or args.roban_gradient_audit: agg['fgn'].append(fgn)
-            if (it + 1) % args.log_every == 0 or (stair_cfg and it==start_it):
+            if (it + 1) % args.log_every == 0 or (stair_cfg and it==start_it) or (m4 and (it == start_it or it + 1 == args.iterations)):
                 mean = lambda x: float(sum(float(v) for v in x) / max(len(x), 1))  # noqa: E731
-                ips = ((it+1-last_log_iteration) if stair_cfg else args.log_every) / (time.time() - t_log)
+                interval = time.time() - t_log
+                ips = ((it+1-last_log_iteration) if stair_cfg or m4 else args.log_every) / interval
                 last_log_iteration=it+1
                 t_log = time.time()
                 wall_h = elapsed() / 3600
@@ -888,11 +955,29 @@ with launch_simulation(sim_cfg, args):
                        max((float(x) for x in stats['goal_sync']),default=0.),
                        max((float(x) for x in stats['reward_sync']),default=0.),
                        sum(float(x) for x in stats['done'])]  # fmt: skip
+                if m4:
+                    completed = row[21]
+                    if completed:
+                        row[11] = sum(float(x) for x in stats['ep_len']) / completed
+                        row[12] = sum(float(x) for x in stats['ep_ret']) / completed
+                    free, total = torch.cuda.mem_get_info(dev)
+                    device_mib = (total-free)/2**20
+                    nframes = sim_steps-last_log_steps
+                    collection_dt = collection_seconds-last_collection_seconds
+                    row.extend((args.num_envs, nframes/max(collection_dt, 1e-9), nframes/interval, device_mib,
+                                torch.cuda.max_memory_allocated(dev)/2**20,
+                                1-term_frac if completed else '',
+                                math.sqrt(mean(stats['foot_error_sq'])), math.sqrt(mean(stats['root_error_sq']))))
+                    last_log_steps, last_collection_seconds = sim_steps, collection_seconds
+                    if args.max_device_memory_mib is not None and device_mib >= args.max_device_memory_mib:
+                        STOP_REQUESTED = True
+                        print(f'M4 显存达到阈值（{device_mib:.0f} MiB），保存后停止。', flush=True)
                 log_f.write(",".join(f"{x:.6g}" if isinstance(x, float) else str(x) for x in row) + "\n")
                 log_f.flush()
                 if diag_agg:
-                    with (log_path/'gradient_terms.jsonl').open('a') as sink:
-                        sink.write(json.dumps(dict(iteration=it+1,**{k:mean(v) for k,v in diag_agg.items()}))+'\n')
+                    if not m4:
+                        with (log_path/'gradient_terms.jsonl').open('a') as sink:
+                            sink.write(json.dumps(dict(iteration=it+1,**{k:mean(v) for k,v in diag_agg.items()}))+'\n')
                     if not curriculum:diag_agg={}
                 print(f"it {it + 1} | {wall_h:.3f} h | wm {row[3]:.4f} e8 {row[4]:.4f} | pi {row[5]:.3f} v {row[6]:.4f} imag_r {row[7]:.3f} surv {row[9]:.3f} "
                       f"| sim_r {row[10]:.3f} ep_len {row[11]:.1f} ep_ret {row[12]:.3f} term {term_frac:.2f} | head {head_rms_deg:.1f}deg | actor_grad {row[8]:.3g} foot_grad {row[18]:.3g} | {ips:.2f} it/s", flush=True)  # fmt: skip
@@ -980,7 +1065,7 @@ with launch_simulation(sim_cfg, args):
             if curriculum and current_it == args.wm_only_iters:
                 save_checkpoint('wm_calibrated')
                 print(f'WM-only phase complete at iteration {current_it}; saved wm_calibrated.pt; Actor/Critic updates begin next iteration',flush=True)
-            elif current_it % args.ckpt_every == 0 or current_it == args.iterations or (stair_cfg and current_it==start_it+1):
+            elif current_it % args.ckpt_every == 0 or current_it == args.iterations or (stair_cfg and current_it==start_it+1) or (m4 and current_it == args.m4_early_iteration):
                 save_checkpoint()
             if args.m34_dataset and args.m34_eval_every and current_it % args.m34_eval_every == 0:
                 # No restart/refill: replay, optimizer, RNG and simulator state
@@ -1040,11 +1125,15 @@ with launch_simulation(sim_cfg, args):
                 (log_path/'eval_final.json').write_text(json.dumps(final_report,indent=2))
     finally:
         # Signals set a flag; exceptions also leave the last complete optimizer state.
-        save_checkpoint()
+        if not m4 or sys.exc_info()[0] is None:
+            save_checkpoint()
         log_f.close()
         final_status='error' if sys.exc_info()[0] is not None else 'stopped' if STOP_REQUESTED or current_it<args.iterations else 'completed'
-        (log_path/'training_status.json').write_text(json.dumps(dict(status=final_status,iteration=current_it,wall_seconds=elapsed(),
-            stop_requested=STOP_REQUESTED,budget_seconds=curriculum.cfg['budget_seconds'] if curriculum else args.wall_seconds)))
+        if m4:
+            print(f'M4 {final_status} | iteration={current_it} | sim_steps={sim_steps} | wall={elapsed():.1f}s',flush=True)
+        else:
+            (log_path/'training_status.json').write_text(json.dumps(dict(status=final_status,iteration=current_it,wall_seconds=elapsed(),
+                stop_requested=STOP_REQUESTED,budget_seconds=curriculum.cfg['budget_seconds'] if curriculum else args.wall_seconds)))
 
 # The parent simulator is closed before the final independent physics rollout.
 # Smoke has eval_every=0: its checkpoint is evaluated by the explicit gate command.

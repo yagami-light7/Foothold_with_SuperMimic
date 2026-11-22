@@ -1,0 +1,8 @@
+{
+  "mode": "pd",
+  "sample_mode": "static_pillars",
+  "seed": 44,
+  "experiment": "four_step",
+  "safe_frames": 2,
+  "trust_offline_body_prior": false
+}

@@ -55,14 +55,16 @@ class EpisodeAnchor:
 class MotionReferenceProvider(MotionLib):
     """MotionLib-compatible replay/sampling API with explicit source FPS."""
 
-    def __init__(self, files, kin, device='cpu', src_fps=None):
+    def __init__(self, files, kin, device='cpu', src_fps=None, *, clip_names=None):
         if not files:
             raise ValueError('No Roban references selected')
         self.device, self.kin = device, kin
-        self.names = [Path(f).stem for f in files]
+        self.names = [Path(f).stem for f in files] if clip_names is None else list(clip_names)
+        if len(self.names) != len(files) or any(not isinstance(n,str) or not n for n in self.names):
+            raise ValueError('Each reference requires an explicit nonempty unique name')
         if len(self.names) != len(set(self.names)):
             raise ValueError('Reference clip names must be unique')
-        self.validation = dict(robot=checkpoint_contract(), files=[], contact='untrusted estimates unless labelled')
+        self.validation = dict(robot=self._validation_robot(), files=[], contact='untrusted estimates unless labelled')
         clips = [self._load(Path(f), src_fps) for f in files]
         lens = [len(c['p']) for c in clips]
         self.clip_len = torch.tensor(lens, device=device)
@@ -78,7 +80,7 @@ class MotionReferenceProvider(MotionLib):
         with torch.no_grad():
             self.body_p, self.body_R, self.body_v, self.body_w = kin.forward(*self.ref_state(torch.arange(self.num_frames, device=device)))
         self.foot_indices = [kin.tracked_names.index(n) for n in FOOT_BODY_NAMES]
-        self.sole_offsets = self.q.new_tensor([f['sole'] for f in foot_geometry()])
+        self.sole_offsets = self._foot_sole_offsets()
         self.corners = self.q.new_tensor([f['corners'] for f in foot_geometry()])
         self.foot_p, self.foot_R, self.foot_v = self.feet(self.ref_state(torch.arange(self.num_frames, device=device)))
         self.contact, self.contact_valid, self.phase = [], [], []
@@ -123,6 +125,12 @@ class MotionReferenceProvider(MotionLib):
         self.validation['frames'] = self.num_frames
         self.validation['trusted_contact_fraction'] = float(self.contact_valid.float().mean())
         self.validation['body_prior_quality_mean'] = float(self.quality.mean())
+
+    def _validation_robot(self):
+        return checkpoint_contract()
+
+    def _foot_sole_offsets(self):
+        return self.q.new_tensor([f['sole'] for f in foot_geometry()])
 
     def _load(self, path, explicit_fps):
         contact = valid = phase = None

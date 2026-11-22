@@ -38,7 +38,7 @@ def stop_reasons(S, mdp, terminated, timeout):
     return reasons
 
 
-def aggregate_ground_contacts(shape_body, body_labels, shape0, shape1, forces, num_envs):
+def aggregate_ground_contacts(shape_body, body_labels, shape0, shape1, forces, num_envs, *, foot_body_names=FOOT_BODY_NAMES):
     """Match Newton SensorContact's force-on-shape0 sign; ignore non-ground pairs."""
     counts = np.zeros((num_envs, 2), dtype=np.int64)
     force = np.zeros((num_envs, 2, 3))
@@ -56,8 +56,8 @@ def aggregate_ground_contacts(shape_body, body_labels, shape0, shape1, forces, n
             raise ValueError(f'Cannot identify environment of contact body {label}')
         env = int(match.group(1))
         name = label.split('/')[-1]
-        if name in FOOT_BODY_NAMES:
-            side = FOOT_BODY_NAMES.index(name)
+        if name in foot_body_names:
+            side = foot_body_names.index(name)
             counts[env, side] += 1
             force[env, side] += forces[j, :3] * (1 if body == b0 else -1)
         else:
@@ -79,9 +79,10 @@ class NewtonGroundContacts:
     Pinned SolverMuJoCo.update_contacts exports efc.force into the extended
     Contacts.force spatial array. rigid_contact_force is unused in this version.
     """
-    def __init__(self, env):
+    def __init__(self, env, *, foot_body_names=FOOT_BODY_NAMES):
         import warp as wp
         self.wp, self.env, self.backend = wp, env, env.physics
+        self.foot_body_names = tuple(foot_body_names)
         self.contacts = self.backend.get_contacts()
         if self.contacts is None:
             raise RuntimeError('Newton did not expose a contact buffer')
@@ -110,7 +111,8 @@ class NewtonGroundContacts:
             mask = ground_contact_subset(self._shape_body, self._body_env, s0, s1, ids)
             s0, s1, force = s0[mask], s1[mask], force[mask]
         return aggregate_ground_contacts(self.shape_body, self.labels,
-                s0.cpu().numpy(), s1.cpu().numpy(), force.cpu().numpy(), self.env.N)
+                s0.cpu().numpy(), s1.cpu().numpy(), force.cpu().numpy(), self.env.N,
+                foot_body_names=self.foot_body_names)
 
 
 def valid_windows(lengths, horizon, stride=1):

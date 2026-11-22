@@ -52,3 +52,5 @@ events.out.tfevents.*
 
 # Generated Roban Newton asset; regenerate with tools/run_roban.sh prepare
 assets/roban/usd/
+outputs/
+rubbish/

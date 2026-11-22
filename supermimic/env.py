@@ -56,7 +56,7 @@ class TrackingSim:
 
     def __init__(self, sim_cfg, num_envs: int, motion: MotionLib, mdp: MDP, gamma: float = 0.99, eval_mode: bool = False,
                  max_episode_steps: int | None = None, reset_noise: bool = True, goals: GoalSource | None = None,
-                 scene_cfg=None, scene_setup=None):
+                 scene_cfg=None, scene_setup=None, *, domain_randomization=None):
         if not USD_PATH.is_file():
             raise FileNotFoundError(f"Generate S54 USD first: python tools/mjcf_to_usd.py ({USD_PATH})")
         manifest = json.loads((USD_PATH.parents[1]/"contract.json").read_text())
@@ -91,7 +91,9 @@ class TrackingSim:
         episode_steps = max_episode_steps if max_episode_steps is not None else (mdp.cfg.episode_steps if mdp.is_foot else 500)
         self.max_episode_steps = episode_steps if (mdp.is_foot or not eval_mode) else 10**9
         self.reset_noise = reset_noise and not eval_mode
-        self.randomize = not eval_mode and (not mdp.is_foot or mdp.cfg.domain_randomization)
+        if domain_randomization is None:
+            domain_randomization = not mdp.is_foot or mdp.cfg.domain_randomization
+        self.randomize = not eval_mode and domain_randomization
         dev = self.device
         self.default_q = self.robot.data.default_joint_pos.torch[0, self.canonical_to_sim].clone()
         self.alpha = torch.tensor([action_scale(n) for n in JOINT_NAMES], device=dev)
