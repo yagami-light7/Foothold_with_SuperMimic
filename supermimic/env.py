@@ -262,6 +262,17 @@ class TrackingSim:
         xi = self.xi if xi is None else xi
         return self.default_q + xi[:, JOINT_OFFSET] + self.alpha * a
 
+    def validate_physics_step(self, before, after, target):
+        """检查原始物理状态。返回有效转移的掩码，全部有效时返回 None。"""
+
+    def advance_physics(self, target):
+        """下发本控制步目标并执行仿真，供实际 Rollout 和物理对照使用。"""
+        self.robot.set_joint_position_target_index(target=target[:, self.sim_to_canonical])
+        self.scene.write_data_to_sim()
+        self.sim.step(render=False)
+        self.scene.update(CONTROL_DT)
+        return self.state()
+
     def step(self, a: torch.Tensor) -> dict:
         S = self.state()
         f = self.f.clone()
@@ -271,11 +282,12 @@ class TrackingSim:
         command = self.command.clone() if self.goals.is_foot else None
         command_id = self.command_id.clone() if self.goals.is_foot else None
         target = self.pd_target(a, xi)
-        self.robot.set_joint_position_target_index(target=target[:, self.sim_to_canonical])
-        self.scene.write_data_to_sim()
-        self.sim.step(render=False)
-        self.scene.update(CONTROL_DT)
-        S1 = self.state()
+        S1 = self.advance_physics(target)
+        valid = self.validate_physics_step(S, S1, target)
+        if valid is not None:
+            # 用步前状态填充被丢弃的行，避免奖励计算读取异常物理状态。
+            S1 = tuple(torch.where(valid.reshape((-1,) + (1,) * (end.ndim - 1)), end, start)
+                       for start, end in zip(S, S1))
         saved_s1=flatten_state(S1)
         reward_state=(unflatten_state(saved_s1) if getattr(self.mdp,'canonical_replay_reward',False) else S1)
         f1 = f + 1
@@ -285,11 +297,17 @@ class TrackingSim:
         if not self.mdp.is_foot:
             clip_end = self.motion.clip_end[self.motion.clip_id[f]]
             timeout = timeout | (f1 >= clip_end)
+        if valid is not None:
+            r = r.masked_fill(~valid, 0.)
+            term = term & valid
+            timeout = timeout & valid
         done = term | timeout
         out = {
             "s": flatten_state(S), "a": a.clone(), "a_prev": a_prev, "f": f, "s1": saved_s1, "r": r,
             "term": term, "timeout": timeout, "done": done, "ep_step": ep_step, "xi": xi, "terms": terms,
         }  # fmt: skip
+        if valid is not None:
+            out['valid'] = valid
         if self.goals.is_foot:
             out.update(command=command, command_id=command_id)
         # bookkeeping
@@ -313,5 +331,7 @@ class TrackingSim:
                 self.bin_G.index_put_((b,), 0.8 * self.bin_G[b] + 0.2 * G)
             out["ep_len"] = T
             out["ep_ret_norm"] = self.ep_ret[ids] / (T * self.mdp.max_step_reward)
-            self.reset(ids)
+        reset_ids = ids if valid is None else (done | ~valid).nonzero(as_tuple=True)[0]
+        if len(reset_ids) > 0:
+            self.reset(reset_ids)
         return out

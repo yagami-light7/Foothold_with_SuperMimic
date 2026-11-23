@@ -31,6 +31,31 @@ class AuditFixTests(unittest.TestCase):
         b.data['ep_step'][:,0]=torch.tensor([0,1,10,11])
         torch.testing.assert_close(b.sample_windows(1,4)['mask'],torch.tensor([[1.,1.,0.,0.]]))
 
+    def test_rejected_transition_is_excluded_from_replay(self):
+        b = ReplayBuffer(3, 2, 'cpu')
+        row = {key: data[0].clone() for key, data in b.data.items()}
+        for t in range(3):
+            row['ep_step'] = torch.tensor([t if t < 2 else 0, t])
+            row['f'] = torch.tensor([t * 10, 100 + t])
+            row['term'].fill_(t == 2)
+            row['done'].copy_(row['term'])
+            row['r'].fill_(1.)
+            b.add(dict(row, valid=torch.tensor([False, True])) if t == 1 else row)
+
+        with patch('torch.randint', side_effect=[torch.tensor([0, 0]), torch.tensor([0, 1])]):
+            windows = b.sample_windows(2, 3)
+        torch.testing.assert_close(windows['mask'], torch.tensor([[1., 0., 0.], [1., 1., 1.]]))
+
+        with patch('torch.randint', side_effect=[torch.tensor([1, 2]), torch.tensor([0, 0]), torch.tensor([2])]):
+            starts, history = b.sample_starts(2, 3)
+        self.assertEqual(starts['f'].tolist(), [101, 20])
+        self.assertEqual(history['f'].tolist(), [[100, 100, 101], [20, 20, 20]])
+
+        with patch('torch.randint', side_effect=[torch.tensor([0, 0]), torch.tensor([0, 1])]):
+            mc = b.sample_mc_returns(2, 3, .5, recent=3)
+        self.assertEqual(mc['f'].tolist(), [100])
+        torch.testing.assert_close(mc['mc_return'], torch.tensor([1.75]))
+
     def mc(self,b,starts,window=8,gamma=.5):
         with patch('torch.randint',side_effect=[torch.tensor(starts),torch.zeros(len(starts),dtype=torch.long)]):
             return b.sample_mc_returns(len(starts),window,gamma,recent=b.size)

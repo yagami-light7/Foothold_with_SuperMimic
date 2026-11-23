@@ -4,6 +4,36 @@ import json
 from pathlib import Path
 
 
+M4_ACTION_MAPPINGS = ('neutral', 'reference_residual', 'joint_range', 'standing_offset')
+M4_GUARDED_MAPPINGS = ('joint_range', 'standing_offset')
+
+
+def add_m4_action_mapping_arg(parser):
+    parser.add_argument('--m4_unclipped_pd_target', action='store_true',
+                        help='固定站姿线性动作直接下发位置目标，保留 Newton 机械限位和执行器限幅')
+    parser.add_argument('--m4_action_mapping', choices=M4_ACTION_MAPPINGS, default='neutral',
+                        help='M4 PD 动作映射：模型中立位、参考残差、关节全范围或固定站姿偏移')
+    parser.add_argument('--m4_standing_pose', type=json.loads, help='固定站姿的关节名称与角度（rad）')
+    parser.add_argument('--m4_action_scale_factor', type=float, default=.25, help='站姿偏移动作的力矩比例系数')
+
+
+def add_m4_solver_args(parser):
+    parser.add_argument('--m4_substeps', type=int, help='M4 每个 20ms 控制周期的物理子步数')
+    parser.add_argument('--m4_limit_time_constant', type=float, help='MJWarp 关节限位 solref 的时间常数（秒）')
+    parser.add_argument('--m4_integrator', choices=('implicitfast', 'implicit'), help='M4 的 MJWarp 积分器')
+    parser.add_argument('--m4_pd_damping', type=json.loads, help='按关节名称覆盖 Roban 执行器 Kd 的 JSON 对象')
+    parser.add_argument('--m4_njmax', type=int, help='M4 每个环境的 MJWarp 约束容量')
+    parser.add_argument('--m4_nconmax', type=int, help='M4 每个环境的 MJWarp 接触点容量')
+    parser.add_argument('--m4_solver_iterations', type=int, help='M4 每个物理子步的求解迭代上限')
+
+
+def add_m4_diagnostic_args(parser):
+    from argparse import BooleanOptionalAction
+
+    parser.add_argument('--m4_fault_trace', action=BooleanOptionalAction, default=False,
+                        help='记录训练物理指标，异常时保存最近八步的单个快照')
+
+
 def select_roban_files(directory, clips=None):
     import fnmatch
     root=Path(directory)
@@ -39,6 +69,10 @@ def add_roban_args(parser,argv):
     parser.add_argument('--robot',choices=['s54','roban'],default='s54')
     parser.add_argument('--roban_config',help='Trainer-consumed Roban experiment JSON')
     parser.add_argument('--m4_reference',help='Path to the original M3.7.1 F2 reference.npz')
+    add_m4_action_mapping_arg(parser)
+    add_m4_solver_args(parser)
+    add_m4_diagnostic_args(parser)
+    parser.add_argument('--m4_eval_every', type=int, default=0, help='M4.2 独立评估间隔，0 表示手动评估')
     parser.add_argument('--reference_fps',type=float,help='Explicit source FPS when registry/NPZ has no provenance')
     parser.add_argument('--critic_use_body_reference',action=__import__('argparse').BooleanOptionalAction,default=False)
     parser.add_argument('--body_prior_weight',type=float,default=0.0)

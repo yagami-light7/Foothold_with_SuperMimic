@@ -23,7 +23,7 @@ def request_stop(*_):
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
-from supermimic.roban_runtime import configure_robot, add_roban_args
+from supermimic.roban_runtime import M4_GUARDED_MAPPINGS, configure_robot, add_roban_args
 ROBOT_KIND = configure_robot(sys.argv[1:])
 from isaaclab.app import add_launcher_args, launch_simulation
 from supermimic.goals import GoalSource, add_goal_args, resolve_goal_config
@@ -94,23 +94,41 @@ parser.add_argument('--prior_config',help='Optional upper-body prior config; def
 parser.add_argument('--wall_seconds',type=float,help='Safe wall-clock stop, including initialization; finite bounded experiments')
 parser.add_argument('--reward_term_logging',action='store_true',help='Persist per-term mean/std and weighted prior contributions locally')
 parser.add_argument('--paired_latent_weight',type=float,default=0.,help='Optional same-clip latent alignment; never applies to random Quintic goals')
-parser.add_argument('--m4_early_iteration', type=int, default=8, help='M4 保留的早期检查点迭代')
+parser.add_argument('--m4_early_iteration', type=int, help='M4 早期检查点迭代，M4.1 和 M4.2 默认取 WM-only 结束轮')
 add_goal_args(parser)
 add_launcher_args(parser)
 add_roban_args(parser, sys.argv[1:])
 args = parser.parse_args()
 m4 = bool(args.m4_reference)
+residual_action = m4 and args.m4_action_mapping == 'reference_residual'
+joint_range_action = m4 and args.m4_action_mapping == 'joint_range'
+standing_action = m4 and args.m4_action_mapping == 'standing_offset'
+guarded_action = m4 and args.m4_action_mapping in M4_GUARDED_MAPPINGS
+m43 = standing_action and bool(args.roban_reward_config.get('swing_aware'))
+m44 = m43 and args.m4_unclipped_pd_target
+if args.m4_early_iteration is None:
+    args.m4_early_iteration = max(1, args.wm_only_iters) if guarded_action else 8
 try:
     if ROBOT_KIND == 'roban':
         if args.goal_mode != 'roban_foot' or any((args.m34_dataset,args.stair_config,args.foot_task_config,args.curriculum_config,args.prior_config,args.init_from_motion,args.init_from_bridge,args.init_from_flat)):
             raise ValueError('Roban uses its unified reference/task adapter; S54-only options are incompatible')
-        if args.obs_adapter != 'identity' or args.freeze_decoder or args.paired_latent_weight or args.check_foot_gradients or args.gradient_audit_every or args.critic_real_batch:
+        if args.obs_adapter != 'identity' or args.freeze_decoder or args.paired_latent_weight or args.check_foot_gradients or (args.gradient_audit_every and not m43) or args.critic_real_batch:
             raise ValueError('Use Roban foot gradient tests; legacy S54 adapters/audits are incompatible')
         from supermimic.roban_task import FootRewardConfig
         FootRewardConfig(**dict(args.roban_reward_config, body_prior_weight=args.body_prior_weight))
     if m4 and (ROBOT_KIND != 'roban' or args.init_weights or args.no_critic
                or args.reward_term_logging or args.wm_use_terrain or args.m4_early_iteration < 1):
         raise ValueError('M4 使用 Roban 平地任务和完整 SuperMimic 更新，仅支持同任务恢复')
+    if not m4 and args.m4_action_mapping != 'neutral':
+        raise ValueError('M4 动作映射需要 --m4_reference')
+    if args.m4_unclipped_pd_target and (not m44 or not args.m4_fault_trace):
+        raise ValueError('未裁剪训练使用 M4.3 摆动奖励、standing_offset 和物理故障监测')
+    if guarded_action and (not math.isfinite(args.action_noise) or args.action_noise < 0):
+        raise ValueError('M4 探索噪声的标准差必须有限且非负')
+    if args.m4_fault_trace and not guarded_action:
+        raise ValueError('物理异常快照需要 M4.1 或 M4.2 动作映射')
+    if args.m4_eval_every < 0 or (args.m4_eval_every and not standing_action):
+        raise ValueError('m4_eval_every 必须为非负数，定期 M4 评估需要 M4.2 动作映射')
     if args.m34_eval_every < 0 or not args.m34_eval_seeds or len(set(args.m34_eval_seeds)) != len(args.m34_eval_seeds) or any(s < 0 for s in args.m34_eval_seeds):
         raise ValueError('Invalid M3.4 evaluation interval or seed protocol')
     goal_spec, foot_config = resolve_goal_config(args)
@@ -161,8 +179,10 @@ except (ValueError, TypeError, OSError) as exc:
 from pathlib import Path
 log_path = Path(args.log_dir).resolve()
 if m4:
-    if not log_path.is_relative_to(Path(REPO)/"outputs/m4_0") or log_path.name != "checkpoints":
-        parser.error("M4 检查点目录必须位于 outputs/m4_0 下，且目录名为 checkpoints")
+    m4_root = Path('outputs') / ('m4_4_unclipped' if m44 else 'm4_3' if m43 else
+                               {'joint_range': 'm4_1', 'standing_offset': 'm4_2'}.get(args.m4_action_mapping, 'm4_0'))
+    if not log_path.is_relative_to(Path(REPO) / m4_root) or log_path.name != "checkpoints":
+        parser.error(f"M4 检查点目录必须位于 {m4_root} 下，且目录名为 checkpoints")
     metrics_path = log_path.parent/'logs'/'train.csv'
     args_path = log_path.parent/'config'/'train.json'
 else:
@@ -321,6 +341,13 @@ args.obs_dim = obs_dim
 reward_scale = mdp.max_step_reward
 value_upper = return_upper_bound(reward_scale,args.gamma) if mdp.is_foot else None
 imagination_contract=dict(version=1,action_clip=ACTION_LIMIT,bootstrap_upper_bound=value_upper)
+if joint_range_action:
+    imagination_contract.update(version=2, action_clip=None, action_transform='tanh', action_range=[-1., 1.])
+if standing_action:
+    imagination_contract.update(version=3, action_clip=None, action_transform='linear',
+                                wm_action='standing_equivalent_of_limit_clamped_pd_target')
+    if m44:
+        imagination_contract.update(version=4, pd_target_clip=False, wm_action='raw_linear_pd_target')
 actor_lr=args.lr if args.actor_lr is None else args.actor_lr
 critic_lr=args.lr if args.critic_lr is None else args.critic_lr
 K, Hh, HZ = args.goal_frames, args.hist, args.horizon
@@ -332,7 +359,7 @@ if args.goal_mode=='reference_foot':
     from supermimic.networks import DualEncoderPolicy
     pi=DualEncoderPolicy(hist=Hh).to(dev)
 else:
-    pi = Policy(obs_dim, GOAL_DIM, hist=Hh,obs_adapter=args.obs_adapter).to(dev)
+    pi = Policy(obs_dim, GOAL_DIM, hist=Hh, obs_adapter=args.obs_adapter, squash_action=joint_range_action).to(dev)
 if ROBOT_KIND == 'roban':
     # Critic width is the E0/E1 ablation. Its initialization must not change
     # subsequent shared reset/action-noise RNG draws merely by consuming more RNG.
@@ -345,7 +372,7 @@ opt_pi = torch.optim.Adam(pi.parameters(), lr=actor_lr, betas=(0.9, 0.95))
 opt_v = torch.optim.Adam(critic.parameters(), lr=critic_lr)
 start_it, wall_offset, sim_steps = 0, 0.0, 0
 supervision_steps=0
-physics_metadata=physical_contract(obs_dim=obs_dim)
+physics_metadata = mdp.physics_contract(args) if m4 else physical_contract(obs_dim=obs_dim)
 if stair_cfg:
     physics_metadata['solver']={**physics_metadata['solver'],'use_mujoco_contacts':False}
     physics_metadata['collision_decimation']=1
@@ -355,21 +382,31 @@ git_sha=os.environ.get('S54_SOURCE_GIT_SHA')
 if not git_sha:
     git_result=subprocess.run(['git','rev-parse','HEAD'],cwd=REPO,text=True,capture_output=True)
     git_sha=git_result.stdout.strip() if git_result.returncode==0 else 'unavailable-in-container'
+if m43:
+    from importlib.metadata import version
+
+    args.environment_versions = {p: version(p) for p in ('isaaclab', 'newton', 'mujoco-warp', 'warp-lang', 'torch')}
+    args.git_commit = git_sha
 launch_metadata=json.loads((log_path/'launch.json').read_text()) if (log_path/'launch.json').exists() else {}
 source_snapshot=launch_metadata.get('source_snapshot')
 if args.resume:
     ck = torch.load(args.resume, map_location=dev, weights_only=False)
     assert_checkpoint(ck)
+    if m4:
+        mdp.assert_checkpoint_task(ck)
+    if guarded_action:
+        mdp.assert_wm_statistics(ck)
     if ck.get('imagination_contract') not in (None,imagination_contract):
         raise ValueError('Imagination action/value contract mismatch')
     if ck.get('imagination_contract') is None:
         print('Legacy checkpoint: applying real/imagined action consistency and valid foot return bound; '
               'network dimensions and physical task unchanged',flush=True)
     goal_spec.assert_checkpoint(ck, foot_config)
-    if ROBOT_KIND == 'roban':
-        if ck.get('task_contract') != mdp.contract(): raise ValueError('Roban task/critic/terrain resume mismatch')
-    else:
-        assert_task_checkpoint(ck, mdp)
+    if not m4:
+        if ROBOT_KIND == 'roban':
+            if ck.get('task_contract') != mdp.contract(): raise ValueError('Roban task/critic/terrain resume mismatch')
+        else:
+            assert_task_checkpoint(ck, mdp)
     assert_policy_checkpoint(ck,Hh,args.obs_adapter,not args.freeze_decoder,
                              obs_dim=obs_dim, observation_mode=args.motion_obs_mode)
     if ck.get('physical_contract',physics_metadata)!=physics_metadata: raise ValueError('Resume physics contract mismatch')
@@ -450,6 +487,11 @@ ERR_FLOOR = torch.cat((torch.full((3,), 3e-3), torch.full((3,), 5e-3), torch.ful
                        torch.full((NUM_J,), 3e-3), torch.full((NUM_J,), 5e-2))).to(dev)  # fmt: skip
 
 
+def _wm_action(a, f):
+    # 采样、回放与想象使用同一物理目标；Actor 历史仍保留实际输出的动作。
+    return mdp.wm_action(a, f) if m4 else a
+
+
 def _wm_rollout(s, a, xi):
     S = unflatten_state(s[:, 0])
     preds = []
@@ -467,14 +509,19 @@ def _wm_err(S_hat, s1, mask):
 
 
 def _imag_step(S, o_hist, a_prev, f, xi, xi_n, g, ep_step, command):
-    raw_a = pi(o_hist, g)
-    a = bound_action(raw_a)
-    S1 = wm.step(S, a, xi_n)
+    a = pi(o_hist, g)
+    clip_fraction = a.new_zeros(())
+    if standing_action:
+        clip_fraction = mdp.target_clip_mask(a.detach()).float().mean()
+    elif not joint_range_action:
+        clip_fraction = (a.abs() > ACTION_LIMIT).float().mean()
+        a = bound_action(a)
+    S1 = wm.step(S, _wm_action(a, f), xi_n)
     f1 = f + 1
     step1 = ep_step + 1
     o1 = mdp.add_noise(goals.obs(mdp, S1, a, xi, f1, command))
     o_hist = torch.cat((o_hist[:, 1:], o1.unsqueeze(1)), 1)
-    return S1, a, o_hist, f1, goals.goal(S1, f1, step1, command), step1, (raw_a.abs()>ACTION_LIMIT).float().mean()
+    return S1, a, o_hist, f1, goals.goal(S1, f1, step1, command), step1, clip_fraction
 
 
 def _reward_term(S, f, a, a_prev, ep_step, command):
@@ -516,8 +563,8 @@ def set_requires_grad(m: nn.Module, flag: bool):
 
 # ------------------------------------------------------------------------------------------------
 def wm_update():
-    w = buffer.sample_windows(args.wm_batch, args.wm_window)
-    S_hat = wm_rollout(w["s"], w["a"], w["xi"])
+    w = buffer.sample_windows(args.wm_batch, args.wm_window, include_frames=residual_action)
+    S_hat = wm_rollout(w["s"], _wm_action(w["a"], w.get("f")), w["xi"])
     loss, e_last = wm_err(S_hat, w["s1"], w["mask"])
     opt_wm.zero_grad(set_to_none=True)
     if not torch.isfinite(loss): raise FloatingPointError("Nonfinite WM/Policy loss")
@@ -526,6 +573,35 @@ def wm_update():
     opt_wm.step()
     m = w["mask"][:, -1]
     return loss.detach() / args.wm_window, (e_last.detach() * m).sum() / m.sum().clamp(min=1)
+
+
+@torch.no_grad()
+def m43_wm_metrics():
+    # 旁路抽样复用正常 Replay 的遮罩，恢复随机状态并保持训练更新完全相同。
+    if buffer.size < 8:
+        return {}
+    with torch.random.fork_rng(devices=[torch.cuda.current_device()]):
+        batch = buffer.sample_windows(args.wm_batch, 8, include_frames=True, include_reward=True)
+    state = unflatten_state(batch['s'][:, 0])
+    std = torch.maximum(wm.out_norm.std(), ERR_FLOOR)
+    values = {}
+    for k in range(8):
+        f, a = batch['f'][:, k], batch['a'][:, k]
+        state = wm.step(state, _wm_action(a, f), normalize_xi(batch['xi'][:, k]))
+        if k not in (0, 3, 7):
+            continue
+        valid = batch['mask'][:, k].bool()
+        if not valid.any():
+            continue
+        pred = tuple(x[valid] for x in state)
+        true = unflatten_state(batch['s1'][:, k][valid])
+        frame = f[valid] + 1
+        command = motion.anchor(torch.zeros_like(frame))
+        reward = mdp.reward(pred, frame, a[valid], batch['a_prev'][:, k][valid], command=command, ep_step=frame)
+        values[f'wm_error_{k+1}'] = float((wm.state_error(pred, true) / std).square().mean())
+        values[f'wm_foot_rmse_{k+1}'] = float((motion.feet(pred)[0] - motion.feet(true)[0]).square().sum(-1).mean().sqrt())
+        values[f'wm_reward_bias_{k+1}'] = float((reward - batch['r'][:, k][valid]).mean() / reward_scale)
+    return values
 
 
 def sample_valid_starts(B: int):
@@ -625,12 +701,17 @@ def policy_update(audit_gradients=False):
         dot=sum(((x.detach().float()*y.detach().float()).sum() for x,y in zip(rg,bg) if x is not None and y is not None),torch.zeros((),device=dev))
         gradient_diagnostics=dict(actor_reward_gradnorm=rn,actor_bootstrap_gradnorm=bn,
             actor_grad_cosine=dot/(rn*bn).clamp_min(1e-20),pure_foot_gradnorm=foot_gn)
-        if mdp.is_foot:
+        if mdp.is_foot or m43:
             _,heads=mdp.reward(S_all,f_all,flat(As),flat(Aps),True,command=command_all,ep_step=flat(Steps))
-            objectives={k:v for k,v in heads.items() if k.endswith('_contribution')}
-            objectives.update(base_height=heads['base_height']*task_cfg.w_base_height*.02,
-                              base_upright=heads['base_upright']*task_cfg.w_upright*.02,
-                              foot=heads['foot_objective'])
+            if m43:
+                names = ('swing_position', 'swing_clearance', 'touchdown', 'upright', 'survival')
+                objectives = {name: heads[f'{name}_contribution'] for name in names}
+                objectives['foot'] = foot_reward
+            else:
+                objectives={k:v for k,v in heads.items() if k.endswith('_contribution')}
+                objectives.update(base_height=heads['base_height']*task_cfg.w_base_height*.02,
+                                  base_upright=heads['base_upright']*task_cfg.w_upright*.02,
+                                  foot=heads['foot_objective'])
             for key,values in objectives.items():
                 objective=-(disc*c_t.detach()*values.view(HZ,B)).sum(0).mean()
                 gradients=torch.autograd.grad(objective,params,retain_graph=True,allow_unused=True)
@@ -735,6 +816,10 @@ with launch_simulation(sim_cfg, args):
         env.stair_iteration=start_it
     elif m4:
         env = M4TrackingSim(sim_cfg, args.num_envs, motion, mdp, gamma=args.gamma, goals=goals)
+        if args.m4_fault_trace:
+            from supermimic.integration.m4_dynamics import TrainingDynamics
+
+            env.dynamics = TrainingDynamics(env, log_path.parent/'dynamics_fault.npz', args)
         args_path.parent.mkdir(parents=True, exist_ok=True)
         args_temp = args_path.with_suffix('.tmp')
         args_temp.write_text(json.dumps(vars(args), indent=2)+'\n')
@@ -762,9 +847,24 @@ with launch_simulation(sim_cfg, args):
             if not stair_cfg or stair_cfg.get('normalizer_policy')=='source_online':
                 pi.obs_norm.update(o)
                 pi.goal_norm.update(g)
-            a = pi(obs_hist, g)
-            a = bound_action(a + args.action_noise * torch.randn_like(a))
-            out = env.step(a)
+            if guarded_action:
+                if args.m4_fault_trace:
+                    a, logits = pi(obs_hist, g, action_noise=args.action_noise, return_logits=True)
+                    env.dynamics.set_action(logits, a, current_it + 1, sim_steps)
+                else:
+                    a = pi(obs_hist, g, action_noise=args.action_noise)
+            else:
+                a = pi(obs_hist, g)
+                a = bound_action(a + args.action_noise * torch.randn_like(a))
+            try:
+                out = env.step(a)
+            except FloatingPointError as exc:
+                if guarded_action:
+                    exc.add_note(f'训练轮次={current_it + 1}，此前已采集转移={sim_steps}，保留上一个检查点。')
+                    if args.m4_fault_trace:
+                        message, _ = env.dynamics.report()
+                        print(f'Newton | {message}', flush=True)
+                raise
             if stair_cfg:
                 from supermimic.stair_training import validate_transition
                 validate_transition(out,mdp,stair_cfg,log_path)
@@ -780,26 +880,42 @@ with launch_simulation(sim_cfg, args):
                     for k,v in out['terms'].items()})
                 with (log_path/'reward_terms.jsonl').open('a') as sink: sink.write(json.dumps(record)+'\n')
             if not torch.isfinite(out["s1"]).all(): raise FloatingPointError("Nonfinite Newton state; refusing to poison normalization/replay")
+            if guarded_action and not out['r'].isfinite().all():
+                raise FloatingPointError('M4 Newton 奖励出现非有限值')
             buffer.add(out)
             if curriculum: curriculum.observe(out['command'],out['ep_step'])
+            valid = out.get('valid')
+            keep = slice(None) if valid is None else valid
+            count = args.num_envs if valid is None else int(valid.count_nonzero())
+            sim_steps += count
+            if count == 0:
+                continue
             S0, S1 = unflatten_state(out["s"]), unflatten_state(out["s1"])
             if not stair_cfg or stair_cfg.get('normalizer_policy')=='source_online':
-                wm.in_norm.update(wm.inputs(S0, out["a"], normalize_xi(out["xi"])))
-                wm.out_norm.update(wm.targets(S0, S1))
-            sim_steps += args.num_envs
-            stats["r"].append(out["r"].mean() / reward_scale)
-            stats["head_error"].append(out['terms']['head_position_error'].mean())
-            stats["head_penalty"].append(out['terms']['head_penalty'].mean() / reward_scale)
+                wm.in_norm.update(wm.inputs(S0, _wm_action(out["a"], out["f"]), normalize_xi(out["xi"]))[keep])
+                wm.out_norm.update(wm.targets(S0, S1)[keep])
+            stats["r"].append(out["r"][keep].mean() / reward_scale)
+            stats["head_error"].append(out['terms']['head_position_error'][keep].mean())
+            stats["head_penalty"].append(out['terms']['head_penalty'][keep].mean() / reward_scale)
             if m4:
-                stats['foot_error_sq'].append(out['terms']['foot_rmse'].square().mean())
-                stats['root_error_sq'].append(out['terms']['root_position_error'].square().mean())
+                stats['foot_error_sq'].append(out['terms']['foot_rmse'][keep].square().mean())
+                stats['root_error_sq'].append(out['terms']['root_position_error'][keep].square().mean())
+            if m43:
+                frame = out['f'][keep] + 1
+                p, R = S1[0][keep], S1[1][keep]
+                trace = (R * motion.root_R[frame]).sum((-1, -2))
+                stats['root_xy_rmse_m'].append((p[:, :2] - motion.root_p[frame, :2]).square().sum(-1).mean())
+                stats['root_orientation_rmse_deg'].append(torch.acos(((trace-1.)*.5).clamp(-1., 1.)).rad2deg().square().mean())
+                stats['action_rate_rms'].append((out['a'][keep] - out['a_prev'][keep]).square().mean())
+                for name in reward_metric_names:
+                    stats[name].append(out['terms'][name][keep].mean())
             if goals.is_foot and (args.check_foot_gradients or args.goal_mode=='reference_foot'
-                                  or (m4 and sim_steps == startup_steps + args.num_envs)):
+                                  or (m4 and sim_steps == startup_steps + count)):
                 restored = goals.goal(S0,out['f'],out['ep_step'],out['command'])
                 recomputed = mdp.reward(S1,out['f']+1,out['a'],out['a_prev'],
                                         command=out['command'],ep_step=out['ep_step']+1)
-                goal_error = (g-restored).abs().max()
-                reward_error = (out['r']-recomputed).abs().max()
+                goal_error = (g-restored)[keep].abs().max()
+                reward_error = (out['r']-recomputed)[keep].abs().max()
                 if goal_error > 1e-5 or reward_error > 1e-5:
                     raise RuntimeError('Real/replay foot command or reward timing mismatch')
                 stats['goal_sync'].append(goal_error)
@@ -823,8 +939,12 @@ with launch_simulation(sim_cfg, args):
     startup_steps = sim_steps
     step_acc = float(ck.get('step_acc',0.)) if args.resume else 0.
     if args.resume and 'rng' in ck: restore_rng(ck['rng'])
+    m44_last_saved = None
 
     def save_checkpoint(label=None, *, initial=False):
+        global m44_last_saved
+        if m44 and not initial and m44_last_saved == current_it:
+            return
         ckpt = {"robot_contract": physics_metadata['robot'] if m4 else checkpoint_contract(), "goal_contract": goal_spec.contract(),
                 "checkpoint_schema_version":3 if ROBOT_KIND == 'roban' else 2,
                 "task_contract": mdp.contract(),
@@ -856,7 +976,14 @@ with launch_simulation(sim_cfg, args):
                 atomic_save(ckpt, log_path/'initial.pt')
                 return
             atomic_save(ckpt, log_path/'last.pt')
-            if current_it == args.m4_early_iteration and not (log_path/'early.pt').exists():
+            if m44:
+                m44_last_saved = current_it
+            milestone_interval = args.ckpt_every if m44 else 1000
+            if m43 and current_it > 0 and (current_it % milestone_interval == 0 or current_it == args.iterations):
+                stage = log_path/f'iter_{current_it}.pt'
+                if not stage.exists():
+                    os.link(log_path/'last.pt', stage)
+            if not m43 and current_it == args.m4_early_iteration and not (log_path/'early.pt').exists():
                 os.link(log_path/'last.pt', log_path/'early.pt')
             return
         atomic_save(ckpt, log_path/'last.pt')
@@ -887,16 +1014,43 @@ with launch_simulation(sim_cfg, args):
         if not args.resume:
             # 随机初始化基线须保存于任何采样、归一化和训练更新之前。
             save_checkpoint(initial=True)
+    if m43:
+        from supermimic.roban import JOINT_NAMES
+
+        reward_metric_names = tuple(f'{name}_contribution' for name in (
+            'swing_position', 'swing_clearance', 'swing_orientation', 'stance_position', 'contact_schedule',
+            'touchdown', 'upright', 'survival', 'slip', 'joint_limit', 'torque', 'action_rate', 'collision',
+            'self_collision', 'body_prior'))
+        rms_names = ('root_xy_rmse_m', 'root_orientation_rmse_deg', 'action_rate_rms')
+        stats.update({name: [] for name in (*reward_metric_names, *rms_names)})
+        wm_metric_names = tuple(f'{name}_{k}' for name in ('wm_error', 'wm_foot_rmse', 'wm_reward_bias') for k in (1, 4, 8))
+        grad_metric_names = tuple(f'term_{name}_actor_gradnorm' for name in
+                                  ('swing_position', 'swing_clearance', 'touchdown', 'upright', 'survival', 'foot'))
+        grad_metric_names += ('actor_bootstrap_gradnorm', 'actor_grad_cosine')
+        extended_action_names = ('actor_raw_abs_p95', 'actor_raw_abs_p99', 'joint_speed_max_rad_s',
+                                 'joint_speed_p99_rad_s', 'wm_effective_action_rms') + tuple(f'clamp_{name}' for name in JOINT_NAMES)
+        if m44:
+            extended_action_names += ('raw_target_out_of_range_ratio',) + tuple(
+                f'raw_target_{metric}_{name}' for name in JOINT_NAMES
+                for metric in ('out_of_range', 'excess_p95', 'excess_p99', 'excess_max'))
+        m43_columns = (*rms_names, *reward_metric_names, *wm_metric_names, *grad_metric_names,
+                       *extended_action_names, 'epa_resets')
     # Replay is deliberately not checkpointed. Refill it on resume as well as on
     # the first run; otherwise sampling the fresh empty buffer fails immediately.
     # Fresh replay after resume: refill, then a short WM-only recovery before Actor updates.
     recovery_until = start_it + (args.recovery_wm_iters if args.resume else 0)
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
     log_f = metrics_path.open("a")
+    action_metrics = ('actor_raw_mean', 'actor_raw_std', 'actor_raw_abs_max', 'pd_target_clamp_ratio',
+                      'torque_saturation_ratio', 'joint_limit_excess_rad', 'invalid_transitions', 'physics_exceptions')
     if log_f.tell() == 0:
         columns = "iteration,wall_h,sim_steps,wm_loss,wm_err8,pi_loss,v_loss,imag_rew,pi_gradnorm,imag_survival,sim_rew,ep_len,ep_ret_norm,term_frac,it_per_s,lr,head_rms_deg,head_penalty_norm,foot_actor_gradnorm,goal_sync_max_error,reward_sync_max_error,completed_episodes"
         if m4:
             columns += ",num_envs,collect_fps,train_fps,device_used_mib,torch_peak_mib,survival_rate,foot_rmse_m,root_rmse_m"
+        if standing_action:
+            columns += ',' + ','.join(action_metrics) + ',imagined_pd_target_clamp_ratio'
+        if m43:
+            columns += ',' + ','.join(m43_columns)
         log_f.write(columns+'\n')
     t_log = time.time()
     last_log_iteration=start_it
@@ -972,6 +1126,18 @@ with launch_simulation(sim_cfg, args):
                     if args.max_device_memory_mib is not None and device_mib >= args.max_device_memory_mib:
                         STOP_REQUESTED = True
                         print(f'M4 显存达到阈值（{device_mib:.0f} MiB），保存后停止。', flush=True)
+                dynamics_message, dynamics_metrics = env.dynamics.report() if args.m4_fault_trace else ('', {})
+                if standing_action:
+                    clips = diag_agg.get('imagined_action_clip_fraction', [])
+                    row.extend(dynamics_metrics.get(key, '') for key in action_metrics)
+                    row.append(mean(clips) if clips else '')
+                if m43:
+                    extra = {key: mean(stats[key]) for key in reward_metric_names}
+                    extra.update({key: math.sqrt(mean(stats[key])) for key in rms_names})
+                    extra.update(m43_wm_metrics(), epa_resets=env.epa_resets)
+                    extra.update(dynamics_metrics)
+                    extra.update({key: mean(diag_agg[key]) for key in grad_metric_names if key in diag_agg})
+                    row.extend(extra.get(key, '') for key in m43_columns)
                 log_f.write(",".join(f"{x:.6g}" if isinstance(x, float) else str(x) for x in row) + "\n")
                 log_f.flush()
                 if diag_agg:
@@ -979,8 +1145,15 @@ with launch_simulation(sim_cfg, args):
                         with (log_path/'gradient_terms.jsonl').open('a') as sink:
                             sink.write(json.dumps(dict(iteration=it+1,**{k:mean(v) for k,v in diag_agg.items()}))+'\n')
                     if not curriculum:diag_agg={}
+                resets = f' | joint_resets {env.joint_resets}' if guarded_action else ''
+                if standing_action:
+                    resets += f' | epa_resets {env.epa_resets}'
                 print(f"it {it + 1} | {wall_h:.3f} h | wm {row[3]:.4f} e8 {row[4]:.4f} | pi {row[5]:.3f} v {row[6]:.4f} imag_r {row[7]:.3f} surv {row[9]:.3f} "
-                      f"| sim_r {row[10]:.3f} ep_len {row[11]:.1f} ep_ret {row[12]:.3f} term {term_frac:.2f} | head {head_rms_deg:.1f}deg | actor_grad {row[8]:.3g} foot_grad {row[18]:.3g} | {ips:.2f} it/s", flush=True)  # fmt: skip
+                      f"| sim_r {row[10]:.3f} ep_len {row[11]:.1f} ep_ret {row[12]:.3f} term {term_frac:.2f} | head {head_rms_deg:.1f}deg | actor_grad {row[8]:.3g} foot_grad {row[18]:.3g} | {ips:.2f} it/s{resets}", flush=True)  # fmt: skip
+                if dynamics_message:
+                    print(f'Newton | {dynamics_message}', flush=True)
+                if standing_action and clips:
+                    print(f'BPTT | PD 目标裁剪 {mean(clips):.2%}', flush=True)
                 stats = {k: [] for k in stats}
                 agg = {k: [] for k in agg}
             current_it = it+1
@@ -1062,11 +1235,26 @@ with launch_simulation(sim_cfg, args):
                         print(f'Curriculum transition C{stage_before} -> C{curriculum.stage}',flush=True)
                 if elapsed()-curriculum.last_save>=curriculum.cfg['checkpoint_seconds']:
                     curriculum.last_save=elapsed(); save_checkpoint()
+            evaluate_m4 = args.m4_eval_every and not STOP_REQUESTED and (
+                current_it % args.m4_eval_every == 0 or current_it == args.iterations)
             if curriculum and current_it == args.wm_only_iters:
                 save_checkpoint('wm_calibrated')
                 print(f'WM-only phase complete at iteration {current_it}; saved wm_calibrated.pt; Actor/Critic updates begin next iteration',flush=True)
-            elif current_it % args.ckpt_every == 0 or current_it == args.iterations or (stair_cfg and current_it==start_it+1) or (m4 and current_it == args.m4_early_iteration):
+            elif (current_it % args.ckpt_every == 0 or current_it == args.iterations or evaluate_m4
+                  or (stair_cfg and current_it==start_it+1) or (m4 and current_it == args.m4_early_iteration)):
                 save_checkpoint()
+            if evaluate_m4:
+                # 使用冻结检查点独立评估，训练环境和 Replay 时钟留在当前进程。
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+                eval_started = time.time()
+                evaluator = 'm43_evaluation' if m43 else 'm4_evaluation'
+                command = [sys.executable, '-m', 'supermimic.integration.' + evaluator,
+                           '--out', str(log_path.parent), '--m4_reference', args.m4_reference, '--device', dev]
+                if not m43:
+                    command.append('--latest_only')
+                subprocess.run(command, cwd=REPO, check=True)
+                t_log += time.time() - eval_started
             if args.m34_dataset and args.m34_eval_every and current_it % args.m34_eval_every == 0:
                 # No restart/refill: replay, optimizer, RNG and simulator state
                 # remain in this process while separate Newton children evaluate.

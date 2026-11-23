@@ -14,6 +14,21 @@ from .roban import JOINT_NAMES, NUM_J, XI_DIM, GOAL_FRAME_DIM, actuator_paramete
 from .rotations import yaw_mat, mat_to_6d, rot_angle_sq
 
 
+_SWING_AWARE_CONFIG = ('swing_aware', 'swing_position_std', 'swing_clearance',
+                       'swing_clearance_std', 'contact_height', 'contact_height_std', 'landing_hold_s')
+_FOOT_OBJECTIVE_TERMS = ('swing_position', 'swing_orientation', 'stance_position', 'contact_schedule', 'touchdown')
+
+
+def long_tail_position(error_sq, sigma):
+    """离目标较远时也保留朝向目标的位置梯度。"""
+    return (1. + error_sq / sigma**2).reciprocal()
+
+
+def smoothstep(x):
+    x = x.clamp(0., 1.)
+    return x.square() * (3. - 2. * x)
+
+
 @dataclass(frozen=True)
 class FootRewardConfig:
     swing_position: float = 1.0
@@ -42,6 +57,13 @@ class FootRewardConfig:
     term_height: float = .35
     term_tilt: float = .8
     soft_limit_factor: float = .9
+    swing_aware: int = 0
+    swing_position_std: float = .12
+    swing_clearance: float = .75
+    swing_clearance_std: float = .018
+    contact_height: float = .004
+    contact_height_std: float = .003
+    landing_hold_s: float = .12
 
     def __post_init__(self):
         for key,value in asdict(self).items():
@@ -53,11 +75,21 @@ class FootRewardConfig:
             raise ValueError('Invalid safety/normalization thresholds')
         if self.prior_upper+self.prior_waist+self.prior_root_orientation+self.prior_root_height>1+1e-9:
             raise ValueError('Normalized body-prior component weights must sum to <=1')
+        if self.swing_aware not in (0, 1) or self.landing_hold_s <= 0.:
+            raise ValueError('摆动感知开关应为 0 或 1，落脚后窗口应大于零')
 
     @property
     def positive_sum(self):
-        return sum(getattr(self,k) for k in ('swing_position','swing_orientation','stance_position',
-                   'contact_schedule','touchdown','upright','survival','body_prior_weight'))
+        return (sum(getattr(self,k) for k in (*_FOOT_OBJECTIVE_TERMS, 'upright','survival','body_prior_weight'))
+                + self.swing_aware * self.swing_clearance)
+
+    def contract(self):
+        values = asdict(self)
+        if not self.swing_aware:
+            # M4.2 的奖励契约和旧检查点逐字段兼容。
+            for key in _SWING_AWARE_CONFIG:
+                del values[key]
+        return values
 
 
 class RobanFootGoals:
@@ -104,6 +136,10 @@ class RobanFootMDP:
         self.kin,self.motion,self.default_q,self.goals,self.cfg=kin,motion,default_q,goals,cfg
         self.critic_use_body_reference=critic_use_body_reference
         self.terrain=terrain
+        if cfg.swing_aware:
+            if terrain is not None or not hasattr(motion, 'touchdown_time'):
+                raise ValueError('当前摆动感知奖励要求带落脚时钟的平地 F2 参考')
+            self._prepare_swing_clock()
         self.obs_dim=3*NUM_J+6  # q, qd, angular velocity, gravity, previous action
         self.critic_dim=13+2*NUM_J+XI_DIM+(GOAL_FRAME_DIM*goals.spec.frames if critic_use_body_reference else 0)+(terrain.dim if terrain else 0)
         self.max_step_reward=CONTROL_DT*cfg.positive_sum
@@ -172,30 +208,94 @@ class RobanFootMDP:
         if command is None: command=self.motion.anchor(f)
         return self.motion.sample(f[:,None].clamp(max=self.motion.num_frames-1),command)
 
+    def _reward_pd_target(self, a, f):
+        return self.default_q + self.alpha * a
+
+    def _prepare_swing_clock(self):
+        motion = self.motion
+        lift = (motion.liftoff_time / CONTROL_DT).round().long()
+        touch = (motion.touchdown_time / CONTROL_DT).round().long()
+        side = motion.touchdown_side
+        ticks = torch.arange(motion.num_frames, device=motion.q.device)[:, None]
+        phase = (ticks - lift) / (touch - lift)
+        after = (ticks - touch) * CONTROL_DT
+        planned_contact = motion.contact[:, side]
+        valid = motion.contact_valid[:, side].float()
+        swing = (~planned_contact) * valid
+        side_mask = torch.nn.functional.one_hot(side, num_classes=2).float()
+        # 固定除以两足。相位边缘渐入渐出，空摆动批次的权重自然为零。
+        self.swing_envelope = (smoothstep(phase / .15) * smoothstep((1. - phase) / .15) * swing) @ side_mask
+        before_weight = smoothstep((phase - .5) * 2.) * swing * (ticks < touch)
+        after_weight = (1. - smoothstep(after / self.cfg.landing_hold_s)) * planned_contact * valid * (ticks >= touch)
+        self.landing_window = (before_weight + after_weight) @ side_mask
+        self.landing_contact_blend = (smoothstep(after / (self.cfg.landing_hold_s * .5)) *
+                                      (after_weight > 0.)) @ side_mask
+        # 同一脚的窗口互不重叠，按原始落脚帧读取足底目标。
+        target = motion.foot_p[touch, side]
+        active = ((before_weight + after_weight) > 0.).float()
+        self.landing_foot_target = torch.einsum('te,ef,ec->tfc', active, side_mask, target)
+
+    def _sole_clearance(self, foot, rotation):
+        corners = self.motion.corners-self.motion.sole_offsets[:,None]
+        heights = (rotation[:,:,None] @ corners[None,...,None]).squeeze(-1)[...,2]
+        lowest = heights.amin(-1) if self.cfg.swing_aware else heights.min(-1).values
+        return foot[...,2] + lowest
+
+    def _foot_reward_terms(self, fp, fR, fv, ref, f, command):
+        c = self.cfg
+        target = ref['foot_p'][:,0]
+        contact = ref['contact'][:,0].to(fp.dtype)
+        valid = ref['contact_valid'][:,0].to(fp.dtype)
+        swing = 1. - contact
+        epos = (fp-target).square().sum(-1)
+        # 弦距离在朝向对齐处的梯度有限。
+        eori = (fR-ref['foot_R'][:,0]).square().sum((-1,-2))/2
+        orientation = torch.exp(-eori/c.foot_orientation_std**2)
+        stance_position = torch.exp(-(fp-ref['stance_p'][:,0]).square().sum(-1)/c.foot_position_std**2)
+        clear = self._sole_clearance(fp, fR)
+        support = torch.ones_like(clear, dtype=torch.bool)
+        if self.terrain:
+            height, support, _ = self.terrain.surface(fp[...,:2])
+            clear = clear-height
+        extra = {}
+        if c.swing_aware:
+            frame = f.clamp_max(self.motion.num_frames - 1)
+            swing = self.swing_envelope[frame]
+            position = long_tail_position(epos, c.swing_position_std)
+            reference_height = self._sole_clearance(target, ref['foot_R'][:,0])
+            clearance_score = long_tail_position((clear-reference_height).square(), c.swing_clearance_std)
+            extra['swing_clearance'] = (swing*clearance_score).mean(-1)
+            # 以实际最低足底角为接触代理。滑动由独立速度项惩罚，避免高速掩盖承重。
+            soft_contact = torch.sigmoid((c.contact_height-clear)/c.contact_height_std)
+            landing_target = self.landing_foot_target[frame]
+            if command is not None:
+                landing_target = (command.rotation[:,None] @ landing_target[...,None]).squeeze(-1) + command.translation[:,None]
+            landing_error_sq = (fp[...,:2]-landing_target[...,:2]).square().sum(-1)
+            landing_support = torch.lerp(clearance_score, soft_contact, self.landing_contact_blend[frame])
+            # 摆动后半段用对应相位的离地高度门控水平落脚目标，落脚后再平滑交给支撑代理。
+            touchdown = (self.landing_window[frame]*long_tail_position(landing_error_sq, c.swing_position_std)
+                         * landing_support).mean(-1)
+        else:
+            position = torch.exp(-epos/c.foot_position_std**2)
+            soft_contact = torch.sigmoid((.015-clear)/.01)*torch.exp(-fv.square().sum(-1)/.25**2)*support.to(fp.dtype)
+            previous = torch.maximum(f-1, self.motion.clip_start[self.motion.clip_id[f]])
+            event = self.motion.contact[f]&~self.motion.contact[previous]&self.motion.contact_valid[f]&self.motion.contact_valid[previous]
+            touchdown = (event.to(fp.dtype)*position).mean(-1)
+        raw = dict(swing_position=(swing*position).mean(-1), swing_orientation=(swing*orientation).mean(-1),
+                   stance_position=(contact*stance_position).mean(-1),
+                   contact_schedule=(valid*(1-(soft_contact-contact).square())).mean(-1),
+                   touchdown=touchdown, **extra,
+                   slip=-(contact*soft_contact*fv[...,:2].square().sum(-1)/c.slip_speed**2).mean(-1))
+        return raw, epos, valid
+
     def reward(self,S,f,a,a_prev,terms=False,*,command=None,ep_step=None):
         c=self.cfg; p,R,_,_,q,qd=S
         if ep_step is not None and command is not None:
             torch._assert_async(torch.all(f==command.start_frame+ep_step), 'Reward reference clock mismatch')
         ref=self._reference(f,command)
         fp,fR,fv=self.motion.feet(S)
-        target=ref['foot_p'][:,0]; contact=ref['contact'][:,0].to(p.dtype)
-        valid=ref['contact_valid'][:,0].to(p.dtype)
-        swing=1-contact
-        epos=(fp-target).square().sum(-1)
-        # A zero-at-alignment SO(3) chordal error has a finite gradient at identity.
-        eori=(fR-ref['foot_R'][:,0]).square().sum((-1,-2))/2
-        position=torch.exp(-epos/c.foot_position_std**2)
-        stance_position=torch.exp(-(fp-ref['stance_p'][:,0]).square().sum(-1)/c.foot_position_std**2)
-        orientation=torch.exp(-eori/c.foot_orientation_std**2)
-        local_corners=self.motion.corners-self.motion.sole_offsets[:,None]
-        lowest=(fR[:,:,None]@local_corners[None,...,None]).squeeze(-1)[...,2].min(-1).values
-        clear=fp[...,2]+lowest
-        support=torch.ones_like(clear,dtype=torch.bool)
-        if self.terrain:
-            h,support,_=self.terrain.surface(fp[...,:2]);clear=clear-h
-        soft_contact=torch.sigmoid((.015-clear)/.01)*torch.exp(-fv.square().sum(-1)/.25**2)*support.to(p.dtype)
-        previous=torch.maximum(f-1,self.motion.clip_start[self.motion.clip_id[f]])
-        event=(self.motion.contact[f]&~self.motion.contact[previous]&self.motion.contact_valid[f]&self.motion.contact_valid[previous]).to(p.dtype)
+        raw, epos, valid = self._foot_reward_terms(fp, fR, fv, ref, f, command)
+        slip = raw.pop('slip')
         bp,bR,_,_=self.kin.forward(*S)
         centers=bp[:,self.collision_ids]+(bR[:,self.collision_ids]@self.collision_offsets[...,None]).squeeze(-1)
         h=torch.zeros_like(centers[...,2]);collision_valid=torch.ones_like(h,dtype=torch.bool)
@@ -206,13 +306,9 @@ class RobanFootMDP:
         self_penetration=torch.relu(self.inscribed_radii[pair[:,0]]+self.inscribed_radii[pair[:,1]]-distance)
         # PD torque proxy shares command/limits with the real simulator. It is
         # differentiable, not a claim of measured Newton constraint force.
-        tau=((self.kp*(self.default_q+self.alpha*a-q)-self.kd*qd)/self.effort).clamp(-1,1)
-        raw=dict(swing_position=(swing*position).mean(-1),swing_orientation=(swing*orientation).mean(-1),
-                 stance_position=(contact*stance_position).mean(-1),
-                 contact_schedule=(valid*(1-(soft_contact-contact).square())).mean(-1),
-                 touchdown=(event*position).mean(-1),
-                 upright=torch.exp(-(1-R[...,2,2])/0.1),survival=1-self.soft_termination(S,f),
-                 slip=-(contact*soft_contact*fv[...,:2].square().sum(-1)/c.slip_speed**2).mean(-1),
+        tau=((self.kp*(self._reward_pd_target(a,f)-q)-self.kd*qd)/self.effort).clamp(-1,1)
+        raw.update(upright=torch.exp(-(1-R[...,2,2])/0.1),survival=1-self.soft_termination(S,f),
+                 slip=slip,
                  joint_limit=-(torch.relu(q-self.soft_hi)+torch.relu(self.soft_lo-q)).square().mean(-1),
                  torque=-tau.square().mean(-1), action_rate=-(a-a_prev).square().mean(-1),
                  collision=-(penetration/.05).square().mean(-1),
@@ -230,8 +326,9 @@ class RobanFootMDP:
         reward=sum(weighted.values())
         if terms:
             zero=torch.zeros_like(reward)
+            foot_terms = (*_FOOT_OBJECTIVE_TERMS, 'swing_clearance') if c.swing_aware else _FOOT_OBJECTIVE_TERMS
             return reward,dict(**raw,**{k+'_contribution':v for k,v in weighted.items()},
-                body_prior=prior,foot_objective=sum(weighted[k] for k in ('swing_position','swing_orientation','stance_position','contact_schedule','touchdown')),
+                body_prior=prior,foot_objective=sum(weighted[k] for k in foot_terms),
                 foot_rmse=epos.mean(-1).sqrt(),contact_valid_fraction=valid.mean(-1),
                 head_position_error=zero,head_penalty=zero)
         return reward
@@ -253,7 +350,7 @@ class RobanFootMDP:
         return (p[:,2]-floor<self.cfg.term_height)|((1-R[:,2,2])>self.cfg.term_tilt)
 
     def contract(self):
-        return dict(version=1,mode='roban_foot_reference',config=asdict(self.cfg),
+        return dict(version=1,mode='roban_foot_reference',config=self.cfg.contract(),
                     obs_dim=self.obs_dim,critic_state_dim=self.critic_dim,control_dt=CONTROL_DT,
                     critic_use_body_reference=self.critic_use_body_reference,
                     terrain=self.terrain.contract() if self.terrain else None,

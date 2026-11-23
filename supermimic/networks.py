@@ -141,11 +141,13 @@ class WorldModel(nn.Module):
 class Policy(nn.Module):
     """a = dec(enc(g), o_{t-9:t}); deterministic, latent z in R^32 bounded by tanh."""
 
-    def __init__(self, obs_dim: int, goal_dim: int, hist: int = 10, z_dim: int = 32, obs_adapter='identity'):
+    def __init__(self, obs_dim: int, goal_dim: int, hist: int = 10, z_dim: int = 32, obs_adapter='identity',
+                 *, squash_action=False):
         super().__init__()
         if obs_adapter not in ('identity','mask_reference_orientation'):
             raise ValueError('Unknown observation adapter')
         self.obs_adapter = obs_adapter
+        self.squash_action = squash_action
         self.hist = hist
         self.enc = mlp(goal_dim, [2048, 1024, 512, 256], z_dim)
         self.dec = mlp(z_dim + obs_dim * hist, [2048, 1024, 512, 256], NUM_J)
@@ -164,9 +166,17 @@ class Policy(nn.Module):
             o = torch.cat((o[...,:93],torch.zeros_like(o[...,93:99]),o[...,99:]), -1)
         return run_mlp(self.dec,torch.cat((z,o.flatten(-2)),-1))
 
-    def forward(self, obs_hist: torch.Tensor, goal: torch.Tensor) -> torch.Tensor:
+    def forward(self, obs_hist: torch.Tensor, goal: torch.Tensor, *, action_noise=0., return_logits=False):
         """obs_hist: (B, hist, obs_dim) noisy observations, newest last."""
-        return self.decode(obs_hist,self.encode(goal))
+        logits = self.decode(obs_hist, self.encode(goal))
+        action = logits
+        if action_noise:
+            action = action + action_noise * torch.randn_like(action)
+        if self.squash_action:
+            # 探索噪声作用于 logits，每步只做一次 tanh。
+            torch._assert_async(action.isfinite().all(), 'Actor 动作 logits 含非有限值')
+            action = action.tanh()
+        return (action, logits) if return_logits else action
 
 
 class DualEncoderPolicy(Policy):

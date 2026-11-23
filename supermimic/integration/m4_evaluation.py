@@ -12,6 +12,8 @@ from types import SimpleNamespace
 
 import numpy as np
 
+from ..roban_runtime import M4_GUARDED_MAPPINGS
+
 
 CONTACT_FORCE_N = 10.0
 MIN_SWING_S = 0.10
@@ -110,7 +112,7 @@ def _summarize_trial(trace, reference, seed, reason, steps, dt, reward, max_rewa
         foot_position_rmse_m=float(np.sqrt(((foot[1:] - rf[1:]) ** 2).sum(-1).mean())) if len(angle) else None,
         contact_agreement=float(eq.mean()) if len(eq) else None,
         contact_valid_samples=int(valid.sum()),
-        tracking_return=reward, normalized_return=reward / (steps * max_reward),
+        tracking_return=reward, normalized_return=reward / (steps * max_reward) if steps else None,
         full_clip_normalized_return=reward / (round(reference.duration / dt) * max_reward),
         footsteps=events,
     )
@@ -122,6 +124,7 @@ def _trial(env, policy, contacts, seed):
     from ..motion import CONTROL_DT
     from ..roban import FOOT_BODY_NAMES
     from ..rotations import quat_to_mat
+    from .m4_task import M4EpaEvaluationError
 
     torch.manual_seed(seed)
     reference = env.motion
@@ -154,8 +157,16 @@ def _trial(env, policy, contacts, seed):
                 history = (o[:, None].repeat(1, policy.hist, 1) if history is None
                            else torch.cat((history[:, 1:], o[:, None]), 1))
                 goal = env.goals.goal(S, env.f, env.ep_step, env.command)
-                action = bound_action(policy(history, goal))
-                out = env.step(action)
+                action = policy(history, goal)
+                if env.mdp.action_mapping not in M4_GUARDED_MAPPINGS:
+                    action = bound_action(action)
+                try:
+                    out = env.step(action)
+                except M4EpaEvaluationError as exc:
+                    print(f'评估 seed={seed} 因 EPA 中止。{exc}', flush=True)
+                    reason = 'epa_horizon'
+                    step -= 1
+                    break
                 S = env.state()
                 if not torch.isfinite(out['s1']).all() or not torch.isfinite(out['r']).all():
                     reason = 'nonfinite'
@@ -200,6 +211,7 @@ def _evaluate(env, policy, contacts, seeds):
     aggregate.update(
         num_resets=len(trials), survival_rate=_mean(trials, 'survived_full_reference'),
         early_fall_rate=float(np.mean([r['termination'].startswith('root_') for r in trials])),
+        epa_abort_rate=float(np.mean([r['termination'] == 'epa_horizon' for r in trials])),
         standing_rate=_mean(trials, 'stable_initial_standing'),
         first_swing_rate=_mean(trials, 'first_swing'), first_touchdown_rate=_mean(trials, 'first_touchdown'),
         four_touchdown_rate=float(np.mean([r['consecutive_planned_touchdowns'] == 4 for r in trials])),
@@ -216,6 +228,11 @@ def _select_best(result):
             score['consecutive_planned_touchdowns'], score['episode_length_s'],
             -foot_rmse if foot_rmse is not None else -np.inf,
             score['full_clip_normalized_return'], result['iteration'])
+
+
+def _checkpoint_identity(path):
+    stat = path.stat()
+    return stat.st_dev, stat.st_ino
 
 
 def _render(reference, video_dir, initial=None, trained=None, fps=25):
@@ -325,6 +342,8 @@ def main():
     parser.add_argument('--m4_reference', type=Path)
     parser.add_argument('--out', type=Path, default=Path('outputs/m4_0'))
     parser.add_argument('--reference-only', action='store_true')
+    parser.add_argument('--no_video', action='store_true', help='只保存独立评估指标')
+    parser.add_argument('--latest_only', action='store_true', help='只评估最新与已有最佳检查点，跳过初始对照和渲染')
     parser.add_argument('--seeds', nargs='+', type=int, default=[1001, 1002, 1003])
     if '--reference-only' not in sys.argv:
         from isaaclab.app import add_launcher_args, launch_simulation
@@ -347,18 +366,21 @@ def main():
 
     from ..networks import Policy
     from ..roban import assert_checkpoint
-    from ..transfer import assert_policy_checkpoint, physical_contract
+    from ..transfer import assert_policy_checkpoint
     from .m4_task import M4TrackingSim, build_m4_task, make_m4_sim
 
-    paths = {name: args.out / 'checkpoints' / f'{name}.pt' for name in ('initial', 'early', 'last')}
-    required = [name for name in ('initial', 'last') if not paths[name].is_file()]
+    names = ('last',) if args.latest_only else ('initial', 'early', 'last')
+    anchor = names[0]
+    paths = {name: args.out / 'checkpoints' / f'{name}.pt' for name in names}
+    required = [name for name in dict.fromkeys((anchor, 'last')) if not paths[name].is_file()]
     if required:
-        parser.error(f'缺少 M4.0 checkpoint: {", ".join(required)}')
-    initial = torch.load(paths['initial'], map_location='cpu', weights_only=False)
-    assert_checkpoint(initial)
-    config = SimpleNamespace(**initial['args'])
+        parser.error(f'缺少 M4 检查点: {", ".join(required)}')
+    identities = {anchor: _checkpoint_identity(paths[anchor])}
+    anchor_ck = torch.load(paths[anchor], map_location='cpu', weights_only=False)
+    assert_checkpoint(anchor_ck)
+    config = SimpleNamespace(**anchor_ck['args'])
     if not getattr(config, 'm4_reference', None):
-        parser.error('initial.pt 缺少 F2 参考数据配置')
+        parser.error(f'{anchor}.pt 缺少 F2 参考数据配置')
     config.m4_reference = str(args.m4_reference or config.m4_reference)
     device = args.device
     device_type = torch.device(device).type
@@ -366,8 +388,12 @@ def main():
         parser.error('评估与训练必须选择同类 Newton 求解器设备')
     kin = RobotKinematics(device)
     reference, goals, mdp, _ = build_m4_task(config, kin, [config.m4_reference], device)
-    physics = physical_contract(obs_dim=mdp.obs_dim)
-    sim = make_m4_sim(device, args)
+    best_path = args.out / 'checkpoints' / 'best.pt'
+    if (mdp.action_mapping == 'standing_offset' and best_path.is_file()
+            and not any(path.is_file() and path.samefile(best_path) for path in paths.values())):
+        paths['best'] = best_path
+    physics = mdp.physics_contract(config)
+    sim = make_m4_sim(device, config)
     results, videos = {}, {}
     with launch_simulation(sim, args):
         env = M4TrackingSim(sim, 1, reference, mdp, eval_mode=True, reset_noise=False, goals=goals)
@@ -375,10 +401,12 @@ def main():
         for name, path in paths.items():
             if not path.is_file():
                 continue
-            ck = initial if name == 'initial' else torch.load(path, map_location='cpu', weights_only=False)
+            if name != anchor:
+                identities[name] = _checkpoint_identity(path)
+            ck = anchor_ck if name == anchor else torch.load(path, map_location='cpu', weights_only=False)
             assert_checkpoint(ck)
-            if ck['goal_contract'] != goals.spec.contract() or ck['task_contract'] != mdp.contract():
-                raise ValueError(f'评估任务与 checkpoint 不一致: {path}')
+            goals.spec.assert_checkpoint(ck)
+            mdp.assert_checkpoint_task(ck)
             if ck['physical_contract'] != physics:
                 raise ValueError(f'评估环境与 checkpoint 物理条件不一致: {path}')
             if ck['data_contract'] != reference.validation:
@@ -386,7 +414,8 @@ def main():
             a = ck['args']
             assert_policy_checkpoint(ck, a['hist'], a['obs_adapter'], not a['freeze_decoder'],
                                      obs_dim=mdp.obs_dim, observation_mode=mdp.observation_mode)
-            policy = Policy(mdp.obs_dim, goals.spec.dim, hist=a['hist'], obs_adapter=a['obs_adapter']).to(device)
+            policy = Policy(mdp.obs_dim, goals.spec.dim, hist=a['hist'], obs_adapter=a['obs_adapter'],
+                            squash_action=mdp.action_mapping == 'joint_range').to(device)
             policy.load_state_dict(ck['pi'])
             policy.eval()
             result, videos[name] = _evaluate(env, policy, contacts, args.seeds)
@@ -395,22 +424,25 @@ def main():
             results[name] = result
             print(f'{name}: {json.dumps(result["aggregate"], allow_nan=False)}', flush=True)
 
-    best = max((name for name in results if name != 'initial'), key=lambda name: _select_best(results[name]))
-    best_path = args.out / 'checkpoints' / 'best.pt'
-    with TemporaryDirectory(dir=best_path.parent) as temp:
-        alias = Path(temp) / 'best.pt'
-        alias.hardlink_to(paths[best])
-        alias.replace(best_path)
+    # 含 EPA 无效轨迹的候选无法与完整评估比较，保留原有最佳检查点。
+    eligible = (name for name, result in results.items()
+                if name != 'initial' and result['aggregate']['epa_abort_rate'] == 0.)
+    best = max(eligible, key=lambda name: _select_best(results[name]), default=None)
+    if best is not None and best != 'best':
+        with TemporaryDirectory(dir=best_path.parent) as temp:
+            alias = Path(temp) / 'best.pt'
+            alias.hardlink_to(paths[best])
+            if _checkpoint_identity(alias) != identities[best]:
+                raise RuntimeError(f'{paths[best]} 在评估期间已更新，现有最佳检查点仍可用')
+            alias.replace(best_path)
     output = args.out / 'evaluation'
     output.mkdir(parents=True, exist_ok=True)
     summary = dict(
         device=device, backend='Isaac Lab 3 Newton/' + ('MJWarp' if device_type == 'cuda' else 'MuJoCo CPU'),
         deterministic_unperturbed_resets=args.seeds, video_reset_seed=args.seeds[0],
+        action_mapping=mdp.action_mapping,
         reference=str(config.m4_reference), reference_duration_s=reference.duration,
-        best_candidate=best, best_checkpoint=str(best_path),
-        videos=dict(initial_policy=dict(checkpoint=str(paths['initial']), iteration=results['initial']['iteration']),
-                    trained_policy_and_comparison=dict(checkpoint=str(paths['last']),
-                                                       iteration=results['last']['iteration'])),
+        best_candidate=best, best_checkpoint=str(best_path) if best_path.is_file() else None,
         contact=dict(source='Newton ground contact, final physics substep', force_threshold_n=CONTACT_FORCE_N,
                      planned_validity_only=True),
         steps=dict(minimum_swing_s=MIN_SWING_S, minimum_lift_m=MIN_SWING_LIFT_M,
@@ -421,8 +453,16 @@ def main():
                       minimum_double_support_fraction=STANDING_MIN_DOUBLE_SUPPORT),
         results=results,
     )
-    (output / 'results.json').write_text(json.dumps(summary, indent=2, allow_nan=False) + '\n')
-    _render(reference, args.out / 'videos', videos['initial'], videos['last'])
+    if not (args.latest_only or args.no_video):
+        summary['videos'] = dict(
+            initial_policy=dict(checkpoint=str(paths['initial']), iteration=results['initial']['iteration']),
+            trained_policy_and_comparison=dict(checkpoint=str(paths['last']), iteration=results['last']['iteration']))
+    with TemporaryDirectory(dir=output) as temp:
+        summary_file = Path(temp) / 'results.json'
+        summary_file.write_text(json.dumps(summary, indent=2, allow_nan=False) + '\n')
+        summary_file.replace(output / 'results.json')
+    if not (args.latest_only or args.no_video):
+        _render(reference, args.out / 'videos', videos['initial'], videos['last'])
 
 
 if __name__ == '__main__':

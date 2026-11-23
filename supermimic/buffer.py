@@ -36,6 +36,7 @@ class ReplayBuffer:
             shp = (T, N) + ((shape,) if isinstance(shape, int) else shape)
             self.data[k] = torch.zeros(shp, dtype=dt, device=device)
         self.ptr, self.size = 0, 0
+        self._has_gaps = False
 
     def add(self, tr: dict):
         if 'command_id' in self.fields:
@@ -53,6 +54,10 @@ class ReplayBuffer:
                 self.command_refs[cid] += 1
         for k in self.fields:
             self.data[k][self.ptr] = tr[k]
+        if 'valid' in tr:
+            # 保持环境的时间索引，丢弃的转移不能成为采样起点或连接前后的轨迹。
+            self.data['ep_step'][self.ptr].masked_fill_(~tr['valid'], -1)
+            self._has_gaps = True
         self.ptr = (self.ptr + 1) % self.T
         self.size = min(self.size + 1, self.T)
 
@@ -68,14 +73,34 @@ class ReplayBuffer:
         """Map age-ordered time index (0 = oldest) to the storage row."""
         return (self.ptr - self.size + age) % self.T
 
-    def sample_windows(self, B: int, k: int):
-        """k-step windows; returns dict of (B, k, ...) tensors and a validity mask (B, k)."""
-        t0 = torch.randint(0, self.size - k + 1, (B,), device=self.device)
+    def _sample_indices(self, B, low, high):
+        age = torch.randint(low, high, (B,), device=self.device)
         env = torch.randint(0, self.N, (B,), device=self.device)
+        if self._has_gaps:
+            ticks = self.data['ep_step']
+            invalid = ticks[self._row(age), env] < 0
+            count = int(invalid.count_nonzero())
+            if count:
+                rows = self._row(torch.arange(low, high, device=self.device))
+                eligible = (ticks[rows] >= 0).nonzero()
+                if len(eligible) == 0:
+                    raise RuntimeError('Replay 的可采样范围内没有有效转移')
+                refill = eligible[torch.randint(len(eligible), (count,), device=self.device)]
+                age[invalid] = refill[:, 0] + low
+                env[invalid] = refill[:, 1]
+        return age, env
+
+    def sample_windows(self, B: int, k: int, *, include_frames=False, include_reward=False):
+        """k-step windows; returns dict of (B, k, ...) tensors and a validity mask (B, k)."""
+        t0, env = self._sample_indices(B, 0, self.size - k + 1)
         ages = t0.unsqueeze(-1) + torch.arange(k, device=self.device)
         rows = self._row(ages)
         e = env.unsqueeze(-1).expand_as(rows)
         out = {key: self.data[key][rows, e] for key in ("s", "s1", "a", "xi", "done")}
+        if include_frames:
+            out["f"] = self.data["f"][rows, e]
+        if include_reward:
+            out.update(a_prev=self.data['a_prev'][rows, e], r=self.data['r'][rows, e])
         # Explicit evaluation/manual resets can occur without a terminal row in
         # replay. Integer episode ticks must also be consecutive; otherwise the
         # WM would learn an impossible teleport across the reset boundary.
@@ -87,8 +112,7 @@ class ReplayBuffer:
 
     def sample_starts(self, B: int, hist: int):
         """Start points for imagination plus the indices of their observation history (oldest first)."""
-        age = torch.randint(0, self.size, (B,), device=self.device)
-        env = torch.randint(0, self.N, (B,), device=self.device)
+        age, env = self._sample_indices(B, 0, self.size)
         row = self._row(age)
         ep_step = self.data["ep_step"][row, env].long()
         back = torch.arange(hist - 1, -1, -1, device=self.device)  # hist-1 ... 0
@@ -111,8 +135,7 @@ class ReplayBuffer:
         is an auxiliary value calibration source, not exact on-policy targets.
         """
         low = max(0, self.size - recent) if recent > 0 else 0
-        age = torch.randint(low, self.size, (B,), device=self.device)
-        env = torch.randint(0, self.N, (B,), device=self.device)
+        age, env = self._sample_indices(B, low, self.size)
         ages = age[:, None] + torch.arange(window, device=self.device)[None]
         valid = ages < self.size
         rows = self._row(ages.clamp_max(self.size - 1))
