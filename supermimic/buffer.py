@@ -24,11 +24,15 @@ FIELDS = {
 
 
 class ReplayBuffer:
-    def __init__(self, T: int, N: int, device: str, foot_commands: bool = False):
+    def __init__(self, T: int, N: int, device: str, foot_commands: bool = False, action_context: bool = False):
         self.T, self.N, self.device = T, N, device
         self.fields = dict(FIELDS)
         if foot_commands:
             self.fields['command_id'] = ((), torch.long)
+        if action_context:
+            # 直接保存起点上一步和上两步历史，避免环形覆盖后回读到其他 episode。
+            for key in ('a_exec', 'a_prev2', 'startup_q', 'pd_target'):
+                self.fields[key] = (NUM_J, torch.float32)
         self.command_store = {}
         self.command_refs = Counter()
         self.data = {}
@@ -101,6 +105,10 @@ class ReplayBuffer:
             out["f"] = self.data["f"][rows, e]
         if include_reward:
             out.update(a_prev=self.data['a_prev'][rows, e], r=self.data['r'][rows, e])
+        if 'a_exec' in self.fields:
+            out['a_exec'] = self.data['a_exec'][rows,e]
+            if include_reward:
+                out.update({key:self.data[key][rows,e] for key in ('a_prev2','pd_target','ep_step')})
         # Explicit evaluation/manual resets can occur without a terminal row in
         # replay. Integer episode ticks must also be consecutive; otherwise the
         # WM would learn an impossible teleport across the reset boundary.
@@ -124,6 +132,8 @@ class ReplayBuffer:
         if 'command_id' in self.fields:
             keys += ('command_id',)
         start = {k: self.data[k][row, env] for k in keys}
+        if 'a_prev2' in self.fields:
+            start.update({key:self.data[key][row,env] for key in ('a_prev2','startup_q')})
         hist_d = {k: self.data[k][hrows, henv] for k in keys}
         return start, hist_d
 

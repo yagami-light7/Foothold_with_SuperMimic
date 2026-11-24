@@ -265,6 +265,9 @@ class TrackingSim:
     def validate_physics_step(self, before, after, target):
         """检查原始物理状态。返回有效转移的掩码，全部有效时返回 None。"""
 
+    def action_context(self, target, previous):
+        return {}, {}
+
     def advance_physics(self, target):
         """下发本控制步目标并执行仿真，供实际 Rollout 和物理对照使用。"""
         self.robot.set_joint_position_target_index(target=target[:, self.sim_to_canonical])
@@ -291,7 +294,9 @@ class TrackingSim:
         saved_s1=flatten_state(S1)
         reward_state=(unflatten_state(saved_s1) if getattr(self.mdp,'canonical_replay_reward',False) else S1)
         f1 = f + 1
-        r, terms = self.mdp.reward(reward_state, f1, a, a_prev, terms=True, command=command, ep_step=ep_step+1)
+        reward_inputs, action_fields = self.action_context(target, a_prev)
+        r, terms = self.mdp.reward(reward_state, f1, a, a_prev, terms=True, command=command, ep_step=ep_step+1,
+                                   **reward_inputs)
         term = self.mdp.termination(S1, f1, command=command, ep_step=ep_step+1)
         timeout = ep_step + 1 >= self.max_episode_steps
         if not self.mdp.is_foot:
@@ -306,6 +311,7 @@ class TrackingSim:
             "s": flatten_state(S), "a": a.clone(), "a_prev": a_prev, "f": f, "s1": saved_s1, "r": r,
             "term": term, "timeout": timeout, "done": done, "ep_step": ep_step, "xi": xi, "terms": terms,
         }  # fmt: skip
+        out.update(action_fields)
         if valid is not None:
             out['valid'] = valid
         if self.goals.is_foot:

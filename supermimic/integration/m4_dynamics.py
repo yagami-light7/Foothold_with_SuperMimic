@@ -17,7 +17,7 @@ import warp as wp
 
 from ..mdp import flatten_state, unflatten_state
 from ..motion import CONTROL_DT
-from ..roban import JOINT_NAMES, model_contract
+from ..roban import ELBOW_JOINT_NAMES, JOINT_NAMES, model_contract
 from ..rotations import mat_to_quat
 from .m4_task import (JOINT_LIMIT_SLACK_RAD, ROOT_ANGULAR_SPEED_MAX_RAD_S,
                       ROOT_SPEED_MAX_M_S, ROOT_STEP_MAX_M)
@@ -38,6 +38,7 @@ class SolverReadback:
                 raise ValueError(f'MJWarp 关节索引不唯一：{name} {indices}')
             self.joints.append(indices[0])
         self.dofs = self.model.jnt_dofadr[self.joints].tolist()
+        self.joint_ids = torch.as_tensor(self.joints, device=env.device)
         self.qpos = wp.to_torch(data.qpos)
         self.qvel = wp.to_torch(data.qvel)
         self.torque = wp.to_torch(data.qfrc_actuator)
@@ -57,6 +58,17 @@ class SolverReadback:
         self.address = wp.to_torch(data.contact.efc_address)[:, 0]
         self.ground = torch.as_tensor(self.model.geom_bodyid == 0, device=env.device)
         self.nenv = env.N
+
+    def joint_limit_forces(self):
+        """读取机械止挡约束行的力矩幅度，排除足地接触及其他约束。"""
+        from mujoco import mjtConstraint
+
+        efc = self.solver.mjw_data.efc
+        kind, ids, force = (wp.to_torch(getattr(efc, key)) for key in ('type', 'id', 'force'))
+        active = (kind == int(mjtConstraint.mjCNSTR_LIMIT_JOINT)) & (
+            torch.arange(kind.shape[-1], device=kind.device) < self.nefc[:, None])
+        matches = active[..., None] & (ids[..., None] == self.joint_ids)
+        return torch.where(matches, force[..., None], 0.).sum(dim=-2)
 
     def contacts(self):
         size = min(int(self.nacon[0]), self.world.numel())
@@ -203,6 +215,11 @@ class TrainingDynamics:
         self.sums = torch.zeros(7, dtype=torch.float64, device=env.device)
         self.maxima = torch.zeros(9, device=env.device)
         self.swing_aware = bool(getattr(config, 'roban_reward_config', {}).get('swing_aware'))
+        self.elbows = [JOINT_NAMES.index(name) for name in ELBOW_JOINT_NAMES] if getattr(config, 'm49_group', None) else []
+        if self.elbows:
+            self.elbow_raw_samples = []
+            self.elbow_near_count = torch.zeros(2, device=env.device)
+            self.elbow_valid_count = torch.zeros((), device=env.device)
         if self.swing_aware:
             self.action_samples, self.speed_samples = [], []
             self.joint_clamps = torch.zeros(len(JOINT_NAMES), device=env.device)
@@ -239,6 +256,13 @@ class TrainingDynamics:
             self.speed_samples.append(after[5][sample].abs())
             self.joint_clamps += saturated_action.sum(0)
             self.effective_action_sq += ((target-env.mdp.default_q)/env.mdp.alpha).square().sum()
+            if self.elbows:
+                self.elbow_raw_samples.append(self.logits[sample][:,self.elbows])
+                q = after[4][:, self.elbows]
+                lo, hi = (x[self.elbows] for x in (env.mdp.kin.q_lo, env.mdp.kin.q_hi))
+                near = torch.minimum(q-lo, hi-q) <= .02
+                self.elbow_near_count += (near & (~invalid)[:, None]).sum(0)
+                self.elbow_valid_count += (~invalid).sum()
             if self.unclipped_target:
                 kin = env.mdp.kin
                 target_excess = torch.maximum(kin.q_lo - target, target - kin.q_hi).clamp_min(0.)
@@ -305,6 +329,16 @@ class TrainingDynamics:
                            joint_speed_p99_rad_s=qd99, wm_effective_action_rms=float((self.effective_action_sq / count).sqrt()))
             rates = (self.joint_clamps / (count / len(JOINT_NAMES))).tolist()
             metrics.update({f'clamp_{name}': rate for name, rate in zip(JOINT_NAMES, rates)})
+            if self.elbows:
+                quantiles = torch.quantile(torch.cat(self.elbow_raw_samples),
+                                           self.maxima.new_tensor([.05, .50, .95]), dim=0).T.tolist()
+                near = (self.elbow_near_count/self.elbow_valid_count.clamp_min(1)).tolist()
+                for name, values, fraction in zip(ELBOW_JOINT_NAMES, quantiles, near):
+                    metrics.update({f'raw_{name}_{key}': value for key,value in zip(('p05','p50','p95'),values)})
+                    metrics[f'near_limit_{name}'] = fraction
+                self.elbow_raw_samples.clear()
+                self.elbow_near_count.zero_()
+                self.elbow_valid_count.zero_()
             if self.unclipped_target:
                 # 分位数包含未越界的零值，峰值使用完整训练批次。
                 quantiles = torch.quantile(torch.cat(self.target_excess_samples),

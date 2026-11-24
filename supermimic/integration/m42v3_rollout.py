@@ -1,6 +1,8 @@
 """以冻结 Roban Actor 运行 Newton，并记录可对齐的 F2 诊断轨迹。"""
 import argparse
 from collections import defaultdict
+from collections.abc import Mapping
+from contextlib import nullcontext
 import json
 import os
 from pathlib import Path
@@ -48,7 +50,7 @@ class EffectiveFriction:
 
 @torch.no_grad()
 def collect_trial(env, policy, contacts, seed, friction=None, *, solver=None, capture_faults=False,
-                  fixed_actions=None, reset_hook=None):
+                  fixed_actions=None, reset_hook=None, capture_joint_limits=False):
     """状态和接触含 Reset 帧，动作及奖励按其下发的控制步编号。"""
     from .m4_task import M4EpaEvaluationError
 
@@ -97,6 +99,8 @@ def collect_trial(env, policy, contacts, seed, friction=None, *, solver=None, ca
             record(solver_warmstart=solver.warmstart[0], solver_qpos=solver.qpos[0], solver_qvel=solver.qvel[0],
                    actuator_torque=solver.torque[0, solver.dofs],
                    root_quat_xyzw=env.robot.data.root_link_pose_w.torch[0, 3:7])
+            if capture_joint_limits:
+                record(joint_limit_force=solver.joint_limit_forces()[0])
 
     capture_state(state)
     with read_only_pose(env.robot):
@@ -139,6 +143,8 @@ def collect_trial(env, policy, contacts, seed, friction=None, *, solver=None, ca
             record(observation=obs[0], goal=goal[0], action=action[0], raw_action=raw[0],
                    previous_action=prev[0], target=target[0], clamp_mask=mdp.target_clip_mask(action)[0],
                    reward=out['r'][0], reward_terms=terms, term=out['term'][0], timeout=out['timeout'][0])
+            if 'a_exec' in out:
+                record(previous_action2=out['a_prev2'][0], effective_action=out['a_exec'][0])
             capture_state(state, force[0], count[0], other[0])
             if out['term'][0]:
                 low = bool(state[0][0, 2] < mdp.cfg.term_height)
@@ -192,7 +198,8 @@ def summarize(trace, motion):
     return summary
 
 
-def render_comparison(recording, reference, output, *, fps=25, chapters=None):
+def render_comparison(recording, reference, output, *, fps=25, chapters=None, upper_pairs=False,
+                      paired_chapters=None, robustness_overlay=False):
     """用控制时钟拼接各权重的参考与 Newton 实测视频。"""
     import mujoco
     from PIL import Image, ImageDraw, ImageFont
@@ -226,6 +233,11 @@ def render_comparison(recording, reference, output, *, fps=25, chapters=None):
     reference_trace = dict(time=time, p=ref['root_p'].numpy(), quat=ref['root_quat'].numpy(),
                            q=ref['q'].numpy(), R=ref['root_R'].numpy(), foot=ref['foot_p'].numpy(),
                            contact=ref['contact'].numpy(), phase=ref['phase'].numpy())
+    hand_tracks = upper_pairs or bool(paired_chapters and any(close for _, _, close in paired_chapters))
+    if hand_tracks:
+        from .m45_upper import ARMS, upper_series
+
+        reference_trace['hand'] = upper_series(tuple(ref[k] for k in ('root_p','root_R','root_v','root_w','q','qd')), motion.kin)[2]
     frames = np.rint(np.arange(round(motion.duration * fps) + 1) / fps / CONTROL_DT).astype(int)
     frames = np.minimum(frames, motion.num_frames - 1)
 
@@ -236,7 +248,7 @@ def render_comparison(recording, reference, output, *, fps=25, chapters=None):
                             np.asarray(rgba, dtype=np.float32))
         scene.ngeom += 1
 
-    def panel(renderer, label, trace, frame, requested_time, ref_frame=None):
+    def panel(renderer, label, trace, frame, requested_time, ref_frame=None, close=False):
         i = min(frame, len(trace['time']) - 1)
         geom.set_robot(trace['p'][i], trace['quat'][i], trace['q'][i])
         renderer.update_scene(geom.data, camera=camera, scene_option=option)
@@ -255,12 +267,25 @@ def render_comparison(recording, reference, output, *, fps=25, chapters=None):
             for old in range(max(i - 30, 0), i, 3):
                 for point, color in zip(trace['foot'][old], colors):
                     add(renderer, sphere, [.009, .009, .009], point + np.array([0, 0, .01]), (*color[:3], .55))
+        if close:
+            for h in range(max(i-30,0),i+1,2):
+                for point, color in zip(trace['hand'][h], colors):
+                    radius = .017 if h == i else .007
+                    add(renderer, sphere, [radius]*3, point, color if h == i else (*color[:3], .55))
         image = Image.fromarray(renderer.render())
         draw = ImageDraw.Draw(image)
         draw.rectangle((0, 0, width, 63), fill='#111f2c')
         draw.text((14, 8), label, fill='#eef7fc', font=title_font)
         draw.text((14, 36), f"Episode t {trace['time'][i]:4.2f} s    |    Reference t {requested_time:4.2f} s",
                   fill='#d0e2eb', font=font)
+        if close:
+            draw.rectangle((0, height-41, width, height), fill='#111f2c')
+            footer = 'Wrist paths | left cyan, right orange'
+            if robustness_overlay:
+                q_err = trace['q'][i] - reference_trace['q'][frame]
+                footer = f'Arm error {np.sqrt(np.mean(q_err[ARMS]**2)):.3f} rad | Waist {abs(q_err[0]):.3f} rad'
+            draw.text((14,height-31), footer,fill='#eef7fc',font=font)
+            return image
         draw.rectangle((0, height - 104, width, height), fill='#111f2c')
         contact = trace['contact'][i]
         phase = reference_trace['phase'][frame]
@@ -270,6 +295,10 @@ def render_comparison(recording, reference, output, *, fps=25, chapters=None):
             status = 'stance' if contact[side] else 'off'
             if ref_frame is not None:
                 status = f"{status} ({trace['force'][i, side, 2]:.0f} N)" if i else 'unmeasured'
+                if robustness_overlay and contact[side] and i:
+                    off = np.flatnonzero(~trace['contact'][1:i+1,side])
+                    held = (i-(off[-1]+1 if len(off) else 0))*CONTROL_DT
+                    status += f'  held {held:.2f} s'
             draw.text((x, height - 95), f'{side_name}  {status}    |    Plan swing {phase[side]:.2f}',
                       fill=side_color, font=font)
             xyz = trace['foot'][i, side]
@@ -283,13 +312,16 @@ def render_comparison(recording, reference, output, *, fps=25, chapters=None):
             heading = np.arctan2(R[1, 0], R[0, 0]) - np.arctan2(R_ref[1, 0], R_ref[0, 0])
             heading = np.rad2deg(np.arctan2(np.sin(heading), np.cos(heading)))
             bottom = f'Root error {np.linalg.norm(err):.2f} m   |   Heading {heading:+.1f} deg'
+            if robustness_overlay:
+                bottom += f"   |   Root Z {trace['p'][i,2]:.3f} m"
             if trace['termination'] != 'reference_end' and i == len(trace['time']) - 1:
                 bottom = f"Ended at {trace['time'][i]:.2f} s ({trace['termination']})"
         draw.text((14, height - 43), bottom, fill='#eef7fc', font=font)
         return image
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    with np.load(recording) as data, mujoco.Renderer(model, height=height, width=width) as renderer:
+    record = nullcontext(recording) if isinstance(recording, Mapping) else np.load(recording)
+    with record as data, mujoco.Renderer(model, height=height, width=width) as renderer:
         seed = int(data['seeds'][0])
         with TemporaryDirectory(dir=output.parent) as temp:
             path = Path(temp) / output.name
@@ -299,20 +331,38 @@ def render_comparison(recording, reference, output, *, fps=25, chapters=None):
             with subprocess.Popen(cmd, stdin=subprocess.PIPE) as encoder:
                 sections = chapters if chapters is not None else [
                     (f'i{iteration}_s{seed}_', f'Newton policy  |  iteration {iteration}  |  seed {seed}')
-                    for iteration in data['iterations']]
-                for prefix, label in sections:
+                    for iteration in data.get('iterations',())]
+                def load(prefix):
                     trace = {key: data[prefix + key] for key in ('time', 'foot', 'force', 'contact', 'termination')}
                     state = data[prefix + 'state']
                     trace.update(p=state[:, :3], quat=state[:, 3:7], q=state[:, 13:13 + len(JOINT_NAMES)],
                                  R=quat_to_mat(torch.from_numpy(state[:, 3:7])).numpy())
-                    xy = np.vstack((reference_trace['p'], trace['p']))[:, :2]
+                    if hand_tracks:
+                        trace['hand'] = upper_series(unflatten_state(torch.from_numpy(state)),motion.kin)[2]
+                    return trace
+
+                pairs = paired_chapters if paired_chapters is not None else [(None, item, False) for item in sections]
+                if upper_pairs and paired_chapters is None:
+                    baseline, candidate = sections
+                    pairs.extend(((baseline,candidate,False),(baseline,candidate,True)))
+                if paired_chapters is not None:
+                    sections = list(dict.fromkeys(x for left,right,_ in pairs for x in (left,right) if x is not None))
+                if upper_pairs or paired_chapters is not None:
+                    shared_xy = np.vstack((reference_trace['p'], *(load(prefix)['p'] for prefix, _ in sections)))[:, :2]
+                for left, (prefix,label), close in pairs:
+                    trace = load(prefix)
+                    left_trace, left_label = (reference_trace, 'F2 reference  |  planned contact') if left is None else (load(left[0]), left[1])
+                    xy = shared_xy if upper_pairs or paired_chapters is not None else np.vstack((reference_trace['p'], trace['p']))[:, :2]
                     camera.lookat[:] = [*((xy.min(0) + xy.max(0)) / 2), .52]
                     camera.distance = 2.45 + .55 * np.linalg.norm(np.ptp(xy, axis=0))
                     for frame in frames:
                         canvas = Image.new('RGB', (2 * width, height))
                         t = time[frame]
-                        canvas.paste(panel(renderer, 'F2 reference  |  planned contact', reference_trace, frame, t), (0, 0))
-                        canvas.paste(panel(renderer, label, trace, frame, t, ref_frame=frame), (width, 0))
+                        if close:
+                            camera.lookat[:] = reference_trace['p'][frame] + [0,0,.12]
+                            camera.distance = 1.3
+                        canvas.paste(panel(renderer,left_label,left_trace,frame,t,ref_frame=None if left is None else frame,close=close), (0,0))
+                        canvas.paste(panel(renderer,label,trace,frame,t,ref_frame=frame,close=close), (width,0))
                         encoder.stdin.write(canvas.tobytes())
                 encoder.stdin.close()
                 if encoder.wait():

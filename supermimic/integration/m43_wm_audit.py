@@ -115,7 +115,7 @@ def collect_samples(record, prefix, motion, mdp, count, device, *, joint_index=N
         if quat is not None:
             rows['root_quat'] = read(quat)[idx]
         if joint_index is not None:
-            rows.update(ankle_torque=torque[idx], target=read('target')[idx])
+            rows['target'] = read('target')[idx]
         for name, value in rows.items():
             columns.setdefault(name, []).append(value)
     if support_channels is None:

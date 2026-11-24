@@ -79,7 +79,7 @@ launch=(python "${python_command[@]}" "$@")
 if [[ -n "${ROBAN_TMUX_SESSION:-}" ]]; then
   # 镜像内 tmux 独立于 SSH。容器等待训练窗结束，并保留实际退出码。
   [[ "$mode" == m4-train && "$ROBAN_TMUX_SESSION" =~ ^[A-Za-z0-9_-]+$ ]]
-  [[ "${ROBAN_TMUX_RUN_DIR:-}" =~ ^outputs/(m4_3|m4_4_unclipped)(/[A-Za-z0-9_.-]+)?$ ]]
+  [[ "${ROBAN_TMUX_RUN_DIR:-}" =~ ^outputs/(m4_3|m4_4_unclipped|m4_5|m4_5_1)(/[A-Za-z0-9_.-]+)?$ ]]
   commit="$(git -C "$repo" rev-parse HEAD)"
   docker_flags=(--detach --name "$ROBAN_TMUX_SESSION" --env "S54_SOURCE_GIT_SHA=$commit")
   launch=(bash -c '

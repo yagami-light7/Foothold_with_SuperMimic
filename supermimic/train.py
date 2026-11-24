@@ -7,6 +7,7 @@ from dataclasses import asdict
 import json
 import math
 import os
+from pathlib import Path
 import sys
 import time
 import signal
@@ -22,6 +23,18 @@ def request_stop(*_):
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
+
+M48_GROUPS = {
+    'a': ('a_startup_only', 10, 0.),
+    'b': ('b_smoothness_only', 0, .02),
+    'c': ('c_startup_smoothness', 10, .02),
+}
+M49_GROUPS = {'a': 'a_long_baseline', 'b': 'b_original_prior', 'c': 'c_soft_prior'}
+M49_GRADIENT_PAIRS = (
+    ('foot', 'body_prior'), ('foot', 'soft_body_prior'), ('foot', 'upper_action_smoothness'),
+    ('upper_action_smoothness', 'body_prior'), ('upper_action_smoothness', 'soft_body_prior'),
+    ('bootstrap', 'body_prior'), ('bootstrap', 'soft_body_prior'),
+)
 
 from supermimic.roban_runtime import M4_GUARDED_MAPPINGS, configure_robot, add_roban_args
 ROBOT_KIND = configure_robot(sys.argv[1:])
@@ -78,6 +91,19 @@ parser.add_argument('--curriculum_config', help='Enable the bounded curriculum (
 parser.add_argument('--max_device_memory_mib',type=float,default=None,help='Optional device-memory stop threshold at telemetry intervals')
 parser.add_argument('--fresh_start', action='store_true', help='Assert fresh models/progress; forbid resume and transfer')
 parser.add_argument('--init_weights', help='Explicit transfer of compatible WM/Actor weights; fresh optimizers/critic')
+parser.add_argument('--m451_source', help='M4.5.1 短训的 M4.3 第 4500 轮初始化来源')
+parser.add_argument('--m46_group', choices=('w002', 'w005'), help='M4.6 单因素正式实验组')
+parser.add_argument('--m46_check', action='store_true', help='仅核对 M4.6 运行时配置后退出')
+parser.add_argument('--m46_smoke', action='store_true', help='隔离目录内执行固定两轮 Newton 冒烟测试')
+parser.add_argument('--m47_startup_steps', type=int, default=0, help='上身启动过渡控制步数')
+parser.add_argument('--upper_action_smoothness_weight', type=float, default=0., help='上身原始动作二阶差分权重')
+parser.add_argument('--m47_smoke', action='store_true', help='隔离目录内验证 M4.7 的采集、回放和联合更新')
+parser.add_argument('--m48_group', choices=M48_GROUPS, help='M4.8 正式消融组')
+parser.add_argument('--m48_check', action='store_true', help='仅解析并核对 M4.8 生效配置')
+parser.add_argument('--m48_smoke', action='store_true', help='在临时目录验证 M4.8 采集和联合更新')
+parser.add_argument('--m49_group', choices=M49_GROUPS, help='M4.9 正式消融组')
+parser.add_argument('--m49_check', action='store_true', help='仅核对 M4.9 生效配置')
+parser.add_argument('--m49_smoke', action='store_true', help='在临时目录验证 M4.9 姿态先验及联合更新')
 parser.add_argument('--stair_config', help='Opt-in T1.5 audited mixed flat/stair experiment design')
 parser.add_argument('--init_from_flat', help='Explicit Flat -> Stair transfer; source checkpoint is read-only')
 parser.add_argument('--init_from_motion', help='Cross-task Stage 1 initialization; never a resume')
@@ -99,6 +125,152 @@ add_goal_args(parser)
 add_launcher_args(parser)
 add_roban_args(parser, sys.argv[1:])
 args = parser.parse_args()
+m47_context_requested = bool(args.m47_startup_steps or args.upper_action_smoothness_weight)
+m48 = args.m48_group is not None
+m49 = args.m49_group is not None
+upper_ablation = m48 or m49
+upper_smoke = args.m48_smoke or args.m49_smoke
+upper_check = args.m48_check or args.m49_check
+if (m48 and m49) or ((args.m48_check or args.m48_smoke) and not m48) or ((args.m49_check or args.m49_smoke) and not m49):
+    parser.error('请选择对应的一组 M4.8 或 M4.9 入口')
+if not m49 and (args.soft_body_prior_weight or args.soft_body_prior_tolerance is not None):
+    parser.error('Soft Body Prior 需要 M4.9 F2 实验入口')
+if args.m47_smoke:
+    group = {'a':(0.,0.), 'b':(.02,0.), 'c':(.02,.02)}
+    out = Path(args.log_dir).resolve()
+    scratch = out.parent.parent
+    if (not args.m4_reference or not args.roban_config or not args.fresh_start or args.resume
+            or args.m451_source or args.m46_group or args.m46_smoke or args.m46_check or upper_ablation
+            or Path(args.roban_config).resolve() != Path(REPO)/'configs/roban/m4_3.json'
+            or out.name != 'checkpoints' or scratch.parent != Path('/tmp')
+            or not scratch.name.startswith('m47-smoke-') or not scratch.is_dir()
+            or (args.upper_action_smoothness_weight,args.body_prior_weight) != group.get(out.parent.name)
+            or args.m47_startup_steps not in (5,10) or args.m4_unclipped_pd_target):
+        parser.error('M4.7 冒烟测试须使用 M4.3/F2、Fresh Start 和 /tmp/m47-smoke-*/{a,b,c}/checkpoints')
+    vars(args).update(num_envs=8, iterations=2, warmup_steps=16, wm_only_iters=1, recovery_wm_iters=0,
+                      m4_early_iteration=1, ckpt_every=1, m4_eval_every=0, log_every=1, gradient_audit_every=1)
+elif m47_context_requested and not upper_ablation:
+    parser.error('启动和平滑配置需要 M4.8、M4.9 或隔离的 --m47_smoke')
+
+if upper_ablation:
+    revision = 9 if m49 else 8
+    phase = f'M4.{revision}'
+    group_key = args.m49_group if m49 else args.m48_group
+    group_dir = M49_GROUPS[group_key] if m49 else M48_GROUPS[group_key][0]
+    config_dir = Path(REPO) / 'configs/roban'
+    selected = config_dir / f'm4_{revision}_{group_key}.json'
+    formal = Path(REPO) / f'outputs/m4_{revision}' / group_dir / 'checkpoints'
+    output = Path(args.log_dir).resolve()
+    try:
+        if not args.roban_config or Path(args.roban_config).resolve() != selected:
+            raise ValueError(f'{phase} 本组需要 {selected.name}')
+        candidate = json.loads(selected.read_text())
+        if m49:
+            baseline = json.loads((config_dir / 'm4_8_c.json').read_text())
+            expected_config = dict(baseline, iterations=10000)
+            if group_key == 'b':
+                expected_config['body_prior_weight'] = .02
+            elif group_key == 'c':
+                if not args.soft_body_prior_weight > 0. or args.soft_body_prior_tolerance is None:
+                    raise ValueError('M4.9-C 需要离线标定的正权重与容许偏差')
+                expected_config.update(soft_body_prior_weight=args.soft_body_prior_weight,
+                                       soft_body_prior_tolerance=args.soft_body_prior_tolerance)
+        else:
+            _, steps, weight = M48_GROUPS[group_key]
+            baseline = json.loads((config_dir / 'm4_3.json').read_text())
+            expected_config = dict(baseline, m47_startup_steps=steps, upper_action_smoothness_weight=weight)
+        if baseline.get('body_prior_weight', 0.) != 0. or candidate != expected_config:
+            raise ValueError(f'{phase} 的配置包含未授权的基线或消融参数差异')
+        if not args.m4_reference or args.device != 'cuda:0' or args.fresh_start == bool(args.resume):
+            raise ValueError(f'{phase} 需要原 F2、CUDA:0，并明确选择 Fresh Start 或同组 Resume')
+        if upper_smoke:
+            scratch = output.parent.parent
+            if (not args.fresh_start or upper_check or output != scratch / group_dir / 'checkpoints'
+                    or scratch.parent != Path('/tmp') or not scratch.name.startswith(f'm4{revision}-smoke-') or not scratch.is_dir()):
+                raise ValueError(f'{phase} Smoke 需要独立的 /tmp/m4{revision}-smoke-* 组目录和 Fresh Start')
+        elif output != formal or formal != formal.resolve():
+            raise ValueError(f'{phase} 本组正式检查点目录为 {formal}')
+        if args.resume:
+            checkpoint = Path(args.resume).absolute()
+            names = {'initial.pt', 'last.pt', *(f'iter_{i}.pt' for i in range(500, expected_config['iterations']+1, 500))}
+            if (checkpoint.parent != formal or checkpoint.name not in names
+                    or checkpoint.resolve(strict=True) != checkpoint):
+                raise ValueError(f'{phase} 只能恢复当前组的 Initial、Last 或周期里程碑')
+        # 用正式入口重新解析默认值，禁止悄悄覆盖实验组的有效训练参数。
+        canonical = ['--roban_config', args.roban_config, '--m4_reference', args.m4_reference,
+                     '--device', 'cuda:0', f'--m4{revision}_group', group_key, '--log_dir', args.log_dir]
+        canonical += ['--fresh_start'] if args.fresh_start else ['--resume', args.resume]
+        if upper_smoke:
+            canonical.append(f'--m4{revision}_smoke')
+        if upper_check:
+            canonical.append(f'--m4{revision}_check')
+        expected = vars(parser.parse_args(canonical))
+        changed = [key for key, value in vars(args).items() if value != expected[key]]
+        if changed:
+            raise ValueError(f'{phase} 不允许覆盖生效参数：{", ".join(changed)}')
+    except (OSError, ValueError) as exc:
+        parser.error(str(exc))
+    if upper_smoke:
+        vars(args).update(num_envs=8, iterations=2, warmup_steps=34, wm_only_iters=1, recovery_wm_iters=0,
+                          m4_early_iteration=1, m4_eval_every=0, ckpt_every=1, log_every=1, gradient_audit_every=1)
+elif args.roban_config and Path(args.roban_config).name in {f'm4_{v}_{name}.json' for v in (8,9) for name in ('a','b','c')}:
+    parser.error('M4.8/M4.9 配置需要对应 --m48_group 或 --m49_group')
+m46 = args.m46_group is not None
+if m46:
+    group = args.m46_group
+    weight = {'w002': .02, 'w005': .05}[group]
+    config_dir = Path(REPO) / 'configs' / 'roban'
+    selected_config = config_dir / f'm4_6_{group}.json'
+    output = Path(args.log_dir).resolve()
+    formal_output = Path(REPO) / 'outputs' / 'm4_6' / group / 'checkpoints'
+    smoke_root = output.parent.parent
+    try:
+        if not args.roban_config or Path(args.roban_config).resolve() != selected_config:
+            raise ValueError(f'M4.6 {group} 必须使用 {selected_config.name}')
+        baseline = json.loads((config_dir / 'm4_3.json').read_text())
+        if baseline.get('body_prior_weight', 0.) != 0.:
+            raise ValueError('M4.6 的 M4.3 基线必须是零上身先验权重')
+        if json.loads(selected_config.read_text()) != dict(baseline, body_prior_weight=weight):
+            raise ValueError('M4.6 配置相对 M4.3 只允许改变上身先验权重')
+        if not args.m4_reference or args.device != 'cuda:0' or args.m4_unclipped_pd_target:
+            raise ValueError('M4.6 需要原始 F2、CUDA:0 和 Hard Clamp')
+        if args.fresh_start == bool(args.resume):
+            raise ValueError('M4.6 必须明确选择 --fresh_start 或同组 --resume')
+        if args.m46_smoke:
+            if (not args.fresh_start or args.m46_check or output.parent.name != group
+                    or output.name != 'checkpoints' or smoke_root.parent != Path('/tmp')
+                    or not smoke_root.name.startswith('m46-smoke-') or not smoke_root.is_dir()):
+                raise ValueError('M4.6 冒烟测试只能从头运行在现有 /tmp/m46-smoke-*/<group>/checkpoints')
+        elif output != formal_output or formal_output != formal_output.resolve():
+            raise ValueError(f'M4.6 {group} 的正式检查点目录必须为 {formal_output}')
+        if args.resume and (Path(args.resume).absolute() != formal_output / 'last.pt'
+                            or Path(args.resume).resolve(strict=True) != formal_output / 'last.pt'):
+            raise ValueError('M4.6 只允许从同组 checkpoints/last.pt 恢复')
+        # 使用同一解析器重建受控入口，拒绝任何改变有效训练参数的命令行覆盖。
+        canonical = ['--roban_config', args.roban_config, '--m4_reference', args.m4_reference,
+                     '--device', 'cuda:0', '--m46_group', group, '--log_dir', args.log_dir]
+        canonical += ['--fresh_start'] if args.fresh_start else ['--resume', args.resume]
+        if args.m46_check:
+            canonical.append('--m46_check')
+        if args.m46_smoke:
+            canonical.append('--m46_smoke')
+        expected = vars(parser.parse_args(canonical))
+        changed = [name for name, value in vars(args).items() if value != expected[name]]
+        if changed:
+            raise ValueError(f'M4.6 不允许覆盖基线有效参数：{", ".join(changed)}')
+        args.m4_reference = str(Path(args.m4_reference).resolve(strict=True))
+    except (OSError, ValueError) as exc:
+        parser.error(str(exc))
+    if args.m46_check:
+        print('M4.6 effective config ' + json.dumps(vars(args), ensure_ascii=False), flush=True)
+        sys.exit(0)
+    if args.m46_smoke:
+        vars(args).update(num_envs=8, iterations=2, warmup_steps=16, wm_only_iters=1, recovery_wm_iters=0,
+                          m4_early_iteration=1, ckpt_every=1, m4_eval_every=0, log_every=1, gradient_audit_every=1)
+elif args.m46_check or args.m46_smoke:
+    parser.error('M4.6 检查需要 --m46_group')
+elif args.roban_config and Path(args.roban_config).name in ('m4_6_w002.json', 'm4_6_w005.json'):
+    parser.error('M4.6 配置需要 --m46_group，请使用 tools/run_m46_ablation.sh')
 m4 = bool(args.m4_reference)
 residual_action = m4 and args.m4_action_mapping == 'reference_residual'
 joint_range_action = m4 and args.m4_action_mapping == 'joint_range'
@@ -106,6 +278,8 @@ standing_action = m4 and args.m4_action_mapping == 'standing_offset'
 guarded_action = m4 and args.m4_action_mapping in M4_GUARDED_MAPPINGS
 m43 = standing_action and bool(args.roban_reward_config.get('swing_aware'))
 m44 = m43 and args.m4_unclipped_pd_target
+m45 = m43 and not m44 and args.body_prior_weight > 0
+m451 = args.m451_source is not None
 if args.m4_early_iteration is None:
     args.m4_early_iteration = max(1, args.wm_only_iters) if guarded_action else 8
 try:
@@ -115,7 +289,9 @@ try:
         if args.obs_adapter != 'identity' or args.freeze_decoder or args.paired_latent_weight or args.check_foot_gradients or (args.gradient_audit_every and not m43) or args.critic_real_batch:
             raise ValueError('Use Roban foot gradient tests; legacy S54 adapters/audits are incompatible')
         from supermimic.roban_task import FootRewardConfig
-        FootRewardConfig(**dict(args.roban_reward_config, body_prior_weight=args.body_prior_weight))
+        FootRewardConfig(**dict(args.roban_reward_config, body_prior_weight=args.body_prior_weight,
+                                soft_body_prior_weight=args.soft_body_prior_weight,
+                                soft_body_prior_tolerance=args.soft_body_prior_tolerance))
     if m4 and (ROBOT_KIND != 'roban' or args.init_weights or args.no_critic
                or args.reward_term_logging or args.wm_use_terrain or args.m4_early_iteration < 1):
         raise ValueError('M4 使用 Roban 平地任务和完整 SuperMimic 更新，仅支持同任务恢复')
@@ -123,6 +299,9 @@ try:
         raise ValueError('M4 动作映射需要 --m4_reference')
     if args.m4_unclipped_pd_target and (not m44 or not args.m4_fault_trace):
         raise ValueError('未裁剪训练使用 M4.3 摆动奖励、standing_offset 和物理故障监测')
+    if m451 and (not m43 or m44 or not args.m4_fault_trace or args.fresh_start
+                 or args.body_prior_weight not in (0., .02, .05, .10) or not 200 <= args.iterations <= 300):
+        raise ValueError('M4.5.1 需要带故障监测的 F2 Hard Clamp、指定上身权重及 200–300 轮短训')
     if guarded_action and (not math.isfinite(args.action_noise) or args.action_noise < 0):
         raise ValueError('M4 探索噪声的标准差必须有限且非负')
     if args.m4_fault_trace and not guarded_action:
@@ -176,13 +355,14 @@ try:
         raise ValueError('Foot episode_steps must be greater than the imagination horizon')
 except (ValueError, TypeError, OSError) as exc:
     parser.error(str(exc))
-from pathlib import Path
 log_path = Path(args.log_dir).resolve()
 if m4:
-    m4_root = Path('outputs') / ('m4_4_unclipped' if m44 else 'm4_3' if m43 else
+    m4_root = Path('outputs') / ('m4_5_1' if m451 else 'm4_5' if m45 else 'm4_4_unclipped' if m44 else 'm4_3' if m43 else
                                {'joint_range': 'm4_1', 'standing_offset': 'm4_2'}.get(args.m4_action_mapping, 'm4_0'))
-    if not log_path.is_relative_to(Path(REPO) / m4_root) or log_path.name != "checkpoints":
+    if not (m46 or upper_ablation or args.m47_smoke) and (not log_path.is_relative_to(Path(REPO) / m4_root) or log_path.name != "checkpoints"):
         parser.error(f"M4 检查点目录必须位于 {m4_root} 下，且目录名为 checkpoints")
+    if m451 and log_path.parent != Path(REPO) / m4_root / f'w{round(args.body_prior_weight*100):03d}':
+        parser.error('M4.5.1 权重和短训输出组名不一致')
     metrics_path = log_path.parent/'logs'/'train.csv'
     args_path = log_path.parent/'config'/'train.json'
 else:
@@ -192,7 +372,7 @@ else:
     args_path = log_path/'args.json'
 existing_training = (args_path.exists() or metrics_path.exists()
                      or any(log_path.glob('*.pt')))
-if not args.resume and existing_training:
+if not args.resume and not upper_check and existing_training:
     parser.error("Training artifacts already exist: use a fresh s54_* run or --resume last.pt")
 if args.buffer_steps < max(args.wm_window, args.hist) or args.warmup_steps < args.wm_window:
     parser.error("buffer_steps >= max(wm_window,hist) and warmup_steps >= wm_window required")
@@ -246,6 +426,9 @@ else:
     args.foot_task_config = asdict(task_cfg)
 # Record the resolved names, including when all clips or a glob was requested.
 args.clips = ['F2'] if m4 else [Path(path).stem for path in motion_files]
+if upper_check:
+    print(f'{phase} effective config ' + json.dumps(vars(args), ensure_ascii=False), flush=True)
+    sys.exit(0)
 print(f"Training clips ({len(args.clips)}): {', '.join(args.clips)}" if task_cfg is None else
       f'Independent S54 foot task: {task_cfg.command_mode}; no Motion reference loaded', flush=True)
 
@@ -338,6 +521,7 @@ if curriculum:
     goals.command_duration = task_cfg.episode_steps * .02 + goal_spec.frames * goal_spec.dt + 1
 obs_dim = mdp.obs_dim
 args.obs_dim = obs_dim
+action_context = m4 and mdp.action_history_enabled
 reward_scale = mdp.max_step_reward
 value_upper = return_upper_bound(reward_scale,args.gamma) if mdp.is_foot else None
 imagination_contract=dict(version=1,action_clip=ACTION_LIMIT,bootstrap_upper_bound=value_upper)
@@ -348,6 +532,10 @@ if standing_action:
                                 wm_action='standing_equivalent_of_limit_clamped_pd_target')
     if m44:
         imagination_contract.update(version=4, pd_target_clip=False, wm_action='raw_linear_pd_target')
+    if action_context:
+        imagination_contract.update(version=5, startup_steps=mdp.startup_steps,
+                                    wm_action='standing_equivalent_of_executed_pd_target',
+                                    action_history='two_previous_raw_actions_within_episode')
 actor_lr=args.lr if args.actor_lr is None else args.actor_lr
 critic_lr=args.lr if args.critic_lr is None else args.critic_lr
 K, Hh, HZ = args.goal_frames, args.hist, args.horizon
@@ -387,10 +575,70 @@ if m43:
 
     args.environment_versions = {p: version(p) for p in ('isaaclab', 'newton', 'mujoco-warp', 'warp-lang', 'torch')}
     args.git_commit = git_sha
+if m46 or m49:
+    args.git_worktree = os.environ.get('M49_SOURCE_GIT_STATUS' if m49 else 'M46_SOURCE_GIT_STATUS')
+    if args.git_worktree is None:
+        result = subprocess.run(['git', 'status', '--porcelain'], cwd=REPO, text=True, capture_output=True)
+        args.git_worktree = result.stdout.rstrip() if result.returncode == 0 else '容器未挂载 Git 元数据'
+
+
+def evaluate_m4_checkpoint():
+    evaluator = 'm43_evaluation' if m43 else 'm4_evaluation'
+    command = [sys.executable, '-m', 'supermimic.integration.' + evaluator,
+               '--out', str(log_path.parent), '--m4_reference', args.m4_reference, '--device', dev]
+    if not m43:
+        command.append('--latest_only')
+    if m46:
+        command.append('--upper-metrics-only')
+    elif upper_ablation:
+        command.append('--m49-periodic' if m49 else '--m48-periodic')
+    elif m45 or m451:
+        command.append('--upper-body')
+    subprocess.run(command, cwd=REPO, check=True)
+
+
+def assert_periodic_final():
+    summary = json.loads((log_path.parent / 'evaluation' / 'results.json').read_text())
+    if (not (log_path / f'iter_{args.iterations}.pt').is_file()
+            or str(args.iterations) not in summary['milestones']
+            or summary.get('best_iteration') is None or not (log_path / 'best.pt').is_file()):
+        raise RuntimeError('最终周期评估或 Best 未落盘，请检查本组训练日志')
+
+
+def write_m4_config():
+    args_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = args_path.with_suffix('.tmp')
+    temporary.write_text(json.dumps(vars(args), indent=2)+'\n')
+    os.replace(temporary, args_path)
+
+
 launch_metadata=json.loads((log_path/'launch.json').read_text()) if (log_path/'launch.json').exists() else {}
 source_snapshot=launch_metadata.get('source_snapshot')
 if args.resume:
     ck = torch.load(args.resume, map_location=dev, weights_only=False)
+    if m46 or upper_ablation:
+        saved_args = ck.get('args', {})
+        # 启动器在写检查点前会展开无直播默认值，恢复前此参数仍是原始命令行默认值。
+        resume_metadata = {'resume', 'fresh_start', 'm4_reference', 'roban_config', 'log_dir', 'livestream',
+                           'git_worktree', 'git_commit', 'environment_versions'}
+        if m46:
+            resume_metadata.update(('m47_smoke', 'm47_startup_steps', 'upper_action_smoothness_weight',
+                                    'm48_group', 'm48_check', 'm48_smoke'))
+        if not m49:
+            resume_metadata.update(('m49_group', 'm49_check', 'm49_smoke',
+                                    'soft_body_prior_weight', 'soft_body_prior_tolerance'))
+        differences = [key for key, value in vars(args).items() if key not in resume_metadata
+                       and saved_args.get(key) != value]
+        if differences or ck.get('transfer_report') is not None or not {'rng', 'step_acc'} <= ck.keys():
+            raise ValueError(f'仅恢复同组原始实验的检查点，配置差异：{differences}')
+        ahead = [path.name for path in log_path.glob('iter_*.pt')
+                 if path.stem[5:].isdigit() and int(path.stem[5:]) > ck['iteration']]
+        if ahead:
+            raise ValueError(f'恢复检查点落后于已有里程碑：{ahead}')
+        if upper_ablation and Path(args.resume).name != 'last.pt' and (log_path / 'last.pt').exists():
+            raise ValueError('本组已有 Last，请从 Last 恢复')
+    if m451 and (ck.get('transfer_report') or {}).get('strategy') != 'f2_body_prior_actor_wm_only':
+        raise ValueError('M4.5.1 恢复只接受本短训生成的同权重检查点')
     assert_checkpoint(ck)
     if m4:
         mdp.assert_checkpoint_task(ck)
@@ -420,11 +668,39 @@ if args.resume:
         if 'curriculum' not in ck: raise ValueError('Full curriculum resume requires curriculum/RNG state')
         curriculum.load_state_dict(ck['curriculum'])
     start_it, wall_offset, sim_steps = ck["iteration"], ck["wall_time"], ck["sim_steps"]
+    if (m46 or upper_ablation) and not 0 <= start_it <= args.iterations:
+        raise ValueError(f'检查点轮次 {start_it} 超出本实验预算')
+    if (m46 or upper_ablation) and start_it > 0 and start_it % args.m4_eval_every == 0:
+        # 进程可能在发布 Last 后、提交周期评估前中断。先补完同一冻结权重的轻量评估。
+        milestone = log_path / f'iter_{start_it}.pt'
+        if not milestone.exists():
+            os.link(args.resume, milestone)
+        if upper_ablation and not (log_path / 'last.pt').exists():
+            os.link(args.resume, log_path / 'last.pt')
+        evaluate_m4_checkpoint()
+        if start_it == args.iterations:
+            assert_periodic_final()
+            print(f'M4 completed | iteration={start_it} | sim_steps={sim_steps} | '
+                  f'wall={wall_offset + time.monotonic() - PROCESS_START:.1f}s', flush=True)
+            sys.exit(0)
     if args.iterations <= start_it:
         raise ValueError(f'Resume checkpoint is at iteration {start_it}; --iterations must be larger '
                          f'(it is the total target, not additional iterations; got {args.iterations})')
     print(f'Resuming iteration {start_it} -> {args.iterations}; model and optimizer states restored. '
           f'Replay buffer will be refilled; WM-only phase is based on the absolute iteration.', flush=True)
+
+if m451 and not args.resume:
+    from supermimic.transfer import initialize_f2_body_prior
+
+    source = torch.load(args.m451_source, map_location='cpu', weights_only=False, mmap=True)
+    mdp.assert_wm_statistics(source)
+    transfer_report = initialize_f2_body_prior(source, wm, pi, dict(
+        task_contract=mdp.contract(), physical_contract=physics_metadata, data_contract=data_contract,
+        goal_contract=goal_spec.contract(), imagination_contract=imagination_contract,
+        policy_contract=policy_contract(Hh, args.obs_adapter, not args.freeze_decoder,
+                                        obs_dim=obs_dim, observation_mode=args.motion_obs_mode)))
+    transfer_report['source_path'] = str(Path(args.m451_source).resolve())
+    del source
 
 if args.init_weights:
     transfer = torch.load(args.init_weights, map_location=dev, weights_only=False)
@@ -468,7 +744,8 @@ if args.init_from_bridge:
     transfer_report=initialize_from_bridge(transfer,wm,pi,hist=Hh)
     transfer_report['source_path']=str(Path(args.init_from_bridge).resolve())
 if transfer_report:
-    (log_path/'transfer_report.json').write_text(json.dumps(transfer_report,indent=2))
+    if not m451:
+        (log_path/'transfer_report.json').write_text(json.dumps(transfer_report,indent=2))
     print('Cross-task initialization:',json.dumps({k:v for k,v in transfer_report.items() if k!='mapping'}),flush=True)
 if args.freeze_decoder:
     for parameter in pi.dec.parameters(): parameter.requires_grad_(False)
@@ -508,7 +785,7 @@ def _wm_err(S_hat, s1, mask):
     return (e * mask).sum() / s1.shape[0], e[:, -1]
 
 
-def _imag_step(S, o_hist, a_prev, f, xi, xi_n, g, ep_step, command):
+def _imag_step(S, o_hist, a_prev, f, xi, xi_n, g, ep_step, command, startup_q=None):
     a = pi(o_hist, g)
     clip_fraction = a.new_zeros(())
     if standing_action:
@@ -516,17 +793,23 @@ def _imag_step(S, o_hist, a_prev, f, xi, xi_n, g, ep_step, command):
     elif not joint_range_action:
         clip_fraction = (a.abs() > ACTION_LIMIT).float().mean()
         a = bound_action(a)
-    S1 = wm.step(S, _wm_action(a, f), xi_n)
+    if action_context:
+        target = mdp.executed_target(a, startup_q, ep_step)
+        executed = mdp.effective_action(target)
+    else:
+        target = None
+        executed = _wm_action(a, f)
+    S1 = wm.step(S, executed, xi_n)
     f1 = f + 1
     step1 = ep_step + 1
     o1 = mdp.add_noise(goals.obs(mdp, S1, a, xi, f1, command))
     o_hist = torch.cat((o_hist[:, 1:], o1.unsqueeze(1)), 1)
-    return S1, a, o_hist, f1, goals.goal(S1, f1, step1, command), step1, clip_fraction
+    return S1, a, o_hist, f1, goals.goal(S1, f1, step1, command), step1, clip_fraction, target
 
 
-def _reward_term(S, f, a, a_prev, ep_step, command):
+def _reward_term(S, f, a, a_prev, ep_step, command, **history):
     if mdp.is_foot or getattr(mdp,'is_reference_foot',False):
-        r, terms = mdp.reward(S,f,a,a_prev,terms=True,command=command,ep_step=ep_step)
+        r, terms = mdp.reward(S,f,a,a_prev,terms=True,command=command,ep_step=ep_step,**history)
         foot_reward = terms['foot_objective']
     else:
         r = mdp.reward(S,f,a,a_prev)
@@ -564,15 +847,16 @@ def set_requires_grad(m: nn.Module, flag: bool):
 # ------------------------------------------------------------------------------------------------
 def wm_update():
     w = buffer.sample_windows(args.wm_batch, args.wm_window, include_frames=residual_action)
-    S_hat = wm_rollout(w["s"], _wm_action(w["a"], w.get("f")), w["xi"])
+    executed = w['a_exec'] if action_context else _wm_action(w['a'],w.get('f'))
+    S_hat = wm_rollout(w['s'], executed, w['xi'])
     loss, e_last = wm_err(S_hat, w["s1"], w["mask"])
     opt_wm.zero_grad(set_to_none=True)
     if not torch.isfinite(loss): raise FloatingPointError("Nonfinite WM/Policy loss")
     loss.backward()
-    nn.utils.clip_grad_norm_(wm.parameters(), 1.0, error_if_nonfinite=True)
+    grad_norm = nn.utils.clip_grad_norm_(wm.parameters(), 1.0, error_if_nonfinite=True)
     opt_wm.step()
     m = w["mask"][:, -1]
-    return loss.detach() / args.wm_window, (e_last.detach() * m).sum() / m.sum().clamp(min=1)
+    return loss.detach() / args.wm_window, (e_last.detach() * m).sum() / m.sum().clamp(min=1), grad_norm.detach()
 
 
 @torch.no_grad()
@@ -587,7 +871,8 @@ def m43_wm_metrics():
     values = {}
     for k in range(8):
         f, a = batch['f'][:, k], batch['a'][:, k]
-        state = wm.step(state, _wm_action(a, f), normalize_xi(batch['xi'][:, k]))
+        executed = batch['a_exec'][:,k] if action_context else _wm_action(a,f)
+        state = wm.step(state, executed, normalize_xi(batch['xi'][:, k]))
         if k not in (0, 3, 7):
             continue
         valid = batch['mask'][:, k].bool()
@@ -597,7 +882,8 @@ def m43_wm_metrics():
         true = unflatten_state(batch['s1'][:, k][valid])
         frame = f[valid] + 1
         command = motion.anchor(torch.zeros_like(frame))
-        reward = mdp.reward(pred, frame, a[valid], batch['a_prev'][:, k][valid], command=command, ep_step=frame)
+        history = {name:batch[name][:,k][valid] for name in ('a_prev2','pd_target')} if action_context else {}
+        reward = mdp.reward(pred, frame, a[valid], batch['a_prev'][:, k][valid], command=command, ep_step=frame, **history)
         values[f'wm_error_{k+1}'] = float((wm.state_error(pred, true) / std).square().mean())
         values[f'wm_foot_rmse_{k+1}'] = float((motion.feet(pred)[0] - motion.feet(true)[0]).square().sum(-1).mean().sqrt())
         values[f'wm_reward_bias_{k+1}'] = float((reward - batch['r'][:, k][valid]).mean() / reward_scale)
@@ -629,6 +915,9 @@ def policy_update(audit_gradients=False):
     if PROFILE:
         torch.cuda.synchronize(); tq0 = time.time()
     s, h = sample_valid_starts(args.pi_batch)
+    if upper_smoke:
+        # 起点从真实 Replay 抽取，上一帧的 Previous Action 应等于起点的上两步动作。
+        torch.testing.assert_close(s['a_prev2'], h['a_prev'][:, -2], rtol=0, atol=0)
     S = unflatten_state(s["s"])
     xi, f, a_prev = s["xi"], s["f"], s["a_prev"]
     ep_step = s['ep_step']
@@ -648,17 +937,27 @@ def policy_update(audit_gradients=False):
     g = g0
     S0 = S
     Ss, As, Aps, Fs, Gs, Steps = [], [], [], [], [], []
+    previous_two, targets = [], []
+    startup_q, a_prev2 = s.get('startup_q'), s.get('a_prev2')
     clip_fractions=[]
     for t in range(HZ):
         Aps.append(a_prev)
-        S, a_prev, o_hist, f, g, ep_step, clip_fraction = imag_step(S, o_hist, a_prev, f, xi, xi_n, g, ep_step, command)
+        if action_context:
+            previous_two.append(a_prev2)
+            # 保留想象步之间的原始动作梯度；只有 Replay 读取的历史天然无梯度。
+            a_prev2 = a_prev
+        S, a_prev, o_hist, f, g, ep_step, clip_fraction, target = imag_step(
+            S, o_hist, a_prev, f, xi, xi_n, g, ep_step, command, startup_q)
+        if action_context:
+            targets.append(target)
         Ss.append(S), As.append(a_prev), Fs.append(f), Gs.append(g)
         Steps.append(ep_step); clip_fractions.append(clip_fraction)
     flat = lambda xs: torch.stack(xs).flatten(0, 1)  # noqa: E731  (H*B, ...)
     S_all = tuple(flat([St[i] for St in Ss]) for i in range(6))
     f_all = flat(Fs)
     command_all = command.repeat(HZ) if command is not None else None
-    r, d, foot_reward = reward_term(S_all, f_all, flat(As), flat(Aps), flat(Steps), command_all)
+    history = dict(a_prev2=flat(previous_two),pd_target=flat(targets)) if action_context else {}
+    r, d, foot_reward = reward_term(S_all, f_all, flat(As), flat(Aps), flat(Steps), command_all, **history)
     r, d = r.view(HZ, B), d.view(HZ, B)
     alive = torch.cumprod(1 - d, 0)  # c_{t+1}
     c_t = torch.cat((torch.ones(1, B, device=dev), alive[:-1]), 0)
@@ -697,25 +996,42 @@ def policy_update(audit_gradients=False):
             if bootstrap.requires_grad else tuple(None for _ in params))
         def grad_norm(gs):
             return sum((g.detach().float().square().sum() for g in gs if g is not None),torch.zeros((),device=dev)).sqrt()
+        def grad_dot(left, right):
+            return sum(((x.detach().float()*y.detach().float()).sum() for x,y in zip(left,right)
+                        if x is not None and y is not None), torch.zeros((), device=dev))
         rn,bn=grad_norm(rg),grad_norm(bg)
-        dot=sum(((x.detach().float()*y.detach().float()).sum() for x,y in zip(rg,bg) if x is not None and y is not None),torch.zeros((),device=dev))
         gradient_diagnostics=dict(actor_reward_gradnorm=rn,actor_bootstrap_gradnorm=bn,
-            actor_grad_cosine=dot/(rn*bn).clamp_min(1e-20),pure_foot_gradnorm=foot_gn)
+            actor_grad_cosine=grad_dot(rg,bg)/(rn*bn).clamp_min(1e-20),pure_foot_gradnorm=foot_gn)
         if mdp.is_foot or m43:
-            _,heads=mdp.reward(S_all,f_all,flat(As),flat(Aps),True,command=command_all,ep_step=flat(Steps))
+            _,heads=mdp.reward(S_all,f_all,flat(As),flat(Aps),True,command=command_all,ep_step=flat(Steps),**history)
             if m43:
                 names = ('swing_position', 'swing_clearance', 'touchdown', 'upright', 'survival')
+                if m45 or m451 or action_context:
+                    names += ('body_prior',)
+                if action_context:
+                    names += ('upper_action_smoothness',)
                 objectives = {name: heads[f'{name}_contribution'] for name in names}
                 objectives['foot'] = foot_reward
+                if m49:
+                    objectives['soft_body_prior'] = heads.get('soft_body_prior_contribution', torch.zeros_like(foot_reward))
             else:
                 objectives={k:v for k,v in heads.items() if k.endswith('_contribution')}
                 objectives.update(base_height=heads['base_height']*task_cfg.w_base_height*.02,
                                   base_upright=heads['base_upright']*task_cfg.w_upright*.02,
                                   foot=heads['foot_objective'])
+            part_grads = {'bootstrap': bg} if m49 else None
             for key,values in objectives.items():
                 objective=-(disc*c_t.detach()*values.view(HZ,B)).sum(0).mean()
-                gradients=torch.autograd.grad(objective,params,retain_graph=True,allow_unused=True)
+                # 零权重奖励项是常量，分项审计应返回零范数。
+                gradients=(torch.autograd.grad(objective,params,retain_graph=True,allow_unused=True)
+                           if objective.requires_grad else ())
                 gradient_diagnostics['term_'+key+'_actor_gradnorm']=grad_norm(gradients)
+                if m49 and any(key in pair for pair in M49_GRADIENT_PAIRS):
+                    part_grads[key] = gradients
+            if m49:
+                for left,right in M49_GRADIENT_PAIRS:
+                    x,y = part_grads[left], part_grads[right]
+                    gradient_diagnostics[f'grad_cosine_{left}_{right}'] = grad_dot(x,y)/(grad_norm(x)*grad_norm(y)).clamp_min(1e-20)
     if PROFILE:
         torch.cuda.synchronize(); tq1 = time.time()
     opt_pi.zero_grad(set_to_none=True)
@@ -737,6 +1053,7 @@ def policy_update(audit_gradients=False):
     set_requires_grad(critic, True)
     # ---------------- critic: GAE(lambda) targets over the imagined transitions ----------------
     v_loss = torch.zeros(())
+    critic_grad_norms = []
     target_mean=torch.zeros((),device=dev); target_max=target_mean
     real_loss_log=[];real_count=0
     if not args.no_critic:
@@ -787,7 +1104,9 @@ def policy_update(audit_gradients=False):
                 opt_v.zero_grad(set_to_none=True)
                 if not torch.isfinite(total_v_loss): raise FloatingPointError("Nonfinite critic loss")
                 total_v_loss.backward()
-                nn.utils.clip_grad_norm_(critic.parameters(), 1.0, error_if_nonfinite=True)
+                critic_grad_norm = nn.utils.clip_grad_norm_(critic.parameters(), 1.0, error_if_nonfinite=True)
+                if m46 or action_context:
+                    critic_grad_norms.append(critic_grad_norm.detach())
                 opt_v.step()
     if PROFILE:
         torch.cuda.synchronize()
@@ -797,6 +1116,8 @@ def policy_update(audit_gradients=False):
         critic_target_mean=target_mean,critic_target_max=target_max,
         actor_bootstrap_mean=bootstrap.detach().mean(),actor_reward_return_mean=reward_J.detach().mean(),
         imagined_action_clip_fraction=torch.stack(clip_fractions).mean().detach())
+    if m46 or action_context:
+        diagnostics['critic_gradnorm'] = torch.stack(critic_grad_norms).mean()
     return loss.detach(), v_loss.detach(), (r_sum / HZ / reward_scale).mean(), gn.detach(), c.mean().detach(), foot_gn, diagnostics
 
 
@@ -820,16 +1141,16 @@ with launch_simulation(sim_cfg, args):
             from supermimic.integration.m4_dynamics import TrainingDynamics
 
             env.dynamics = TrainingDynamics(env, log_path.parent/'dynamics_fault.npz', args)
-        args_path.parent.mkdir(parents=True, exist_ok=True)
-        args_temp = args_path.with_suffix('.tmp')
-        args_temp.write_text(json.dumps(vars(args), indent=2)+'\n')
-        os.replace(args_temp, args_path)
+        if not upper_ablation and (not m46 or not args_path.exists()):
+            write_m4_config()
+        elif m46 and args.resume:
+            print(f'M4.6 从第 {start_it} 轮恢复，Git {git_sha}，工作树 {args.git_worktree!r}', flush=True)
     else:
         env = TrackingSim(sim_cfg, args.num_envs, motion, mdp, gamma=args.gamma, goals=goals)
     if args.m34_dataset:
         env.m34_iteration = start_it
         env.m34_straight_iters = args.m34_straight_iters
-    buffer = ReplayBuffer(args.buffer_steps, args.num_envs, dev, foot_commands=goals.is_foot)
+    buffer = ReplayBuffer(args.buffer_steps,args.num_envs,dev,foot_commands=goals.is_foot,action_context=action_context)
     obs_hist = torch.zeros(args.num_envs, Hh, obs_dim, device=dev)
 
     collection_frames=0; collection_seconds=0.
@@ -839,6 +1160,9 @@ with launch_simulation(sim_cfg, args):
         global obs_hist, sim_steps, collection_frames, collection_seconds
         collect_started=time.monotonic()
         for _ in range(n_steps):
+            if upper_smoke and buffer.size == 5:
+                # 在其它世界继续推进时，单独复位首个世界以覆盖异步 Reset。
+                env.reset(torch.tensor([0], device=dev))
             S = env.state()
             o = mdp.add_noise(goals.obs(mdp, S, env.a_prev, env.xi, env.f, env.command))
             fresh = env.ep_step == 0
@@ -892,7 +1216,8 @@ with launch_simulation(sim_cfg, args):
                 continue
             S0, S1 = unflatten_state(out["s"]), unflatten_state(out["s1"])
             if not stair_cfg or stair_cfg.get('normalizer_policy')=='source_online':
-                wm.in_norm.update(wm.inputs(S0, _wm_action(out["a"], out["f"]), normalize_xi(out["xi"]))[keep])
+                executed = out['a_exec'] if action_context else _wm_action(out['a'],out['f'])
+                wm.in_norm.update(wm.inputs(S0, executed, normalize_xi(out['xi']))[keep])
                 wm.out_norm.update(wm.targets(S0, S1)[keep])
             stats["r"].append(out["r"][keep].mean() / reward_scale)
             stats["head_error"].append(out['terms']['head_position_error'][keep].mean())
@@ -909,11 +1234,21 @@ with launch_simulation(sim_cfg, args):
                 stats['action_rate_rms'].append((out['a'][keep] - out['a_prev'][keep]).square().mean())
                 for name in reward_metric_names:
                     stats[name].append(out['terms'][name][keep].mean())
+                if m49:
+                    for name in posture_metric_names:
+                        value = out['terms'].get(name)
+                        if value is not None:
+                            stats[name].append(value[keep].mean())
             if goals.is_foot and (args.check_foot_gradients or args.goal_mode=='reference_foot'
-                                  or (m4 and sim_steps == startup_steps + count)):
+                                  or args.m47_smoke or upper_smoke or (m4 and sim_steps == startup_steps + count)):
                 restored = goals.goal(S0,out['f'],out['ep_step'],out['command'])
+                history = {key:out[key] for key in ('a_prev2','pd_target')} if action_context else {}
+                if action_context:
+                    target = mdp.executed_target(out['a'],out['startup_q'],out['ep_step'])
+                    torch.testing.assert_close(target,out['pd_target'],rtol=0,atol=0)
+                    torch.testing.assert_close(mdp.effective_action(target),out['a_exec'],rtol=0,atol=0)
                 recomputed = mdp.reward(S1,out['f']+1,out['a'],out['a_prev'],
-                                        command=out['command'],ep_step=out['ep_step']+1)
+                                        command=out['command'],ep_step=out['ep_step']+1,**history)
                 goal_error = (g-restored)[keep].abs().max()
                 reward_error = (out['r']-recomputed)[keep].abs().max()
                 if goal_error > 1e-5 or reward_error > 1e-5:
@@ -939,11 +1274,11 @@ with launch_simulation(sim_cfg, args):
     startup_steps = sim_steps
     step_acc = float(ck.get('step_acc',0.)) if args.resume else 0.
     if args.resume and 'rng' in ck: restore_rng(ck['rng'])
-    m44_last_saved = None
+    last_milestone_saved = start_it if (m46 or upper_ablation) and (log_path / 'last.pt').is_file() else None
 
     def save_checkpoint(label=None, *, initial=False):
-        global m44_last_saved
-        if m44 and not initial and m44_last_saved == current_it:
+        global last_milestone_saved
+        if (m44 or m45 or m451 or action_context) and not initial and last_milestone_saved == current_it:
             return
         ckpt = {"robot_contract": physics_metadata['robot'] if m4 else checkpoint_contract(), "goal_contract": goal_spec.contract(),
                 "checkpoint_schema_version":3 if ROBOT_KIND == 'roban' else 2,
@@ -976,9 +1311,9 @@ with launch_simulation(sim_cfg, args):
                 atomic_save(ckpt, log_path/'initial.pt')
                 return
             atomic_save(ckpt, log_path/'last.pt')
-            if m44:
-                m44_last_saved = current_it
-            milestone_interval = args.ckpt_every if m44 else 1000
+            if m44 or m45 or m451 or action_context:
+                last_milestone_saved = current_it
+            milestone_interval = args.ckpt_every if m44 or m45 or m451 or action_context else 1000
             if m43 and current_it > 0 and (current_it % milestone_interval == 0 or current_it == args.iterations):
                 stage = log_path/f'iter_{current_it}.pt'
                 if not stage.exists():
@@ -1014,13 +1349,19 @@ with launch_simulation(sim_cfg, args):
         if not args.resume:
             # 随机初始化基线须保存于任何采样、归一化和训练更新之前。
             save_checkpoint(initial=True)
+        if upper_ablation and not args_path.exists():
+            write_m4_config()
     if m43:
-        from supermimic.roban import JOINT_NAMES
+        from supermimic.roban import ELBOW_JOINT_NAMES, JOINT_NAMES
 
         reward_metric_names = tuple(f'{name}_contribution' for name in (
             'swing_position', 'swing_clearance', 'swing_orientation', 'stance_position', 'contact_schedule',
             'touchdown', 'upright', 'survival', 'slip', 'joint_limit', 'torque', 'action_rate', 'collision',
             'self_collision', 'body_prior'))
+        if m46 or action_context:
+            reward_metric_names += ('body_prior', 'foot_objective')
+        if action_context:
+            reward_metric_names += ('upper_action_smoothness', 'upper_action_smoothness_contribution')
         rms_names = ('root_xy_rmse_m', 'root_orientation_rmse_deg', 'action_rate_rms')
         stats.update({name: [] for name in (*reward_metric_names, *rms_names)})
         wm_metric_names = tuple(f'{name}_{k}' for name in ('wm_error', 'wm_foot_rmse', 'wm_reward_bias') for k in (1, 4, 8))
@@ -1033,8 +1374,27 @@ with launch_simulation(sim_cfg, args):
             extended_action_names += ('raw_target_out_of_range_ratio',) + tuple(
                 f'raw_target_{metric}_{name}' for name in JOINT_NAMES
                 for metric in ('out_of_range', 'excess_p95', 'excess_p99', 'excess_max'))
+        if m45 or m451 or action_context:
+            grad_metric_names += ('term_body_prior_actor_gradnorm',)
+        if action_context:
+            grad_metric_names += ('term_upper_action_smoothness_actor_gradnorm',)
+        if m46 or action_context:
+            grad_metric_names += ('wm_gradnorm', 'critic_gradnorm')
         m43_columns = (*rms_names, *reward_metric_names, *wm_metric_names, *grad_metric_names,
                        *extended_action_names, 'epa_resets')
+        if m49:
+            posture_metric_names = ('body_prior_arm', 'body_prior_waist', 'soft_body_prior',
+                                    'soft_body_prior_contribution', 'soft_body_prior_arm', 'soft_body_prior_waist',
+                                    'soft_body_prior_dead_zone_violation_rad')
+            stats.update({name: [] for name in posture_metric_names})
+            posture_grad_names = ('term_soft_body_prior_actor_gradnorm',
+                                  *(f'grad_cosine_{left}_{right}' for left,right in M49_GRADIENT_PAIRS))
+            grad_metric_names += posture_grad_names
+            m43_columns += (*posture_metric_names, *posture_grad_names,
+                            *(f'raw_{joint}_{q}' for joint in ELBOW_JOINT_NAMES for q in ('p05','p50','p95')),
+                            *(f'near_limit_{joint}' for joint in ELBOW_JOINT_NAMES))
+        if upper_ablation:
+            m43_columns += ('total_reward',)
     # Replay is deliberately not checkpointed. Refill it on resume as well as on
     # the first run; otherwise sampling the fresh empty buffer fails immediately.
     # Fresh replay after resume: refill, then a short WM-only recovery before Actor updates.
@@ -1060,6 +1420,22 @@ with launch_simulation(sim_cfg, args):
     diag_agg={}
     try:
         collect(args.warmup_steps, stats)
+        if upper_smoke:
+            ages = buffer.data['ep_step'][:buffer.size]
+            starts = ages == 0
+            torch.testing.assert_close(ages, buffer.data['f'][:buffer.size].to(ages.dtype), rtol=0, atol=0)
+            if not (ages[5, 0] == 0 and (ages[5, 1:] == 5).all()
+                    and all((ages == tick).any() for tick in (0, 5, 10, 11))):
+                raise RuntimeError(f'{phase} Smoke 未覆盖异步 Reset 或启动过渡的完整时段')
+            q_reset = unflatten_state(buffer.data['s'][:buffer.size][starts])[4]
+            data = {name: buffer.data[name][:buffer.size] for name in ('a', 'a_prev', 'a_prev2', 'startup_q')}
+            torch.testing.assert_close(data['startup_q'][starts], q_reset.clamp(mdp.kin.q_lo, mdp.kin.q_hi), rtol=0, atol=0)
+            for lag, key in ((1, 'a_prev'), (2, 'a_prev2')):
+                valid = ages[lag:] >= lag
+                torch.testing.assert_close(data[key][lag:][valid], data['a'][:-lag][valid], rtol=0, atol=0)
+                missing = data[key][ages < lag]
+                torch.testing.assert_close(missing, torch.zeros_like(missing), rtol=0, atol=0)
+            print(f'{phase} Smoke 覆盖步龄 0/5/10/11，异步 Reset 和 Replay 动作历史通过', flush=True)
         for it in range(start_it, args.iterations):
             if stair_cfg:env.stair_iteration=it
             if args.m34_dataset: env.m34_iteration = it
@@ -1081,7 +1457,9 @@ with launch_simulation(sim_cfg, args):
             if prof:
                 torch.cuda.synchronize(); tp1 = time.time()
             for _ in range(args.wm_batches):
-                l, e8 = wm_update()
+                l, e8, wm_grad_norm = wm_update()
+                if m46 or action_context:
+                    diag_agg.setdefault('wm_gradnorm', []).append(wm_grad_norm)
             if prof:
                 torch.cuda.synchronize(); tp2 = time.time()
             agg["wm"].append(l), agg["wm8"].append(e8)
@@ -1133,10 +1511,14 @@ with launch_simulation(sim_cfg, args):
                     row.append(mean(clips) if clips else '')
                 if m43:
                     extra = {key: mean(stats[key]) for key in reward_metric_names}
+                    if m49:
+                        extra.update({key: mean(stats[key]) for key in posture_metric_names})
                     extra.update({key: math.sqrt(mean(stats[key])) for key in rms_names})
                     extra.update(m43_wm_metrics(), epa_resets=env.epa_resets)
                     extra.update(dynamics_metrics)
                     extra.update({key: mean(diag_agg[key]) for key in grad_metric_names if key in diag_agg})
+                    if upper_ablation:
+                        extra['total_reward'] = row[10] * reward_scale
                     row.extend(extra.get(key, '') for key in m43_columns)
                 log_f.write(",".join(f"{x:.6g}" if isinstance(x, float) else str(x) for x in row) + "\n")
                 log_f.flush()
@@ -1248,12 +1630,7 @@ with launch_simulation(sim_cfg, args):
                 torch.cuda.synchronize()
                 torch.cuda.empty_cache()
                 eval_started = time.time()
-                evaluator = 'm43_evaluation' if m43 else 'm4_evaluation'
-                command = [sys.executable, '-m', 'supermimic.integration.' + evaluator,
-                           '--out', str(log_path.parent), '--m4_reference', args.m4_reference, '--device', dev]
-                if not m43:
-                    command.append('--latest_only')
-                subprocess.run(command, cwd=REPO, check=True)
+                evaluate_m4_checkpoint()
                 t_log += time.time() - eval_started
             if args.m34_dataset and args.m34_eval_every and current_it % args.m34_eval_every == 0:
                 # No restart/refill: replay, optimizer, RNG and simulator state
@@ -1311,6 +1688,8 @@ with launch_simulation(sim_cfg, args):
                                       deadline=time.monotonic()+allowance,critic=critic,wm=wm)
                 curriculum.eval_spent+=final_report['wall_seconds']
                 (log_path/'eval_final.json').write_text(json.dumps(final_report,indent=2))
+        if (m46 or upper_ablation) and args.m4_eval_every and not STOP_REQUESTED and current_it == args.iterations:
+            assert_periodic_final()
     finally:
         # Signals set a flag; exceptions also leave the last complete optimizer state.
         if not m4 or sys.exc_info()[0] is None:
@@ -1322,6 +1701,8 @@ with launch_simulation(sim_cfg, args):
         else:
             (log_path/'training_status.json').write_text(json.dumps(dict(status=final_status,iteration=current_it,wall_seconds=elapsed(),
                 stop_requested=STOP_REQUESTED,budget_seconds=curriculum.cfg['budget_seconds'] if curriculum else args.wall_seconds)))
+    if (m46 or upper_ablation) and final_status == 'stopped':
+        sys.exit(75)
 
 # The parent simulator is closed before the final independent physics rollout.
 # Smoke has eval_every=0: its checkpoint is evaluated by the explicit gate command.

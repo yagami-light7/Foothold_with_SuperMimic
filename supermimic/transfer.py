@@ -69,6 +69,25 @@ def _validate_shapes(module, state, label):
         raise ValueError(f'{label} contains nonfinite weights/normalization')
 
 
+def initialize_f2_body_prior(source, wm, pi, contracts):
+    """同一物理任务下显式初始化 Actor/WM，只允许奖励权重的契约差异。"""
+    assert_checkpoint(source)
+    task = deepcopy(contracts['task_contract'])
+    task['config']['body_prior_weight'] = 0.0
+    if source.get('iteration') != 4500 or source.get('task_contract') != task:
+        raise ValueError('M4.5.1 只接受零上身权重、同 F2 任务的第 4500 轮源权重')
+    for name, expected in contracts.items():
+        if name != 'task_contract' and source.get(name) != expected:
+            raise ValueError(f'M4.5.1 初始化契约不一致：{name}')
+    _validate_shapes(wm, source['wm'], 'F2 WM')
+    _validate_shapes(pi, source['pi'], 'F2 Actor')
+    wm.load_state_dict(source['wm'])
+    pi.load_state_dict(source['pi'])
+    return dict(strategy='f2_body_prior_actor_wm_only', source_iteration=4500,
+                source_body_prior_weight=0.0, target_body_prior_weight=contracts['task_contract']['config']['body_prior_weight'],
+                initialization='Actor 与 WM 含归一化复用；Critic、优化器、Replay 与 RNG 重建')
+
+
 def _validate_motion_task(ck,paired=False):
     task=ck.get('task_contract') or {}
     try:

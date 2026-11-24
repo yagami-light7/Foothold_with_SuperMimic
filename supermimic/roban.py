@@ -20,6 +20,7 @@ COM_BODY = 'waist_yaw_link'
 _model = mujoco.MjModel.from_xml_path(str(SOURCE_MJCF))
 JOINT_NAMES = [_model.joint(j).name for j in range(_model.njnt)
                if _model.jnt_type[j] == mujoco.mjtJoint.mjJNT_HINGE]
+ELBOW_JOINT_NAMES = ('zarm_l4_joint', 'zarm_r4_joint')
 NUM_J = len(JOINT_NAMES)
 FOOT_BODY_NAMES = ['leg_l6_link', 'leg_r6_link']  # Named end links in this model.
 TRACKED_BODIES = [_model.body(b).name for b in range(1, _model.nbody)]

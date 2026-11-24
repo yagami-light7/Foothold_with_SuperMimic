@@ -8,6 +8,7 @@ import math
 
 import torch
 
+from .integration.m47_control import upper_action_cost
 from .motion import CONTROL_DT
 from .mdp import flatten_state
 from .roban import JOINT_NAMES, NUM_J, XI_DIM, GOAL_FRAME_DIM, actuator_parameters
@@ -17,6 +18,7 @@ from .rotations import yaw_mat, mat_to_6d, rot_angle_sq
 _SWING_AWARE_CONFIG = ('swing_aware', 'swing_position_std', 'swing_clearance',
                        'swing_clearance_std', 'contact_height', 'contact_height_std', 'landing_hold_s')
 _FOOT_OBJECTIVE_TERMS = ('swing_position', 'swing_orientation', 'stance_position', 'contact_schedule', 'touchdown')
+UPPER_POSE_JOINTS = tuple(name for name in JOINT_NAMES if name.startswith(('waist_', 'zarm_')))
 
 
 def long_tail_position(error_sq, sigma):
@@ -64,9 +66,14 @@ class FootRewardConfig:
     contact_height: float = .004
     contact_height_std: float = .003
     landing_hold_s: float = .12
+    upper_action_smoothness_weight: float = 0.0
+    soft_body_prior_weight: float = 0.0
+    soft_body_prior_tolerance: dict[str, float] | None = None
 
     def __post_init__(self):
         for key,value in asdict(self).items():
+            if key == 'soft_body_prior_tolerance':
+                continue
             if not math.isfinite(value) or value<0:
                 raise ValueError(f'Invalid reward parameter {key}')
             if key.endswith('_std') and value<=0:
@@ -77,14 +84,25 @@ class FootRewardConfig:
             raise ValueError('Normalized body-prior component weights must sum to <=1')
         if self.swing_aware not in (0, 1) or self.landing_hold_s <= 0.:
             raise ValueError('摆动感知开关应为 0 或 1，落脚后窗口应大于零')
+        if self.soft_body_prior_weight and (self.body_prior_weight or self.prior_root_orientation or self.prior_root_height):
+            raise ValueError('Soft Body Prior 与原姿态或根部先验互斥')
+        tolerance = self.soft_body_prior_tolerance
+        if self.soft_body_prior_weight or tolerance is not None:
+            if (not isinstance(tolerance, dict) or set(tolerance) != set(UPPER_POSE_JOINTS)
+                    or any(type(v) not in (int, float) or not math.isfinite(v) or v < 0. for v in tolerance.values())):
+                raise ValueError('Soft Body Prior 需要九个具名上身关节的有限非负容许偏差')
 
     @property
     def positive_sum(self):
-        return (sum(getattr(self,k) for k in (*_FOOT_OBJECTIVE_TERMS, 'upright','survival','body_prior_weight'))
-                + self.swing_aware * self.swing_clearance)
+        return (sum(getattr(self,k) for k in (*_FOOT_OBJECTIVE_TERMS, 'upright', 'survival'))
+                + (self.body_prior_weight + self.soft_body_prior_weight) + self.swing_aware * self.swing_clearance)
 
     def contract(self):
         values = asdict(self)
+        if self.upper_action_smoothness_weight == 0.:
+            del values['upper_action_smoothness_weight']
+        if not self.soft_body_prior_weight:
+            del values['soft_body_prior_weight'], values['soft_body_prior_tolerance']
         if not self.swing_aware:
             # M4.2 的奖励契约和旧检查点逐字段兼容。
             for key in _SWING_AWARE_CONFIG:
@@ -147,6 +165,8 @@ class RobanFootMDP:
         self.soft_lo,self.soft_hi=mid-half*cfg.soft_limit_factor,mid+half*cfg.soft_limit_factor
         self.upper_ids=[i for i,n in enumerate(JOINT_NAMES) if n.startswith('zarm_')]
         self.waist_ids=[i for i,n in enumerate(JOINT_NAMES) if n.startswith('waist_')]
+        self.soft_prior_tolerance = (self.pose_tolerance(cfg.soft_body_prior_tolerance)
+                                     if cfg.soft_body_prior_weight else None)
         params=actuator_parameters()
         self.kp=default_q.new_tensor([params[n]['stiffness'] for n in JOINT_NAMES])
         self.kd=default_q.new_tensor([params[n]['damping'] for n in JOINT_NAMES])
@@ -288,7 +308,20 @@ class RobanFootMDP:
                    slip=-(contact*soft_contact*fv[...,:2].square().sum(-1)/c.slip_speed**2).mean(-1))
         return raw, epos, valid
 
-    def reward(self,S,f,a,a_prev,terms=False,*,command=None,ep_step=None):
+    def pose_tolerance(self, by_name):
+        # 张量顺序跟随真实关节映射，非上身关节的值不参与姿态奖励。
+        return self.default_q.new_tensor([by_name.get(name, 0.) for name in JOINT_NAMES])
+
+    def posture_prior_terms(self, q, target_q, tolerance=None):
+        error = q - target_q
+        if tolerance is not None:
+            error = (error.abs() - tolerance).clamp_min(0.)
+        c = self.cfg
+        arm = torch.exp(-error[:, self.upper_ids].square().mean(-1) / c.prior_joint_std**2)
+        waist = torch.exp(-error[:, self.waist_ids].square().mean(-1) / c.prior_joint_std**2)
+        return c.prior_upper * arm, c.prior_waist * waist, error
+
+    def reward(self,S,f,a,a_prev,terms=False,*,command=None,ep_step=None,a_prev2=None,pd_target=None):
         c=self.cfg; p,R,_,_,q,qd=S
         if ep_step is not None and command is not None:
             torch._assert_async(torch.all(f==command.start_frame+ep_step), 'Reward reference clock mismatch')
@@ -306,7 +339,8 @@ class RobanFootMDP:
         self_penetration=torch.relu(self.inscribed_radii[pair[:,0]]+self.inscribed_radii[pair[:,1]]-distance)
         # PD torque proxy shares command/limits with the real simulator. It is
         # differentiable, not a claim of measured Newton constraint force.
-        tau=((self.kp*(self._reward_pd_target(a,f)-q)-self.kd*qd)/self.effort).clamp(-1,1)
+        target = self._reward_pd_target(a,f) if pd_target is None else pd_target
+        tau=((self.kp*(target-q)-self.kd*qd)/self.effort).clamp(-1,1)
         raw.update(upright=torch.exp(-(1-R[...,2,2])/0.1),survival=1-self.soft_termination(S,f),
                  slip=slip,
                  joint_limit=-(torch.relu(q-self.soft_hi)+torch.relu(self.soft_lo-q)).square().mean(-1),
@@ -314,20 +348,40 @@ class RobanFootMDP:
                  collision=-(penetration/.05).square().mean(-1),
                  self_collision=-(self_penetration/.05).square().mean(-1) if len(pair) else torch.zeros_like(p[:,0]))
         prior=torch.zeros_like(p[:,0])
+        prior_terms = {}
         if c.body_prior_weight>0:
-            target_q=ref['q'][:,0]
-            upper=torch.exp(-(q[:,self.upper_ids]-target_q[:,self.upper_ids]).square().mean(-1)/c.prior_joint_std**2)
-            waist=torch.exp(-(q[:,self.waist_ids]-target_q[:,self.waist_ids]).square().mean(-1)/c.prior_joint_std**2)
+            upper, waist, _ = self.posture_prior_terms(q, ref['q'][:,0])
             rootori=torch.exp(-(R-ref['root_R'][:,0]).square().sum((-1,-2))/2/.3**2)
             rootheight=torch.exp(-(p[:,2]-ref['root_p'][:,0,2]).square()/c.prior_root_height_std**2)
-            prior=ref['quality'][:,0]*(c.prior_upper*upper+c.prior_waist*waist+c.prior_root_orientation*rootori+c.prior_root_height*rootheight)
+            quality = ref['quality'][:,0]
+            prior=quality*(upper+waist+c.prior_root_orientation*rootori+c.prior_root_height*rootheight)
+            if terms:
+                prior_terms.update(body_prior_arm=quality*upper, body_prior_waist=quality*waist)
         weighted={k:v*getattr(c,k)*CONTROL_DT for k,v in raw.items()}
         weighted['body_prior']=prior*c.body_prior_weight*CONTROL_DT
+        if c.soft_body_prior_weight:
+            upper, waist, excess = self.posture_prior_terms(q, ref['q'][:,0], self.soft_prior_tolerance)
+            quality = ref['quality'][:,0]
+            soft_prior = quality * (upper + waist)
+            weighted['soft_body_prior'] = soft_prior * c.soft_body_prior_weight * CONTROL_DT
+            if terms:
+                prior_terms.update(soft_body_prior=soft_prior, soft_body_prior_arm=quality*upper,
+                                   soft_body_prior_waist=quality*waist,
+                                   soft_body_prior_dead_zone_violation_rad=excess[:, self.waist_ids+self.upper_ids].mean(-1))
+        if a_prev2 is not None:
+            if ep_step is None:
+                raise ValueError('上身平滑项需要步后 episode 时钟')
+            # 步后第 3 帧才拥有本 episode 内的三个原始动作。
+            smooth = -upper_action_cost(a, a_prev, a_prev2, ep_step >= 3, self.waist_ids + self.upper_ids)
+            raw['upper_action_smoothness'] = smooth
+            weighted['upper_action_smoothness'] = smooth * (CONTROL_DT * c.upper_action_smoothness_weight)
+        elif c.upper_action_smoothness_weight:
+            raise ValueError('上身平滑项缺少前两步原始动作')
         reward=sum(weighted.values())
         if terms:
             zero=torch.zeros_like(reward)
             foot_terms = (*_FOOT_OBJECTIVE_TERMS, 'swing_clearance') if c.swing_aware else _FOOT_OBJECTIVE_TERMS
-            return reward,dict(**raw,**{k+'_contribution':v for k,v in weighted.items()},
+            return reward,dict(**raw,**prior_terms,**{k+'_contribution':v for k,v in weighted.items()},
                 body_prior=prior,foot_objective=sum(weighted[k] for k in foot_terms),
                 foot_rmse=epos.mean(-1).sqrt(),contact_valid_fraction=valid.mean(-1),
                 head_position_error=zero,head_penalty=zero)

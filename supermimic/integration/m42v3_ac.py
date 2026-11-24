@@ -207,7 +207,7 @@ def position_kernel_signal(trajectories, motion, mdp):
     return out
 
 
-def objective(batch, pi, critic, wm, motion, mdp, goals, args, value_upper, seed):
+def objective(batch, pi, critic, wm, motion, mdp, goals, args, value_upper, seed, *, action_context=None):
     # 复用正式实现的 WM、观测噪声、奖励与软终止。批次步法与 train.py 对齐。
     torch.manual_seed(seed)
     flat, previous, f0, xi, history, g = batch
@@ -217,11 +217,21 @@ def objective(batch, pi, critic, wm, motion, mdp, goals, args, value_upper, seed
     command = motion.anchor(torch.zeros_like(f0))
     H = args.horizon
     states, actions, previous_actions, frames, effective = [], [], [], [], []
+    previous_two, targets = [], []
+    if action_context is not None:
+        previous2, startup_q = action_context
     for offset in range(H):
         f = f0 + offset
         a = pi(history, g)
         # 保留独立的图节点，便于区分 WM 路径与原动作直接进入奖励的梯度。
-        eff = mdp.wm_action(a, f).view_as(a)
+        if action_context is not None:
+            target = mdp.executed_target(a, startup_q, f)
+            eff = mdp.effective_action(target).view_as(a)
+            targets.append(target)
+            previous_two.append(previous2)
+            previous2 = previous
+        else:
+            eff = mdp.wm_action(a, f).view_as(a)
         state = wm.step(state, eff, xi_n)
         f1 = f + 1
         obs = mdp.add_noise(goals.obs(mdp, state, a, xi, f1, command))
@@ -238,8 +248,9 @@ def objective(batch, pi, critic, wm, motion, mdp, goals, args, value_upper, seed
     flat_s = tuple(stack([entry[i] for entry in states]) for i in range(6))
     flat_f = stack(frames)
     all_commands = command.repeat(H)
+    history_inputs = dict(a_prev2=stack(previous_two),pd_target=stack(targets)) if action_context is not None else {}
     reward, terms = mdp.reward(flat_s, flat_f, stack(actions), stack(previous_actions), terms=True,
-                               command=all_commands, ep_step=flat_f)
+                               command=all_commands, ep_step=flat_f, **history_inputs)
     d = mdp.soft_termination(flat_s, flat_f, command=all_commands, ep_step=flat_f)
     d = torch.where(flat_f >= motion.clip_end[motion.clip_id[flat_f]], 1., d).view(H, b)
     alive = torch.cumprod(1-d, 0)
@@ -267,6 +278,7 @@ def objective(batch, pi, critic, wm, motion, mdp, goals, args, value_upper, seed
                 bootstrap=bootstrap, survival_gate=survival_gate, direct=direct, shaped=shaped, actions=actions,
                 effective=effective, clip=mdp.target_clip_mask(torch.stack(actions).detach()),
                 foot_rmse=terms['foot_rmse'].mean(), alive=alive[-1].mean(), terminal_value=terminal_value.mean(),
+                joint_position=flat_s[4], reward_frames=flat_f, fixed_weighted=fixed_weighted,
                 coarse_gradient=dict(foot=foot, upright_survival=sum(direct[name] for name in POSTURE),
                                      regularization=sum(direct[name] for name in REGULARIZATION),
                                      other=sum(direct[name] for name in direct if name not in foot_names+POSTURE+REGULARIZATION)))
@@ -338,6 +350,8 @@ def gradient_audit(batch, pi, critic, wm, motion, mdp, goals, args, ck, seed, si
     cosines.update(A_B=cosine(grads['A'],grads['B']), A_C=cosine(grads['A'],grads['C']),
                    B_C=cosine(grads['B'],grads['C']), C_inverse=cosine(grads['C'],grads['shaped_foot']))
     clip = calc['clip']
+    unclipped_pd = getattr(mdp, 'unclipped_pd_target', False)
+    outside = mdp.target_out_of_range_mask(torch.stack(calc['actions']).detach()) if unclipped_pd else clip
     clip_summary = {}
     # 原始动作梯度还有动作变化与历史路径。有效动作梯度乘 Clamp 局部雅可比得到动力学路径。
     for key in ('A','C'):
@@ -348,6 +362,11 @@ def gradient_audit(batch, pi, critic, wm, motion, mdp, goals, args, ck, seed, si
             return float(g[mask].square().mean().sqrt()) if mask.any() else None
         clip_summary[key] = dict(raw_rms_clipped=rms(ga,clip), raw_rms_unclipped=rms(ga,~clip),
                                  dynamics_rms_clipped=rms(local,clip), dynamics_rms_unclipped=rms(local,~clip))
+        if unclipped_pd:
+            clip_summary[key].update(raw_rms_out_of_range=rms(ga,outside),
+                                     dynamics_rms_out_of_range=rms(local,outside),
+                                     dynamics_rms_in_range=rms(local,~outside),
+                                     count_out_of_range=int(outside.sum()), count_actions=outside.numel())
     updates = None
     baseline = summarize_loss(calc)
     del calc

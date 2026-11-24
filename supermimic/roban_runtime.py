@@ -76,6 +76,8 @@ def add_roban_args(parser,argv):
     parser.add_argument('--reference_fps',type=float,help='Explicit source FPS when registry/NPZ has no provenance')
     parser.add_argument('--critic_use_body_reference',action=__import__('argparse').BooleanOptionalAction,default=False)
     parser.add_argument('--body_prior_weight',type=float,default=0.0)
+    parser.add_argument('--soft_body_prior_weight', type=float, default=0., help='F2 宽容带姿态奖励权重')
+    parser.add_argument('--soft_body_prior_tolerance', type=json.loads, help='按真实关节名称给出上身容许偏差（rad）')
     parser.add_argument('--wm_use_terrain',action=__import__('argparse').BooleanOptionalAction,default=False)
     parser.add_argument('--terrain_provider',choices=['flat'],default='flat',help='Only flat physics is enabled in this stage')
     parser.add_argument('--terrain_patch_points',type=int,default=5)
@@ -126,6 +128,7 @@ def build_task(args,kin,files,device):
     mdp=RobanFootMDP(kin,motion,default_q,goals,cfg,
                      critic_use_body_reference=args.critic_use_body_reference,terrain=terrain)
     args.reward_config=asdict(cfg)
+    del args.reward_config['soft_body_prior_weight'], args.reward_config['soft_body_prior_tolerance']
     args.motion_obs_mode='roban_proprio_v1'
     return motion,goals,mdp,terrain
 

@@ -20,6 +20,7 @@ from ..rotations import mat_to_6d, quat_to_mat, yaw_mat
 from ..terrain import make_terrain
 from ..transfer import SIMULATION, physical_contract
 from .m4_reference import F2MotionReference
+from .m47_control import blend_startup_target, upper_joint_indices
 
 
 # 为跌倒、接触冲击和软限位留出裕量，只拦截严重偏离物理尺度的样本。
@@ -138,7 +139,7 @@ class F2Goals(RobanFootGoals):
 class F2TrackingMDP(RobanFootMDP):
     def __init__(self, kin, motion, default_q, goals, cfg, *, action_mapping='neutral',
                  critic_use_body_reference=False, terrain=None, limit_time_constant=None,
-                 pd_damping=None, action_scale_factor=.25, unclipped_pd_target=False):
+                 pd_damping=None, action_scale_factor=.25, unclipped_pd_target=False, startup_steps=0):
         if action_mapping not in M4_ACTION_MAPPINGS:
             raise ValueError(f'未知的 M4 动作映射：{action_mapping}')
         if type(unclipped_pd_target) is not bool or (unclipped_pd_target and action_mapping != 'standing_offset'):
@@ -162,6 +163,15 @@ class F2TrackingMDP(RobanFootMDP):
                          critic_use_body_reference=critic_use_body_reference, terrain=terrain)
         self.action_mapping = action_mapping
         self.unclipped_pd_target = unclipped_pd_target
+        if type(startup_steps) is not int or startup_steps not in (0, 5, 10):
+            raise ValueError('启动过渡必须为 0、5 或 10 个控制步')
+        self.startup_steps = startup_steps
+        self.action_history_enabled = bool(startup_steps or cfg.upper_action_smoothness_weight)
+        if self.action_history_enabled:
+            if action_mapping != 'standing_offset' or unclipped_pd_target or not cfg.swing_aware:
+                raise ValueError('M4.7 动作历史仅用于 F2 Hard Clamp 摆动奖励')
+            self.startup_mask = torch.zeros_like(default_q, dtype=torch.bool)
+            self.startup_mask[upper_joint_indices(JOINT_NAMES)] = True
         self.limit_time_constant = limit_time_constant
         self.pd_damping = pd_damping or {}
         for name, value in self.pd_damping.items():
@@ -191,7 +201,7 @@ class F2TrackingMDP(RobanFootMDP):
         else:
             return a
         # 用已执行的限位目标反算 WM 输入，保留 21 维动作尺度及限位处真实梯度。
-        return (target - self.default_q) / self.alpha
+        return self.effective_action(target)
 
     def standing_raw_target(self, a):
         return self.default_q + self.alpha * a
@@ -200,6 +210,15 @@ class F2TrackingMDP(RobanFootMDP):
         target = self.standing_raw_target(a)
         # 机械限位与驱动力矩限幅由 Newton 原有约束处理。
         return target if self.unclipped_pd_target else target.clamp(self.kin.q_lo, self.kin.q_hi)
+
+    def executed_target(self, a, reset_q, ep_step):
+        target = self.standing_pd_target(a)
+        if self.startup_steps:
+            return blend_startup_target(target, reset_q, ep_step, self.startup_mask, self.startup_steps)
+        return target
+
+    def effective_action(self, target):
+        return (target - self.default_q) / self.alpha
 
     def target_out_of_range_mask(self, a):
         target = self.standing_raw_target(a)
@@ -224,8 +243,9 @@ class F2TrackingMDP(RobanFootMDP):
         # 奖励评估的是步后状态。已有力矩项使用该步实际下发的目标。
         return self.residual_pd_target(a, (f - 1).clamp_min(0))
 
-    def reward(self, S, f, a, a_prev, terms=False, *, command=None, ep_step=None):
-        result = super().reward(S, f, a, a_prev, terms, command=command, ep_step=ep_step)
+    def reward(self, S, f, a, a_prev, terms=False, *, command=None, ep_step=None, a_prev2=None, pd_target=None):
+        result = super().reward(S, f, a, a_prev, terms, command=command, ep_step=ep_step,
+                                a_prev2=a_prev2, pd_target=pd_target)
         if terms:
             _, values = result
             ref = self._reference(f, command)
@@ -248,6 +268,10 @@ class F2TrackingMDP(RobanFootMDP):
                          replay_action='noisy_linear_output', action_rate_input='linear_action')
             if self.unclipped_pd_target:
                 value.update(version=5, pd_target_clip=False, wm_action='raw_linear_pd_target')
+        if self.action_history_enabled:
+            value.update(version=6, startup_steps=self.startup_steps, startup_clock='episode_control_step',
+                         wm_action='standing_equivalent_of_executed_pd_target',
+                         smoothness_history='two_previous_raw_actions_within_episode')
         return value
 
     def physics_contract(self, args):
@@ -313,15 +337,23 @@ def build_m4_task(args, kin, files, device):
             raise ValueError('M4.2 固定站姿必须使用有限数值')
         default_q = [pose[name] for name in JOINT_NAMES]
     default_q = kin.q_lo.new_tensor(default_q)
-    rewards = dict(args.roban_reward_config, body_prior_weight=args.body_prior_weight)
+    rewards = dict(args.roban_reward_config, body_prior_weight=args.body_prior_weight,
+                   upper_action_smoothness_weight=getattr(args, 'upper_action_smoothness_weight', 0.),
+                   soft_body_prior_weight=getattr(args, 'soft_body_prior_weight', 0.),
+                   soft_body_prior_tolerance=getattr(args, 'soft_body_prior_tolerance', None))
     cfg = FootRewardConfig(**rewards)
     terrain = make_terrain(kin, vars(args)) if args.wm_use_terrain else None
     mdp = F2TrackingMDP(kin, motion, default_q, goals, cfg, action_mapping=mapping,
                         critic_use_body_reference=args.critic_use_body_reference, terrain=terrain,
                         limit_time_constant=m4_limit_time_constant(args), pd_damping=m4_pd_damping(args),
                         action_scale_factor=getattr(args, 'm4_action_scale_factor', .25),
-                        unclipped_pd_target=getattr(args, 'm4_unclipped_pd_target', False))
+                        unclipped_pd_target=getattr(args, 'm4_unclipped_pd_target', False),
+                        startup_steps=getattr(args, 'm47_startup_steps', 0))
     args.reward_config = asdict(cfg)
+    if not mdp.action_history_enabled:
+        args.reward_config.pop('upper_action_smoothness_weight')
+    if not cfg.soft_body_prior_weight:
+        del args.reward_config['soft_body_prior_weight'], args.reward_config['soft_body_prior_tolerance']
     args.motion_obs_mode = mdp.observation_mode
     return motion, goals, mdp, terrain
 
@@ -359,6 +391,8 @@ class M4TrackingSim(TrackingSim):
             set_scene_joint_limit(scene_cfg, mdp.limit_time_constant)
         for name, value in mdp.pd_damping.items():
             scene_cfg.robot.actuators[name].damping = value
+        self.a_prev2 = mdp.default_q.new_zeros((num_envs, NUM_J)) if mdp.action_history_enabled else None
+        self.startup_q = torch.empty_like(self.a_prev2) if self.a_prev2 is not None else None
         super().__init__(sim_cfg, num_envs, motion, mdp, gamma=gamma, eval_mode=eval_mode,
                          max_episode_steps=steps, reset_noise=reset_noise,
                          goals=goals, scene_cfg=scene_cfg, domain_randomization=False)
@@ -403,12 +437,29 @@ class M4TrackingSim(TrackingSim):
 
     def reset(self, env_ids, frames=None):
         super().reset(env_ids, frames)
+        if getattr(self, 'a_prev2', None) is not None and len(env_ids):
+            self.a_prev2[env_ids] = 0.
+            self.refresh_startup_pose(env_ids)
         overflow = getattr(self, '_solver_overflow', None)
         if overflow is not None and self.mdp.action_mapping == 'standing_offset':
             # 先完成 Newton 的局部重置和暖启动清理，再清除这些环境的 EPA 累积位。
             overflow[env_ids] &= ~self._epa_overflow
         self.done_eval[env_ids] = False
         self.failed_eval[env_ids] = False
+
+    def refresh_startup_pose(self, env_ids=slice(None)):
+        if self.startup_q is not None:
+            q = self.state()[4][env_ids].clamp(self.mdp.kin.q_lo, self.mdp.kin.q_hi)
+            self.startup_q[env_ids] = q
+
+    def action_context(self, target, previous):
+        if self.a_prev2 is None:
+            return super().action_context(target, previous)
+        prev2 = self.a_prev2.clone()
+        self.a_prev2.copy_(previous)
+        return (dict(a_prev2=prev2, pd_target=target),
+                dict(a_prev2=prev2, a_exec=self.mdp.effective_action(target),
+                     startup_q=self.startup_q.clone(), pd_target=target))
 
     def pd_target(self, a, xi=None):
         mapping = self.mdp.action_mapping
@@ -417,6 +468,8 @@ class M4TrackingSim(TrackingSim):
                 raise ValueError(f'期望 {self.a_prev.shape} 的 Roban 动作，收到 {a.shape}')
             if mapping == 'standing_offset':
                 torch._assert_async(a.isfinite().all(), 'M4.2 动作必须为有限值')
+                if self.mdp.startup_steps:
+                    return self.mdp.executed_target(a, self.startup_q, self.ep_step)
                 return self.mdp.standing_pd_target(a)
             torch._assert_async((a.abs() <= 1.).all(), '关节范围动作必须有限且位于 [-1, 1]')
             return self.mdp.joint_range_pd_target(a)
