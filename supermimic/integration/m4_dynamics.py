@@ -215,11 +215,18 @@ class TrainingDynamics:
         self.sums = torch.zeros(7, dtype=torch.float64, device=env.device)
         self.maxima = torch.zeros(9, device=env.device)
         self.swing_aware = bool(getattr(config, 'roban_reward_config', {}).get('swing_aware'))
-        self.elbows = [JOINT_NAMES.index(name) for name in ELBOW_JOINT_NAMES] if getattr(config, 'm49_group', None) else []
-        if self.elbows:
+        self.pose_names = ()
+        if getattr(config, 'm410_group', None) or getattr(config, 'm411_group', None):
+            from .m410_reward import SHOULDER_JOINTS
+
+            self.pose_names = ELBOW_JOINT_NAMES + SHOULDER_JOINTS
+        elif getattr(config, 'm49_group', None):
+            self.pose_names = ELBOW_JOINT_NAMES
+        self.pose_ids = [JOINT_NAMES.index(name) for name in self.pose_names]
+        if self.pose_ids:
             self.elbow_raw_samples = []
-            self.elbow_near_count = torch.zeros(2, device=env.device)
-            self.elbow_valid_count = torch.zeros((), device=env.device)
+            self.pose_near_count = torch.zeros(len(self.pose_ids), device=env.device)
+            self.pose_valid_count = torch.zeros((), device=env.device)
         if self.swing_aware:
             self.action_samples, self.speed_samples = [], []
             self.joint_clamps = torch.zeros(len(JOINT_NAMES), device=env.device)
@@ -256,13 +263,13 @@ class TrainingDynamics:
             self.speed_samples.append(after[5][sample].abs())
             self.joint_clamps += saturated_action.sum(0)
             self.effective_action_sq += ((target-env.mdp.default_q)/env.mdp.alpha).square().sum()
-            if self.elbows:
-                self.elbow_raw_samples.append(self.logits[sample][:,self.elbows])
-                q = after[4][:, self.elbows]
-                lo, hi = (x[self.elbows] for x in (env.mdp.kin.q_lo, env.mdp.kin.q_hi))
+            if self.pose_ids:
+                self.elbow_raw_samples.append(self.logits[sample][:, self.pose_ids[:2]])
+                q = after[4][:, self.pose_ids]
+                lo, hi = (x[self.pose_ids] for x in (env.mdp.kin.q_lo, env.mdp.kin.q_hi))
                 near = torch.minimum(q-lo, hi-q) <= .02
-                self.elbow_near_count += (near & (~invalid)[:, None]).sum(0)
-                self.elbow_valid_count += (~invalid).sum()
+                self.pose_near_count += (near & (~invalid)[:, None]).sum(0)
+                self.pose_valid_count += (~invalid).sum()
             if self.unclipped_target:
                 kin = env.mdp.kin
                 target_excess = torch.maximum(kin.q_lo - target, target - kin.q_hi).clamp_min(0.)
@@ -329,16 +336,16 @@ class TrainingDynamics:
                            joint_speed_p99_rad_s=qd99, wm_effective_action_rms=float((self.effective_action_sq / count).sqrt()))
             rates = (self.joint_clamps / (count / len(JOINT_NAMES))).tolist()
             metrics.update({f'clamp_{name}': rate for name, rate in zip(JOINT_NAMES, rates)})
-            if self.elbows:
+            if self.pose_ids:
                 quantiles = torch.quantile(torch.cat(self.elbow_raw_samples),
                                            self.maxima.new_tensor([.05, .50, .95]), dim=0).T.tolist()
-                near = (self.elbow_near_count/self.elbow_valid_count.clamp_min(1)).tolist()
-                for name, values, fraction in zip(ELBOW_JOINT_NAMES, quantiles, near):
+                near = (self.pose_near_count/self.pose_valid_count.clamp_min(1)).tolist()
+                for name, values in zip(ELBOW_JOINT_NAMES, quantiles):
                     metrics.update({f'raw_{name}_{key}': value for key,value in zip(('p05','p50','p95'),values)})
-                    metrics[f'near_limit_{name}'] = fraction
+                metrics.update({f'near_limit_{name}': fraction for name, fraction in zip(self.pose_names, near)})
                 self.elbow_raw_samples.clear()
-                self.elbow_near_count.zero_()
-                self.elbow_valid_count.zero_()
+                self.pose_near_count.zero_()
+                self.pose_valid_count.zero_()
             if self.unclipped_target:
                 # 分位数包含未越界的零值，峰值使用完整训练批次。
                 quantiles = torch.quantile(torch.cat(self.target_excess_samples),

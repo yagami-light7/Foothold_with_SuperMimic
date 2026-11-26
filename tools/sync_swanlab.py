@@ -38,6 +38,14 @@ OPTIONAL_METRICS = {
     'head_rms_deg': 'Head/RMSErrorDeg',
     'head_penalty_norm': 'Head/NormalizedPenalty',
 }
+M411_METRICS = {
+    'actor_lr_effective': 'Optimization/ActorLR',
+    'm410_reward': 'Reward/CommonM410',
+    'imagined_m410_reward': 'Reward/ImaginedCommonM410',
+    'hand_huber_contribution': 'Reward/HandHuber',
+    'hand_left_rmse_m': 'Tracking/LeftHandRMSE_m',
+    'hand_right_rmse_m': 'Tracking/RightHandRMSE_m',
+}
 
 # Core-only uploads omit paths, clip inventories, unrelated task dictionaries,
 # head diagnostics and arbitrary curriculum/gradient telemetry. Motion reward
@@ -48,7 +56,7 @@ CORE_CONFIG_KEYS = {
     'hist', 'goal_frames', 'goal_dt', 'lr', 'actor_lr', 'critic_lr', 'gamma', 'lam',
     'action_noise', 'm34_straight_iters', 'm34_eval_every', 'amp', 'seed',
     'motion_obs_mode', 'obs_dim', 'motion_reward_config',
-    'wall_seconds',
+    'wall_seconds', 'm50_adaptation_iters',
 }
 CORE_METRICS = {key: METRICS[key] for key in (
     'wm_loss', 'pi_loss', 'v_loss', 'sim_rew', 'ep_ret_norm', 'ep_len',
@@ -132,7 +140,9 @@ def evaluation_metrics(summary):
 def training_exit_code(run_dir, container=None, session=None):
     marker = run_dir / 'train.exitcode'
     if marker.exists():
-        return int(marker.read_text().strip())
+        code = marker.read_text().strip()
+        if code != 'running':
+            return int(code)
     if container:
         result = subprocess.run(
             ['docker', 'exec', container, 'tmux', 'has-session', '-t', f'={session}'],
@@ -167,8 +177,11 @@ def load_swanlab(mode, authenticate=False, core_only=True):
 def sync_run(args, swanlab):
     run_dir = args.run_dir.resolve()
     (run_dir / 'swanlab_sync.pid').write_text(f'{os.getpid()}\n')
-    config_path = run_dir / 'args.json'
-    csv_path = run_dir / 'train_log.csv'
+    m411 = getattr(args, 'roban_m411', False)
+    m50 = getattr(args, 'roban_m50', False)
+    staged = m411 or m50
+    config_path = run_dir / ('config/train.json' if staged else 'args.json')
+    csv_path = run_dir / ('logs/train.csv' if staged else 'train_log.csv')
     deadline = time.monotonic() + args.startup_timeout
     while True:
         try:
@@ -176,11 +189,12 @@ def sync_run(args, swanlab):
             break
         except (FileNotFoundError, json.JSONDecodeError):
             if training_exit_code(run_dir, args.container, args.session) is not None:
-                raise RuntimeError('Training exited before writing args.json')
+                raise RuntimeError(f'Training exited before writing {config_path}')
             if time.monotonic() >= deadline:
                 raise TimeoutError(f'Timed out waiting for {config_path}')
             time.sleep(args.poll_seconds)
 
+    warmup = int(config['m50_adaptation_iters'] if m50 else config['m411_critic_warmup']) if staged else 0
     last_step, active_header = -1, None
     uploaded_evaluations = {}
     previous_status = run_dir/'swanlab_sync_status.json'
@@ -249,6 +263,21 @@ def sync_run(args, swanlab):
                     if not core_only:
                         values.update({name: float(row[key]) for key, name in OPTIONAL_METRICS.items()
                                        if row.get(key) not in (None, '')})
+                    if staged:
+                        # 联合轮次在训练 CSV 内重新从 1 开始，SwanLab 使用连续横轴。
+                        if row['stage'] == 'joint':
+                            step += warmup
+                        values.update({name: float(row[key]) for key, name in M411_METRICS.items()
+                                       if row.get(key) not in (None, '')})
+                    if m50:
+                        # 训练 CSV 已区分分片段的有效转移、存活率与实际 Replay 比例。
+                        fields = ('episode_return', 'episode_length', 'foot_rmse_m', 'root_xy_rmse_m',
+                                  'hand_left_rmse_m', 'hand_right_rmse_m', 'survival',
+                                  'transitions', 'resets', 'perturbed_resets', 'replay_fraction')
+                        if not core_only:
+                            fields += ('wm_error_1', 'wm_error_4', 'wm_error_8', 'actor_gradnorm', 'real_imagined_gap')
+                        values.update({f'{clip}/{key}': float(row[f'{clip}/{key}'])
+                                       for clip in config['clips'] for key in fields if row.get(f'{clip}/{key}')})
                 except (KeyError, TypeError, ValueError):
                     continue
                 if step <= last_step or not all(math.isfinite(v) for v in values.values()):
@@ -279,13 +308,35 @@ def sync_run(args, swanlab):
                 uploaded_evaluations[key] = digest
                 print(f'Recorded frozen evaluation {evaluation_step} ({args.mode})', flush=True)
                 status('running')
+            if m50:
+                path = run_dir/'evaluation/results.json'
+                if path.exists():
+                    milestones = json.loads(path.read_text())['milestones']
+                    for key, row in sorted(milestones.items(), key=lambda pair: pair[1]['iteration']):
+                        key = f'm50:{key}'
+                        if key in uploaded_evaluations:
+                            if uploaded_evaluations[key] != row['checkpoint']:
+                                raise ValueError('已同步的 M5.0 评估检查点发生变化')
+                            continue
+                        metrics = {}
+                        for cohort in ('nominal', 'perturb'):
+                            for clip, result in (row.get(cohort) or {}).items():
+                                metric = f'Eval/{clip}/{cohort}'
+                                metrics[f'{metric}/CompleteRate'] = result['complete']/result['attempts']
+                                metrics[f'{metric}/SurvivalRate'] = result['survives']/result['attempts']
+                                foot = result['observed']['foot_position_rmse_m']
+                                if foot is not None:
+                                    metrics[f'{metric}/FootRMSE_m'] = foot
+                        swanlab.log(metrics, step=warmup+row['iteration'])
+                        uploaded_evaluations[key] = row['checkpoint']
+                        status('running')
             if not args.follow or code is not None:
                 if code not in (None, 0):
                     raise RuntimeError(f'Training exited with status {code}; final available metrics were recorded')
                 finish_state = 'success'
                 break
             # Manual follow without a launcher completion marker can use the target.
-            if not args.container and not args.completion_marker and last_step >= int(config.get('iterations', 0)) > 0:
+            if not args.container and not args.completion_marker and last_step >= int(config.get('iterations', 0)) + warmup > 0:
                 finish_state = 'success'
                 break
             time.sleep(args.poll_seconds)
@@ -318,6 +369,9 @@ def stop_sync(*_):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run_dir', type=Path)
+    variant = parser.add_mutually_exclusive_group()
+    variant.add_argument('--roban_m411', action='store_true', help='读取 M4.11 的分阶段训练 CSV 和组配置')
+    variant.add_argument('--roban_m50', action='store_true', help='读取 M5.0 的分阶段 CSV 和冻结策略评估')
     parser.add_argument('--project', default='SuperMimic')
     parser.add_argument('--workspace')
     parser.add_argument('--experiment_name')

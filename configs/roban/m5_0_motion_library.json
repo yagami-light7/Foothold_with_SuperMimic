@@ -1,0 +1,14 @@
+{
+  "reference_version": "m3.7.1-centered-roban-v2",
+  "train": [
+    {"clip_id": "F1", "file_path": "m3_7_1/forward/F1/reference.npz", "num_frames": 301, "step_length": 0.14, "step_frequency": 0.8333333333333334, "yaw_rate": 0.0},
+    {"clip_id": "F2", "file_path": "m3_7_1/forward/F2/reference.npz", "num_frames": 261, "step_length": 0.17, "step_frequency": 1.0, "yaw_rate": 0.0},
+    {"clip_id": "F3", "file_path": "m3_7_1/forward/F3/reference.npz", "num_frames": 241, "step_length": 0.20, "step_frequency": 1.1111111111111112, "yaw_rate": 0.0}
+  ],
+  "heldout": [
+    {"clip_id": "H1", "file_path": "outputs/m5_0/heldout/H1.npz", "num_frames": 241, "step_length": 0.14, "step_frequency": 1.1111111111111112, "yaw_rate": 0.0},
+    {"clip_id": "H2", "file_path": "outputs/m5_0/heldout/H2.npz", "num_frames": 301, "step_length": 0.20, "step_frequency": 0.8333333333333334, "yaw_rate": 0.0},
+    {"clip_id": "H3", "file_path": "outputs/m5_0/heldout/H3.npz", "num_frames": 273, "step_length": 0.155, "step_frequency": 0.9433962264150944, "yaw_rate": 0.0},
+    {"clip_id": "H4", "file_path": "outputs/m5_0/heldout/H4.npz", "num_frames": 253, "step_length": 0.185, "step_frequency": 1.0416666666666667, "yaw_rate": 0.0}
+  ]
+}

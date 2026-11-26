@@ -101,6 +101,9 @@ def add_roban_args(parser,argv):
 
 
 def build_task(args,kin,files,device):
+    if getattr(args, 'm50_library', None):
+        from .integration.m50_task import build_m50_task
+        return build_m50_task(args, kin, device)
     if getattr(args, 'm4_reference', None):
         from .integration.m4_task import build_m4_task
         return build_m4_task(args,kin,files,device)
@@ -127,7 +130,7 @@ def build_task(args,kin,files,device):
     terrain=make_terrain(kin,vars(args)) if args.wm_use_terrain else None
     mdp=RobanFootMDP(kin,motion,default_q,goals,cfg,
                      critic_use_body_reference=args.critic_use_body_reference,terrain=terrain)
-    args.reward_config=asdict(cfg)
+    args.reward_config=cfg.omit_inactive_whole_body(asdict(cfg))
     del args.reward_config['soft_body_prior_weight'], args.reward_config['soft_body_prior_tolerance']
     args.motion_obs_mode='roban_proprio_v1'
     return motion,goals,mdp,terrain

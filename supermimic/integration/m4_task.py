@@ -255,7 +255,7 @@ class F2TrackingMDP(RobanFootMDP):
     def contract(self):
         value = super().contract()
         value.update(mode='roban_m4_f2', foot_frame='F2_source_sole; current_robot_heading',
-                     reset='first_frame_without_domain_randomization', duration_s=self.motion.duration)
+                     reset='first_frame_without_domain_randomization', duration_s=getattr(self.motion, 'duration', None))
         if self.action_mapping == 'reference_residual':
             value.update(version=2, action_mapping=self.action_mapping,
                          wm_action='neutral_equivalent_of_limit_clamped_pd_target')
@@ -326,6 +326,10 @@ def build_m4_task(args, kin, files, device):
         raise ValueError('M4.0 requires exactly one F2 reference')
     motion = F2MotionReference(files[0], kin, device, args.reference_fps)
     spec = F2GoalSpec('roban_foot', args.goal_frames, args.goal_dt)
+    return build_reference_tracking(args, kin, motion, spec)
+
+
+def build_reference_tracking(args, kin, motion, spec, mdp_type=F2TrackingMDP):
     goals = F2Goals(motion, kin, spec)
     mapping = getattr(args, 'm4_action_mapping', 'neutral')
     default_q = default_joint_pos_list()
@@ -343,13 +347,15 @@ def build_m4_task(args, kin, files, device):
                    soft_body_prior_tolerance=getattr(args, 'soft_body_prior_tolerance', None))
     cfg = FootRewardConfig(**rewards)
     terrain = make_terrain(kin, vars(args)) if args.wm_use_terrain else None
-    mdp = F2TrackingMDP(kin, motion, default_q, goals, cfg, action_mapping=mapping,
+    mdp = mdp_type(kin, motion, default_q, goals, cfg, action_mapping=mapping,
                         critic_use_body_reference=args.critic_use_body_reference, terrain=terrain,
                         limit_time_constant=m4_limit_time_constant(args), pd_damping=m4_pd_damping(args),
                         action_scale_factor=getattr(args, 'm4_action_scale_factor', .25),
                         unclipped_pd_target=getattr(args, 'm4_unclipped_pd_target', False),
                         startup_steps=getattr(args, 'm47_startup_steps', 0))
-    args.reward_config = asdict(cfg)
+    if getattr(args, 'm411_group', None) and mdp.hand_reference is None:
+        mdp.prepare_hand_tracking()
+    args.reward_config = cfg.omit_inactive_whole_body(asdict(cfg))
     if not mdp.action_history_enabled:
         args.reward_config.pop('upper_action_smoothness_weight')
     if not cfg.soft_body_prior_weight:
@@ -377,9 +383,10 @@ class M4EpaEvaluationError(FloatingPointError):
 class M4TrackingSim(TrackingSim):
     def __init__(self, sim_cfg, num_envs, motion, mdp, gamma=0.99, eval_mode=False,
                  max_episode_steps=None, reset_noise=False, goals=None, scene_cfg=None):
-        steps = motion.num_frames - 1
-        if abs(steps * CONTROL_DT - motion.duration) > 1e-6 or abs(sim_cfg.dt - CONTROL_DT) > 1e-9:
-            raise ValueError('F2 episode clock does not match the control or physics clock')
+        steps = int(motion.clip_len.max()) - 1
+        if (getattr(motion, 'duration', None) is not None and abs(steps * CONTROL_DT - motion.duration) > 1e-6
+                or abs(sim_cfg.dt - CONTROL_DT) > 1e-9):
+            raise ValueError('参考帧、控制步与物理时钟不一致')
         if max_episode_steps is not None:
             if max_episode_steps < 1:
                 raise ValueError('F2 episode length must be positive')

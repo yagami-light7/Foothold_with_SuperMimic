@@ -279,7 +279,9 @@ def collect_checkpoint(checkpoint, args, *, baseline=False):
     pi.load_state_dict(ck['pi'])
     pi.eval()
     iteration = int(ck['iteration'])
-    m49_periodic = getattr(args, 'm49_periodic', False)
+    m411_periodic = getattr(args, 'm411_periodic', False)
+    m410_periodic = getattr(args, 'm410_periodic', False) or m411_periodic
+    m49_periodic = getattr(args, 'm49_periodic', False) or m410_periodic
     control_periodic = getattr(args, 'm48_periodic', False) or m49_periodic
     # 轨迹跟随训练检查点的奖励定义，最终表格的任务指标始终共用同一判定。
     metadata = dict(seeds=args.seeds, dt=CONTROL_DT, joint_names=JOINT_NAMES, foot_names=FOOT_BODY_NAMES,
@@ -301,6 +303,21 @@ def collect_checkpoint(checkpoint, args, *, baseline=False):
                 m48_trial_metrics(trace, row, mdp)
             if m49_periodic:
                 row['elbows'] = elbow_posture(trace, mdp)
+            if m410_periodic and row['steps']:
+                from .m410_quality import whole_body_metrics
+
+                row['whole_body'] = whole_body_metrics(trace, mdp)
+            if m411_periodic and row['steps']:
+                from .m48_evaluation import power_ratio
+
+                nq = len(JOINT_NAMES)
+                speeds = trace['state'][round(.20 / CONTROL_DT):, 13 + nq:][:, mdp.upper_ids]
+                row['arm_hf_power_rad2_s2'] = power_ratio(speeds)[0] if len(speeds) > 3 else None
+                row['right_ankle_clamp_ratio'] = row['per_joint_clamp']['leg_r5_joint']
+                names = list(trace['reward_term_names'])
+                penalty = trace['reward_terms'][:, names.index('hand_huber')]
+                row['m410_reward_mean'] = float((trace['reward'] - penalty).mean())
+                row['hand_huber_mean'] = float(penalty.mean())
             if (getattr(args, 'upper_body', False) or getattr(args, 'upper_metrics_only', False)) and len(trace['action']):
                 from .m45_upper import upper_metrics
 
@@ -346,6 +363,16 @@ def collect_checkpoint(checkpoint, args, *, baseline=False):
                                                max_rad=max(p[name]['max_rad'] for p in poses),
                                                near_limit_ratio=_mean([p[name] for p in poses], 'near_limit_ratio'))
                                      for name in ELBOW_JOINT_NAMES}
+        if m410_periodic:
+            keys = ('root_xy_rmse_m', 'root_z_rmse_m', 'root_heading_rmse_deg', 'arm_rmse_rad',
+                    'shoulder_rmse_rad', 'elbow_rmse_rad', 'waist_rmse_rad', 'elbow_max_near_limit_ratio')
+            body = [row['whole_body'] for row in valid if row.get('whole_body')]
+            reduced['whole_body'] = {key: _mean(body, key) for key in keys}
+            if m411_periodic and body:
+                for key in ('hand_local_rmse_m', 'hand_local_axis_rmse_m', 'upper_arm_direction_rmse_deg'):
+                    reduced['whole_body'][key] = np.mean([value[key] for value in body], axis=0).tolist()
+                for key in ('arm_hf_power_rad2_s2', 'right_ankle_clamp_ratio', 'm410_reward_mean', 'hand_huber_mean'):
+                    reduced[key] = _mean(executed, key)
     return dict(iteration=iteration, checkpoint=str(checkpoint), aggregate=reduced,
                 per_reset=trials), recorded, physics
 
@@ -384,6 +411,8 @@ def main():
     upper.add_argument('--upper-metrics-only', action='store_true', help='记录上身指标，沿用 M4.3 排名且仅保存汇总')
     upper.add_argument('--m48-periodic', action='store_true', help='记录 M4.8 步态与控制平滑性，仅保存汇总')
     upper.add_argument('--m49-periodic', action='store_true', help='记录 M4.9 步态、平滑性及双肘姿态，仅保存汇总')
+    upper.add_argument('--m410-periodic', action='store_true', help='记录 M4.10 步态与全身质量并选择合格权重')
+    upper.add_argument('--m411-periodic', action='store_true', help='记录 M4.11 步态与双手位置并选择合格权重')
     parser.add_argument('--seeds', type=int, nargs='+', default=list(DEFAULT_SEEDS))
     add_launcher_args(parser)
     args = parser.parse_args()
@@ -393,7 +422,8 @@ def main():
         parser.error('--baseline-only 需要 --baseline')
     if args.baseline_only and args.final:
         parser.error('--baseline-only 与 --final 不能一起使用')
-    control_periodic = args.m48_periodic or args.m49_periodic
+    whole_body = args.m410_periodic or args.m411_periodic
+    control_periodic = args.m48_periodic or args.m49_periodic or whole_body
     summary_only = args.upper_metrics_only or control_periodic
     if summary_only and (args.baseline or args.final):
         parser.error('仅汇总模式用于训练周期评估')
@@ -442,7 +472,8 @@ def main():
         verify_contract(physics)
         if _checkpoint_identity(checkpoint) != identity:
             raise RuntimeError(f'评估期间源检查点被替换：{checkpoint}')
-        milestone = args.out / 'checkpoints' / f'iter_{iteration}.pt'
+        filename = f'iter_{iteration:04d}.pt' if args.m411_periodic else f'iter_{iteration}.pt'
+        milestone = args.out / 'checkpoints' / filename
         if milestone.is_file() and _checkpoint_identity(milestone) == identity:
             result['checkpoint'] = str(milestone)
         elif control_periodic:
@@ -459,12 +490,19 @@ def main():
                 _alias(source, args.out / 'checkpoints' / 'best.pt', _checkpoint_identity(source))
                 summary['best_iteration'] = chosen['iteration']
         else:
-            rank_options = dict(m48=args.m48_periodic, m49=args.m49_periodic)
+            rank_options = dict(m48=args.m48_periodic or args.m411_periodic, m49=args.m49_periodic or args.m410_periodic)
             best_score = gait_rank(summary['milestones'][str(best)], **rank_options) if best is not None else ()
             if result['aggregate']['valid_for_best'] and gait_rank(result, **rank_options) > best_score:
                 if not control_periodic:
                     _alias(checkpoint, args.out / 'checkpoints' / 'best.pt', identity)
                 summary['best_iteration'] = iteration
+        if whole_body:
+            from .m410_quality import whole_body_rank
+
+            candidates = [(rank, row['iteration']) for row in summary['milestones'].values()
+                          if (rank := whole_body_rank(row, hand_tracking=args.m411_periodic)) is not None]
+            if candidates:
+                summary['best_whole_body_iteration'] = min(candidates)[1]
         valid_success = next((row for row in result['per_reset'] if row['first_touchdown']), None)
         if valid_success is not None and 'first_success' not in summary:
             destination = Path(result['checkpoint'])
@@ -477,10 +515,15 @@ def main():
 
     if control_periodic:
         # 汇总先原子写入。中断后用里程碑恢复 Best，避免别名与已确认的排序分离。
-        best = summary.get('best_iteration')
-        if best is not None:
+        aliases = [('best_iteration', 'best_foot.pt' if args.m411_periodic else 'best.pt')]
+        if whole_body:
+            aliases.append(('best_whole_body_iteration', 'best_whole_body.pt'))
+        for key_name, filename in aliases:
+            best = summary.get(key_name)
+            if best is None:
+                continue
             source = Path(summary['milestones'][str(best)]['checkpoint'])
-            destination = args.out / 'checkpoints' / 'best.pt'
+            destination = args.out / 'checkpoints' / filename
             source_identity = _checkpoint_identity(source)
             if not destination.is_file() or _checkpoint_identity(destination) != source_identity:
                 _alias(source, destination, source_identity)

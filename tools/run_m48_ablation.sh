@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
-# 容器内 tmux 串行运行三组，宿主休眠锁随容器生命周期释放。
+# 容器内 tmux 串行运行实验组，宿主休眠锁随容器生命周期释放。
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$repo"
 revision=${M4_ABLATION_REVISION:-8}
+stride=500
+best=best.pt
 case "$revision" in
     8) budget=5000; groups=(a_startup_only b_smoothness_only c_startup_smoothness) ;;
     9) budget=10000; groups=(a_long_baseline b_original_prior c_soft_prior) ;;
+    10) budget=10000; groups=(a_root_only b_huber_prior_only c_root_huber) ;;
+    11) budget=2000; stride=250; best=best_foot.pt; groups=(a_continue_baseline b_hand_huber) ;;
     *) printf '%s\n' '无法识别消融版本。' >&2; exit 2 ;;
 esac
 phase="M4.$revision"
@@ -23,9 +27,12 @@ die() {
 
 group_done() {
     local dir="$output/$1"
+    if [[ "$revision" == 11 && ! -s "$dir/checkpoints/critic_warmup.pt" ]]; then
+        return 1
+    fi
     [[ -s "$dir/train.exitcode" && "$(<"$dir/train.exitcode")" == 0 &&
        -s "$dir/checkpoints/initial.pt" && -s "$dir/checkpoints/last.pt" &&
-       -s "$dir/checkpoints/best.pt" && -s "$dir/checkpoints/iter_$budget.pt" &&
+       -s "$dir/checkpoints/$best" && -s "$dir/checkpoints/iter_$budget.pt" &&
        -s "$dir/evaluation/results.json" ]]
 }
 
@@ -35,13 +42,21 @@ resume_checkpoint() {
         printf '%s\n' "$dir/last.pt"
         return
     fi
-    for ((iteration=budget; iteration>=500; iteration-=500)); do
-        checkpoint="$dir/iter_$iteration.pt"
+    for ((iteration=budget; iteration>=stride; iteration-=stride)); do
+        if [[ "$revision" == 11 ]]; then
+            printf -v checkpoint '%s/iter_%04d.pt' "$dir" "$iteration"
+        else
+            checkpoint="$dir/iter_$iteration.pt"
+        fi
         if [[ -s "$checkpoint" ]]; then
             printf '%s\n' "$checkpoint"
             return
         fi
     done
+    if [[ "$revision" == 11 && -s "$dir/critic_warmup.pt" ]]; then
+        printf '%s\n' "$dir/critic_warmup.pt"
+        return
+    fi
     if [[ -s "$dir/initial.pt" ]]; then
         printf '%s\n' "$dir/initial.pt"
     fi
@@ -72,7 +87,10 @@ check_configs() {
     local group
     for group in "${groups[@]}"; do
         trainer_args "$group"
-        "${trainer[@]}" --fresh_start "--m4${revision}_check" >/dev/null
+        if [[ "$revision" != 11 ]]; then
+            trainer+=(--fresh_start)
+        fi
+        "${trainer[@]}" "--m4${revision}_check" >/dev/null
         printf '%s 配置通过。\n' "$group"
     done
     python -c 'import torch; print("CUDA 检查通过", torch.cuda.get_device_name(0), torch.ones(1, device="cuda:0").item())'
@@ -93,6 +111,8 @@ run_group() {
         compgen -G "$dir/checkpoints/*.pt" >/dev/null; then
         printf '%s 已有训练文件，但没有可用的同组恢复点。\n' "$group" >&2
         return 1
+    elif [[ "$revision" == 11 ]]; then
+        action='从 M4.10-C9000 初始化'
     else
         trainer+=(--fresh_start)
     fi
@@ -215,10 +235,10 @@ runtime=(--rm --network=none --shm-size=2g --gpus all --user "$(id -u):$(id -g)"
     --workdir /workspace/supermimic --env "M4_ABLATION_IN_CONTAINER=$revision" --env PYTHONDONTWRITEBYTECODE=1
     --env WARP_CACHE_PATH=/workspace/supermimic/.cache/roban_warp --env MPLCONFIGDIR=/tmp/roban_mpl
     --env "MUJOCO_GL=${MUJOCO_GL:-egl}" --env NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics)
-if [[ "$revision" == 9 ]]; then
+if [[ "$revision" -ge 9 ]]; then
     git_commit=$(git rev-parse HEAD)
     git_worktree=$(GIT_OPTIONAL_LOCKS=0 git status --porcelain=v1 --untracked-files=normal)
-    runtime+=(--env "S54_SOURCE_GIT_SHA=$git_commit" --env "M49_SOURCE_GIT_STATUS=$git_worktree")
+    runtime+=(--env "S54_SOURCE_GIT_SHA=$git_commit" --env "M4${revision}_SOURCE_GIT_STATUS=$git_worktree")
 fi
 if [[ "$mode" == check ]]; then
     exec docker run "${runtime[@]}" "$image" bash "$launcher" _check
@@ -232,6 +252,12 @@ if ! command -v systemd-inhibit >/dev/null || ! "${inhibit[@]}" true >/dev/null 
 fi
 if [[ "$mode" == smoke ]]; then
     printf '宿主休眠锁=%s\n' "$inhibit_status"
+    if [[ "$revision" == 11 ]]; then
+        exec "${inhibit[@]}" docker run "${runtime[@]}" "$image" python -u tools/test_m411_hand.py --smoke
+    fi
+    if [[ "$revision" == 10 ]]; then
+        exec "${inhibit[@]}" docker run "${runtime[@]}" "$image" python -u tools/test_m410_rewards.py --smoke
+    fi
     exec "${inhibit[@]}" docker run "${runtime[@]}" "$image" python -u tools/test_m47_controls.py --smoke "--m4$revision"
 fi
 
@@ -256,7 +282,7 @@ if [[ "$mode" == resume && "$existing" == 0 ]]; then
     die "没有可续训的 $phase 组目录，请使用 start。"
 fi
 if (( finished == ${#groups[@]} )); then
-    printf '%s\n' '三组均已完成。'
+    printf '%s\n' '各组均已完成。'
     exit 0
 fi
 docker run "${runtime[@]}" "$image" bash "$launcher" _check

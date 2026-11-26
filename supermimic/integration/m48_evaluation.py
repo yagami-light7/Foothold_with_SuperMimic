@@ -51,7 +51,7 @@ def save_archive(path, info, arrays):
         tmp.replace(path)
 
 
-def evaluate(args, path, names, phase):
+def evaluate(args, path, names, phase, *, checkpoints=CHECKPOINTS, extra_fields=()):
     info, arrays = load_archive(path)
     info['seeds'] = dict(nominal=DEFAULT_SEEDS, perturb=PERTURB_SEEDS)
     info['control_dt'] = CONTROL_DT
@@ -63,7 +63,7 @@ def evaluate(args, path, names, phase):
             starts.setdefault(int(seed), arrays[row['prefix']+'state'][0])
     probe = phase == 'probe'
     for name in names:
-        source, expected_iteration = CHECKPOINTS[name]
+        source, expected_iteration = checkpoints[name]
         entry = info['cases'].setdefault(name, dict(checkpoint=source, iteration=expected_iteration))
         rows = entry.setdefault(phase, {})
         if all(str(seed) in rows for seed in SEEDS):
@@ -113,7 +113,7 @@ def evaluate(args, path, names, phase):
                     m48_trial_metrics(trace, row, mdp)
                     state = unflatten_state(torch.as_tensor(trace['state'], device=env.device))
                     _, _, _, hands, _ = upper_series(state, env.motion.kin)
-                    arrays.update({prefix+k: trace[k] for k in FIELDS})
+                    arrays.update({prefix+k: trace[k] for k in (*FIELDS, *extra_fields)})
                     arrays[prefix+'hand_fore_aft'] = hands
                     row['prefix'] = prefix
                     rows[str(seed)] = row

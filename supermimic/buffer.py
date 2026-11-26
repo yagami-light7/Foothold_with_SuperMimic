@@ -24,8 +24,12 @@ FIELDS = {
 
 
 class ReplayBuffer:
-    def __init__(self, T: int, N: int, device: str, foot_commands: bool = False, action_context: bool = False):
+    def __init__(self, T: int, N: int, device: str, foot_commands: bool = False, action_context: bool = False,
+                 static_motion=None):
         self.T, self.N, self.device = T, N, device
+        self.static_motion = static_motion
+        if static_motion is not None and not foot_commands:
+            raise ValueError('静态参考回放需要 Episode 身份字段')
         self.fields = dict(FIELDS)
         if foot_commands:
             self.fields['command_id'] = ((), torch.long)
@@ -43,7 +47,7 @@ class ReplayBuffer:
         self._has_gaps = False
 
     def add(self, tr: dict):
-        if 'command_id' in self.fields:
+        if 'command_id' in self.fields and self.static_motion is None:
             # The transition owns a snapshot taken BEFORE env.step auto-resets.
             # Store once per command, rather than copying a whole plan per row.
             if self.size == self.T:
@@ -65,10 +69,17 @@ class ReplayBuffer:
         self.ptr = (self.ptr + 1) % self.T
         self.size = min(self.size + 1, self.T)
 
-    def commands(self, ids: torch.Tensor) -> FootstepCommand:
+    def commands(self, ids: torch.Tensor, *, frames=None, episode_steps=None) -> FootstepCommand:
         """Resolve immutable plans outside compiled imagination, in sample order."""
         if ids.ndim != 1:
             raise ValueError('Expected one command ID per imagination start')
+        if self.static_motion is not None:
+            # f 编码片段及局部帧，Episode 首帧可完全从不可变库中重建。
+            start = frames - episode_steps
+            motion = self.static_motion
+            torch._assert_async((start == motion.clip_start[motion.clip_id[frames]]).all(),
+                                '回放片段与采集 Episode 不一致')
+            return motion.anchor(start)
         commands=[self.command_store[cid] for cid in ids.cpu().tolist()]
         if len({type(c) for c in commands}) != 1: raise ValueError('Cannot mix paired and quintic command schemas')
         return type(commands[0]).cat(commands)
@@ -114,6 +125,10 @@ class ReplayBuffer:
         # WM would learn an impossible teleport across the reset boundary.
         ticks = self.data['ep_step'][rows, e]
         continuous = (~out['done'][:, :-1]) & (ticks[:, 1:] == ticks[:, :-1] + 1)
+        if self.static_motion is not None:
+            packed = self.data['f'][rows, e]
+            episode = self.data['command_id'][rows, e]
+            continuous &= (episode[:, 1:] == episode[:, :-1]) & (packed[:, 1:] == packed[:, :-1] + 1)
         mask = torch.cumprod(torch.cat((torch.ones(B, 1, device=self.device), continuous.float()), -1), -1)
         out["mask"] = mask
         return out
@@ -135,6 +150,9 @@ class ReplayBuffer:
         if 'a_prev2' in self.fields:
             start.update({key:self.data[key][row,env] for key in ('a_prev2','startup_q')})
         hist_d = {k: self.data[k][hrows, henv] for k in keys}
+        if self.static_motion is not None:
+            torch._assert_async((hist_d['command_id'] == start['command_id'][:, None]).all(),
+                                '历史观测越过 Episode 边界')
         return start, hist_d
 
     def sample_mc_returns(self, B: int, window: int, gamma: float, recent: int):
