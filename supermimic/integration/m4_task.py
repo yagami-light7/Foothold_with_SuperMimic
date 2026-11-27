@@ -381,6 +381,8 @@ class M4EpaEvaluationError(FloatingPointError):
 
 
 class M4TrackingSim(TrackingSim):
+    stop_on_invalid_physics = False
+
     def __init__(self, sim_cfg, num_envs, motion, mdp, gamma=0.99, eval_mode=False,
                  max_episode_steps=None, reset_noise=False, goals=None, scene_cfg=None):
         steps = int(motion.clip_len.max()) - 1
@@ -524,7 +526,7 @@ class M4TrackingSim(TrackingSim):
 
         # 遇到不可信转移时结束当前评估轨迹。训练只重置可恢复的环境。
         has_fatal = bool(fatal.any())
-        stop = self.eval_mode or has_fatal
+        stop = self.eval_mode or self.stop_on_invalid_physics or has_fatal
         report = fatal if has_fatal else invalid
         if not stop:
             self.joint_resets += int(joint_fault.count_nonzero())

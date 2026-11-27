@@ -39,7 +39,7 @@ def main():
                                 **{k: h[k] if k == 'names' else h[k][942:945] for k in h.files})
         upper = json.loads((source / 'diagnostics' / clip / 'upper_body_metrics.json').read_text())
         (src / 'diagnostics' / stem / 'upper_body_metrics.json').write_text(json.dumps(upper))
-        cfg = json.loads((REPO / 'configs/s54_self_collision.json').read_text())
+        cfg = json.loads((REPO / 'configs/s54/s54_self_collision.json').read_text())
         # Deliberately disable optimization to exercise a real, known failed
         # collision certificate through the complete quarantine path.
         cfg.update(frame_iterations=0, trajectory_passes=0)

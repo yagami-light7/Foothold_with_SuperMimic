@@ -27,7 +27,7 @@ case "$mode" in
   m4-v44-audit) script=supermimic/integration/m44_wm_audit.py ;;
   *)
     printf '%s\n' 'Usage: bash tools/run_roban.sh prepare|test|smoke|train|evaluate|pd|m7|m7-test|m7-batch|m4-smoke|m4-dynamics|m4-train|m4-evaluate|m4-v3-rollout|m4-v3-ac|m4-v3-wm|m4-v43-eval|m4-v43-audit|m4-v44-eval|m4-v44-audit [arguments]' \
-      'Example: bash tools/run_roban.sh train --roban_config configs/roban/E1.json --log_dir logs/roban_E1_smoke'
+      'Example: bash tools/run_roban.sh train --roban_config configs/roban/smoke/E1.json --log_dir logs/roban_E1_smoke'
     exit 0 ;;
 esac
 dataset_mount=()
@@ -51,7 +51,7 @@ case "$mode" in
     reference="$(realpath -- "$reference")"
     dataset_mount=(--mount "type=bind,source=$reference,target=/m4_reference.npz,readonly")
     if [[ "$mode" == m4-train ]]; then
-      python_command+=(--roban_config configs/roban/m4_0.json --log_dir outputs/m4_0/checkpoints)
+      python_command+=(--roban_config configs/roban/m4/m4_0.json --log_dir outputs/m4_0/checkpoints)
     elif [[ "$mode" == m4-smoke ]]; then
       python_command=(-m supermimic.integration.m4_task)
     elif [[ "$mode" == m4-dynamics ]]; then

@@ -262,7 +262,7 @@ def benchmark(root):
     return results
 
 
-def run_smoke(root, envs, *, group=None, resume_test=None):
+def run_smoke(root, envs, *, group=None, resume_test=None, root_tilt=False):
     config, source = CONFIG, SOURCE
     initial_name, warmup_name, phase = 'initial_b1250.pt', 'after_adaptation.pt', 'adaptation'
     prefix = 'm50-smoke-'
@@ -272,6 +272,11 @@ def run_smoke(root, envs, *, group=None, resume_test=None):
         config, source = CONFIGS[group], M51_SOURCE
         initial_name, warmup_name, phase = 'initial_m50_5500.pt', 'critic_warmup.pt', 'critic_warmup'
         prefix = 'm51-smoke-'
+    if root_tilt:
+        from supermimic.integration.m52_task import CONFIGS, SOURCE as M52_SOURCE
+
+        config, source = CONFIGS[group], M52_SOURCE
+        initial_name, prefix = 'initial_m51_c1500.pt', 'm52-smoke-'
     if resume_test is None:
         resume_test = envs == 8
     with TemporaryDirectory(prefix=prefix, dir='/tmp') as scratch:
@@ -306,9 +311,17 @@ def run_smoke(root, envs, *, group=None, resume_test=None):
             assert abs(sum(float(row[f'{name}/replay_fraction']) for name in ('F1','F2','F3')) - 1.) < 1e-5
         if group is not None:
             assert all(float(r['reset_probability']) == .5 and float(r['reset_scale']) == 1. for r in rows)
-            for key, enabled in (('stance_yaw_huber', group != 'a'), ('stance_angular_slip', group == 'c')):
+            for key, enabled in (('stance_yaw_huber', root_tilt or group != 'a'),
+                                 ('stance_angular_slip', root_tilt or group == 'c')):
                 assert (float(rows[-1][f'term_{key}_actor_gradnorm']) > 0.) == enabled
                 assert (float(rows[-1][f'{key}_contribution']) < 0.) == enabled
+        if root_tilt:
+            assert not equal(last, adapt, 'critic')
+            assert (float(rows[-1]['term_root_tilt_actor_gradnorm']) > 0.) == (group != 'a')
+            assert all(float(row['upright_contribution']) == 0. for row in rows) == (group == 'c')
+            key = 'F2/root_tilt_contribution'
+            assert any(float(row[key]) < 0. for row in rows) == (group == 'b')
+            assert any(float(row[key]) > 0. for row in rows) == (group == 'c')
         if resume_test:
             with TemporaryDirectory(prefix=prefix, dir='/tmp') as resume:
                 dest = Path(resume)/'checkpoints'
@@ -332,6 +345,12 @@ def run_smoke(root, envs, *, group=None, resume_test=None):
                           critic_target_negative_ratio=float(rows[1]['critic_target_negative_ratio']),
                           yaw_grad=float(rows[-1]['term_stance_yaw_huber_actor_gradnorm']),
                           angular_grad=float(rows[-1]['term_stance_angular_slip_actor_gradnorm']))
+        if root_tilt:
+            result.update(tilt_grad=float(rows[-1]['term_root_tilt_actor_gradnorm']),
+                          max_reward_delta=max(float(row['reward_sync_max_error']) for row in rows),
+                          max_goal_delta=max(float(row['goal_sync_max_error']) for row in rows),
+                          joint_speed_max_rad_s=max(float(row['joint_speed_max_rad_s']) for row in rows),
+                          joint_limit_excess_rad=max(float(row['joint_limit_excess_rad']) for row in rows))
         return result
 
 

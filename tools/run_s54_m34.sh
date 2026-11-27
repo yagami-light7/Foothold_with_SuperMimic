@@ -17,7 +17,7 @@ SWANLAB_PYTHON="${SWANLAB_PYTHON:-$REPO/.venv-swanlab/bin/python}"
 
 MODE="${1:-train}"
 RUN="${2:-s54_m34_$(date +%Y%m%d_%H%M%S)}"
-CONFIG="${3:-configs/s54_m34_4060.json}"
+CONFIG="${3:-configs/s54/s54_m34_4060.json}"
 CONTAINER="${CONTAINER_NAME:-supermimic_s54_m34}"
 if [[ "$MODE" != train && "$MODE" != resume ]]; then
   echo 'Usage: bash tools/run_s54_m34.sh train RUN [CONFIG]'

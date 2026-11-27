@@ -43,7 +43,7 @@ def checkpoint(path):
 
 
 def check_configs():
-    directory = REPO / 'configs/roban'
+    directory = REPO / 'configs/roban/m4'
     base = json.loads((directory / 'm4_9_a.json').read_text())
     effective = json.loads((BASE / 'config/train.json').read_text())
     assert all(effective[key] == value for key, value in base.items())
@@ -212,7 +212,7 @@ def smoke():
     with TemporaryDirectory(dir='/tmp', prefix='m410-smoke-') as scratch:
         for group, name in GROUPS.items():
             out = Path(scratch) / name
-            command = [sys.executable, 'supermimic/train.py', '--roban_config', f'configs/roban/m4_10_{group}.json',
+            command = [sys.executable, 'supermimic/train.py', '--roban_config', f'configs/roban/m4/m4_10_{group}.json',
                        '--m4_reference', str(REFERENCE), '--device', 'cuda:0', '--fresh_start', '--m410_smoke',
                        '--m410_group', group, '--log_dir', str(out / 'checkpoints')]
             run = subprocess.run(command, cwd=REPO, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=240)

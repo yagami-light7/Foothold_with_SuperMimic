@@ -312,7 +312,7 @@ def check_m43_baseline(reference):
 
 
 def check_m49_configs():
-    directory = REPO / 'configs/roban'
+    directory = REPO / 'configs/roban/m4'
     base = json.loads((directory/'m4_8_c.json').read_text())
     a,b,c = (json.loads((directory/f'm4_9_{key}.json').read_text()) for key in 'abc')
     soft = {name:c[name] for name in ('soft_body_prior_weight','soft_body_prior_tolerance')}
@@ -346,7 +346,7 @@ def smoke(reference, steps, *, m48=False, m49=False):
         for name, startup, smooth, body, soft in designs:
             root = Path(temp)/name
             config = f'm4_{phase[-1]}_{name[0]}' if ablation else 'm4_3'
-            args = [sys.executable, 'supermimic/train.py', '--roban_config', f'configs/roban/{config}.json',
+            args = [sys.executable, 'supermimic/train.py', '--roban_config', f'configs/roban/m4/{config}.json',
                     '--m4_reference', str(reference), '--device', 'cuda:0', '--fresh_start',
                     f'--{phase}_smoke', '--log_dir', str(root/'checkpoints')]
             if ablation:

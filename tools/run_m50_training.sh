@@ -7,7 +7,7 @@ cd "$repo"
 out=outputs/m5_0
 session=roban-m50-training
 launcher=tools/run_m50_training.sh
-trainer=(python -u supermimic/train.py --roban_config configs/roban/m5_0.json
+trainer=(python -u supermimic/train.py --roban_config configs/roban/m5/m5_0.json
          --device cuda:0 --m50_library configs/roban/m5_0_motion_library.json
          --m50_reference_root /reference_data --log_dir "$out/checkpoints")
 

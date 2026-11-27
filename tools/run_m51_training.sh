@@ -22,7 +22,7 @@ train() {
     local group=$1 directory
     directory="$(group_path "$group")"
     shift
-    python -u supermimic/train.py --roban_config "configs/roban/m5_1_${group}.json" --device cuda:0 \
+    python -u supermimic/train.py --roban_config "configs/roban/m5/m5_1_${group}.json" --device cuda:0 \
         --m50_library configs/roban/m5_0_motion_library.json --m50_reference_root /reference_data \
         --log_dir "$directory/checkpoints" "$@"
 }

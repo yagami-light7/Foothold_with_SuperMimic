@@ -173,7 +173,7 @@ def main():
     p.add_argument('--bvh', type=Path)
     p.add_argument('--baseline', type=Path)
     p.add_argument('--human_npz', type=Path, help='Optional cache from diagnose_s54_human.py')
-    p.add_argument('--config', type=Path, default=REPO / 'configs/s54_upper_body_retarget.json')
+    p.add_argument('--config', type=Path, default=REPO / 'configs/s54/s54_upper_body_retarget.json')
     p.add_argument('--out_dir', type=Path, default=REPO / 'library/motion_reference/kuavo_s54/retarget_data/reference')
     p.add_argument('--max_frames', type=int, help='Prefix for a quick probe; does not change source FPS')
     a = p.parse_args()

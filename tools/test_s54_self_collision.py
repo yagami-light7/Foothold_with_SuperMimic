@@ -51,7 +51,7 @@ def main():
     assert g.certificate(q[list(crossing)])['status'] == 'FAIL', 'Safe endpoints must not hide interpolation collisions'
     fixture = json.loads((REPO / 'tools/fixtures/s54_subframe_collision.json').read_text())
     segment = np.array(fixture['joint_positions'])
-    cfg = json.loads((REPO / 'configs/s54_self_collision.json').read_text())
+    cfg = json.loads((REPO / 'configs/s54/s54_self_collision.json').read_text())
     _, coarse, _, _ = dense_contacts(g, segment, cfg)
     active, exact, constraints, _ = dense_contacts(g, segment, cfg, True, [fixture['fraction']])
     assert coarse > .003 and exact < .001 and len(active) > 0 and constraints.shape[0] > 0

@@ -30,7 +30,7 @@ def main():
     try:
         for experiment,path in paths.items():
             print('Running',experiment,flush=True)
-            run(experiment,['supermimic/train.py','--roban_config',f'configs/roban/{experiment}.json','--log_dir',str(path)])
+            run(experiment,['supermimic/train.py','--roban_config',f'configs/roban/smoke/{experiment}.json','--log_dir',str(path)])
             ck=torch.load(path/'last.pt',map_location='cpu',weights_only=False)
             rows=list(csv.DictReader((path/'train_log.csv').open()))
             required=['wm_loss','wm_err8','pi_loss','v_loss','pi_gradnorm','imag_survival']
@@ -57,7 +57,7 @@ def main():
             if experiment=='E1':
                 step=lambda c:float(next(iter(c['opt_pi']['state'].values()))['step'])
                 before=step(ck)
-                run('resume',['supermimic/train.py','--roban_config','configs/roban/E1.json','--log_dir',str(path),
+                run('resume',['supermimic/train.py','--roban_config','configs/roban/smoke/E1.json','--log_dir',str(path),
                               '--resume',str(path/'last.pt'),'--iterations','6','--recovery_wm_iters','0'])
                 resumed=torch.load(path/'last.pt',map_location='cpu',weights_only=False)
                 if resumed['iteration']!=6 or step(resumed)!=before+2:raise AssertionError('Optimizer progress did not resume')

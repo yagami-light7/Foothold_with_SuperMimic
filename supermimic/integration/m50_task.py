@@ -13,7 +13,7 @@ from .m50_reference import MultiReferenceProvider, REPO, SOURCE, read_manifest
 
 TRAIN_CLIPS = ('F1', 'F2', 'F3')
 STAGES = ((1000, (.20, .60, .20)), (3000, (.30, .40, .30)), (6000, (1/3, 1/3, 1/3)))
-CONFIG = REPO / 'configs/roban/m5_0.json'
+CONFIG = REPO / 'configs/roban/m5/m5_0.json'
 OUTPUT = REPO / 'outputs/m5_0'
 
 
@@ -30,17 +30,24 @@ class MultiReferenceMDP(F2TrackingMDP):
                             reset='clip_first_frame_with_scheduled_pose_perturbation')
 
 
+def reference_mdp_type(args):
+    if getattr(args, 'm52_group', None):
+        from .m52_task import RootTiltMDP
+
+        return RootTiltMDP
+    if getattr(args, 'm51_group', None):
+        from .m51_task import StanceFootMDP
+
+        return StanceFootMDP
+    return MultiReferenceMDP
+
+
 def build_m50_task(args, kin, device, *, entries=None):
     manifest = read_manifest(args.m50_library)
     motion = MultiReferenceProvider(manifest['train'] if entries is None else entries, kin, device,
                                     root=args.m50_reference_root, version=manifest['reference_version'])
     spec = MultiReferenceGoalSpec('roban_foot', args.goal_frames, args.goal_dt)
-    mdp_type = MultiReferenceMDP
-    if getattr(args, 'm51_group', None):
-        from .m51_task import StanceFootMDP
-
-        mdp_type = StanceFootMDP
-    return build_reference_tracking(args, kin, motion, spec, mdp_type)
+    return build_reference_tracking(args, kin, motion, spec, reference_mdp_type(args))
 
 
 def curriculum_at(iteration):

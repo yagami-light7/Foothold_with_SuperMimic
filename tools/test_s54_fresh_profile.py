@@ -13,7 +13,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 class FreshProfileTests(unittest.TestCase):
     def test_production_profile_is_fresh_and_wm1000(self):
-        args=profile_args(ROOT/'configs/s54_curriculum_fresh_3090.json')
+        args=profile_args(ROOT/'configs/s54/s54_curriculum_fresh_3090.json')
         self.assertIn('--fresh_start',args)
         self.assertEqual(args[args.index('--wm_only_iters')+1],'1000')
         self.assertNotIn('--resume',args);self.assertNotIn('--init_weights',args)
@@ -22,7 +22,7 @@ class FreshProfileTests(unittest.TestCase):
     def test_resume_keeps_actual_overrides_without_fresh_flag(self):
         with tempfile.TemporaryDirectory() as d:
             saved=Path(d)/'args.json';saved.write_text(json.dumps({'num_envs':1024,'wm_batch':4096,'wm_only_iters':1000}))
-            args=profile_args(ROOT/'configs/s54_curriculum_fresh_3090.json',saved,True)
+            args=profile_args(ROOT/'configs/s54/s54_curriculum_fresh_3090.json',saved,True)
             self.assertNotIn('--fresh_start',args)
             self.assertEqual(args[args.index('--num_envs')+1],'1024')
             self.assertEqual(args[args.index('--wm_batch')+1],'4096')

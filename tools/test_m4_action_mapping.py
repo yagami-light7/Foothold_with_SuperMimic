@@ -33,7 +33,7 @@ class M4ActionMappingTests(unittest.TestCase):
     def setUpClass(cls):
         torch.set_num_threads(2)
         cls.kin = RobotKinematics('cpu')
-        cls.config = json.loads((REPO / 'configs/roban/m4_2.json').read_text())
+        cls.config = json.loads((REPO / 'configs/roban/m4/m4_2.json').read_text())
         cls.args = SimpleNamespace(**cls.config, reference_fps=None, roban_reward_config={},
                                    body_prior_weight=0., wm_use_terrain=False)
         cls.mdp = cls.build_task(torch.zeros(8, NUM_J))

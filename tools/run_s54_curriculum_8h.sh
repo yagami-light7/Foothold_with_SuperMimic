@@ -78,8 +78,8 @@ FREE="$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits | head 
 MIN_FREE_MIB=16000
 if [[ "$MODE" == fresh || -f "$DIR/train_profile.json" ]]; then MIN_FREE_MIB=21500; fi
 (( FREE>=MIN_FREE_MIB )) || { echo "Need at least $MIN_FREE_MIB MiB free" >&2; exit 1; }
-ARGS=(--goal_mode foot_trajectory --foot_task_config configs/s54_curriculum_task.json
- --curriculum_config configs/s54_curriculum_8h.json --foot_config configs/s54_foot_trajectory.json
+ARGS=(--goal_mode foot_trajectory --foot_task_config configs/s54/s54_curriculum_task.json
+ --curriculum_config configs/s54/s54_curriculum_8h.json --foot_config configs/s54/s54_foot_trajectory.json
  --goal_frames 10 --goal_dt .1 --num_envs 512 --buffer_steps 512 --warmup_steps 256
  --wm_window 8 --wm_batches 2 --wm_batch 256 --pi_batch 64 --horizon 8 --hist 2
  --iterations 1000000 --wm_only_iters 200 --lr .00005 --utd .4 --action_noise .03
@@ -87,7 +87,7 @@ ARGS=(--goal_mode foot_trajectory --foot_task_config configs/s54_curriculum_task
  --amp bf16 --no_compile --viz none --log_dir "$DIR")
 PROFILE_SOURCE=""
 if [[ "$MODE" == fresh ]]; then
-  PROFILE_SOURCE="configs/s54_curriculum_fresh_3090.json"
+  PROFILE_SOURCE="configs/s54/s54_curriculum_fresh_3090.json"
   PROFILE_TEXT="$(python3 tools/s54_training_profile.py "$PROFILE_SOURCE")"
   mapfile -t PROFILE_ARGS <<< "$PROFILE_TEXT"
   ARGS+=("${PROFILE_ARGS[@]}")

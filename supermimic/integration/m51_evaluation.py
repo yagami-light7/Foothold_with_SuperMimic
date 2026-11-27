@@ -21,7 +21,7 @@ from .m51_task import GROUPS, OUTPUT, SOURCE
 
 
 def evaluate_cases(args, checkpoint, cases, *, split='train', seeds=DEFAULT_SEEDS, resets=None,
-                   arrays=None, prefix=''):
+                   arrays=None, prefix='', measure=None):
     resets = {} if resets is None else resets
     for item in read_manifest(args.library)[split]:
         clip = item['clip_id']
@@ -43,6 +43,8 @@ def evaluate_cases(args, checkpoint, cases, *, split='train', seeds=DEFAULT_SEED
                     raise FloatingPointError(f'{checkpoint.name} {clip}/{seed} 无效 Newton 转移')
                 trial_metrics(trace, row, env.mdp)
                 row['stance'] = contact_metrics(trace, row, env.mdp, guide)
+                if measure is not None:
+                    row.update(measure(trace, row, env.mdp))
                 if arrays is not None:
                     row['prefix'] = f'{prefix}_{clip}_s{seed}_'
                     fields = (*TRACE_FIELDS, 'foot_angular_velocity')
@@ -59,6 +61,10 @@ def summarize_foot(cases, seeds):
         rows = [cases[clip][str(seed)] for seed in seeds]
         metrics['observed']['stance'] = mean_metrics([row['stance'] for row in rows])
         metrics['completed']['stance'] = mean_metrics([row['stance'] for row in rows if trial_ok(row)])
+        if all('posture' in row for row in rows):
+            metrics['observed']['posture'] = mean_metrics([row['posture'] for row in rows])
+            metrics['completed']['posture'] = mean_metrics([row['posture'] for row in rows if trial_ok(row)])
+            metrics['matched_touchdowns'] = sum(row['matched_touchdowns'] for row in rows)
     return summary
 
 
@@ -107,18 +113,24 @@ def periodic(args):
         evaluate_cases(args, frozen, cases)
         info['milestones'][key] = dict(iteration=iteration, checkpoint=str(frozen), rows=cases,
                                        nominal=summarize_foot(cases, DEFAULT_SEEDS))
-    rows = info['milestones'].values()
+    ranks = {'best_contact_stability': lambda row: rank(row['nominal']),
+             'best_multi_reference': lambda row: rank(row['nominal'], contact_first=False)}
+    publish_periodic(out, info, ranks)
+    print({c: r['complete'] for c, r in info['milestones'][key]['nominal'].items()}, flush=True)
+
+
+def publish_periodic(out, info, ranks):
+    path = out/'results.json'
     with TemporaryDirectory(dir=out) as directory:
         tmp = Path(directory)
-        for alias, contact in (('best_contact_stability', True), ('best_multi_reference', False)):
-            row = max(rows, key=lambda row: rank(row['nominal'], contact_first=contact))
+        for alias, ranker in ranks.items():
+            row = max(info['milestones'].values(), key=ranker)
             info[alias] = row['iteration']
             temporary = tmp/f'{alias}.pt'
             temporary.hardlink_to(Path(row['checkpoint']))
-            temporary.replace(args.out/'checkpoints'/temporary.name)
+            temporary.replace(out.parent/'checkpoints'/temporary.name)
         (tmp/path.name).write_text(json.dumps(info, ensure_ascii=False, allow_nan=False, indent=2)+'\n')
         (tmp/path.name).replace(path)
-    print({c: r['complete'] for c, r in info['milestones'][key]['nominal'].items()}, flush=True)
 
 
 def final(args):

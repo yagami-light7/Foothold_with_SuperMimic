@@ -253,7 +253,7 @@ class RobanTests(unittest.TestCase):
         torch.testing.assert_close(restored.start_frame,self.command.start_frame.flip(0))
 
     def test_14_ablation_configs_consumed_and_paired(self):
-        configs=[json.loads((REPO/f'configs/roban/E{i}.json').read_text()) for i in range(3)]
+        configs=[json.loads((REPO/f'configs/roban/smoke/E{i}.json').read_text()) for i in range(3)]
         keys={'critic_use_body_reference','body_prior_weight'}
         self.assertEqual({k:v for k,v in configs[0].items() if k not in keys},{k:v for k,v in configs[1].items() if k not in keys})
         self.assertEqual({k:v for k,v in configs[1].items() if k not in keys},{k:v for k,v in configs[2].items() if k not in keys})
@@ -270,7 +270,7 @@ class RobanTests(unittest.TestCase):
                 if flags[0].startswith('--'):parser.add_argument(*flags)
         from supermimic.goals import add_goal_args
         add_goal_args(parser)
-        add_roban_args(parser,['--roban_config',str(REPO/'configs/roban/E1.json')])
+        add_roban_args(parser,['--roban_config',str(REPO/'configs/roban/smoke/E1.json')])
         args=parser.parse_args([])
         self.assertTrue(args.critic_use_body_reference);self.assertEqual(args.body_prior_weight,0.)
 

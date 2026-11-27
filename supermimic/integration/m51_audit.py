@@ -45,10 +45,13 @@ def pre_states(trace, torch_device):
     raw = to(trace['raw_action'])
     previous = torch.cat((raw.new_zeros((2, raw.shape[1])), raw))
     starts = to(trace['state'])
-    return dict(states=starts, frame=to(trace['frame']).long(), raw=raw,
+    values = dict(states=starts, frame=to(trace['frame']).long(), raw=raw,
                 previous=previous[1:-1], previous2=previous[:-2],
                 target=to(trace['target']), effective=to(trace['effective_action']),
                 foot_R=to(trace['foot_R']), foot_velocity=to(trace['foot_velocity']), contact=to(trace['contact']))
+    if 'foot_angular_velocity' in trace:
+        values['foot_angular_velocity'] = to(trace['foot_angular_velocity'])
+    return values
 
 
 def score(mdp, x, i, state, anchor):
@@ -103,7 +106,7 @@ def rescore(mdp, baseline, a_task, trace):
 
 
 @torch.no_grad()
-def wm_predictions(mdp, wm, traces, stride=10):
+def wm_predictions(mdp, wm, traces, stride=10, *, extend=None):
     device = mdp.default_q.device
     windows = {key: [] for key in ('states', 'frame', 'raw', 'previous', 'previous2', 'target', 'effective',
                                    'foot_R', 'foot_velocity', 'contact')}
@@ -115,7 +118,7 @@ def wm_predictions(mdp, wm, traces, stride=10):
         for key, value in row.items():
             state_field = len(value) == len(row['states'])
             offsets = torch.arange(SPANS[-1]+int(state_field), device=device)
-            windows[key].append(value[starts[:, None]+offsets])
+            windows.setdefault(key, []).append(value[starts[:, None]+offsets])
     data = {key: torch.cat(parts).transpose(0, 1) for key, parts in windows.items()}
     x = unflatten_state(data['states'][0])
     anchor = mdp.motion.anchor(torch.zeros_like(data['frame'][0]))
@@ -136,7 +139,8 @@ def wm_predictions(mdp, wm, traces, stride=10):
         yaw, _ = heading_error(angle, direct_R, mdp.foot_axis)
         ids = mdp.motion.foot_indices
         predicted_w = mdp.kin.forward(*x)[3][:, ids]
-        target_w = mdp.kin.forward(*actual)[3][:, ids]
+        target_w = (data['foot_angular_velocity'][k+1] if 'foot_angular_velocity' in data
+                    else mdp.kin.forward(*actual)[3][:, ids])
         omega = (predicted_w-target_w)[..., 2]
         tangent = (speed-data['foot_velocity'][k+1])[..., :2]
         _, rp = score(mdp, data, k, x, anchor)
@@ -151,6 +155,8 @@ def wm_predictions(mdp, wm, traces, stride=10):
             delta = (rp[key]-rt[key]).cpu().numpy()
             metric[term] = dict(replay_mean=float(rt[key].mean()), imagined_mean=float(rp[key].mean()),
                                 bias=float(delta.mean()), mae=float(np.abs(delta).mean()))
+        if extend is not None:
+            metric.update(extend(x, actual, rp, rt))
         results['horizons'][str(k+1)] = metric
     return results
 
@@ -163,7 +169,7 @@ def phase_masks(mdp, frames):
                 touchdown=near, walking=(frames > 10) & ~near & (t >= mdp.motion.liftoff_time[0]))
 
 
-def bptt_audit(mdp, actor, wm, critic, cfg, traces):
+def bptt_audit(mdp, actor, wm, critic, cfg, traces, *, extra_terms=(), pair_terms=TERMS, extra_channels=None):
     device = mdp.default_q.device
     parts, f0, previous, previous2, start_q, history = [], [], [], [], [], []
     n = len(JOINT_NAMES)
@@ -212,12 +218,14 @@ def bptt_audit(mdp, actor, wm, critic, cfg, traces):
     groups = dict(foot_position=('swing_position', 'stance_position'), swing_orientation=('swing_orientation',),
                   stance_yaw_huber=('stance_yaw_huber',), stance_angular_slip=('stance_angular_slip',),
                   root=ROOT_TERMS, joint_huber=HUBER_TERMS, hand_huber=('hand_huber',))
+    groups.update({key: (key,) for key in extra_terms})
     scores = {name: torch.stack([sum(step[key+'_contribution'] for key in keys) for step in terms])
               for name, keys in groups.items()}
     params = tuple(actor.parameters())
     result = {}
     channels = {name: [JOINT_NAMES.index(f'leg_{side}{i}_joint') for side in 'lr' for i in ids]
                 for name, ids in (('hip_yaw', (3,)), ('ankle', (5, 6)))}
+    channels.update(extra_channels or {})
     for phase, mask in phase_masks(mdp, torch.stack(frames)).items():
         if not bool(mask.any()):
             continue
@@ -235,7 +243,7 @@ def bptt_audit(mdp, actor, wm, critic, cfg, traces):
             gradients[name] = vec
             summary[name] = dict(actor_norm=float(vec.norm()), action_norm=float(action_grad.norm()),
                                  **{part: float(action_grad[..., indices].norm()) for part, indices in channels.items()})
-        pairs = {(a,b) for a in TERMS for b in gradients if a != b}
+        pairs = {(a,b) for a in pair_terms for b in gradients if a != b}
         cosines = {f'{a}/{b}': float(torch.nn.functional.cosine_similarity(gradients[a], gradients[b], dim=0))
                    for a, b in sorted(pairs)}
         result[phase] = dict(frame_samples=int(mask.sum()), objectives=summary, cosine=cosines)

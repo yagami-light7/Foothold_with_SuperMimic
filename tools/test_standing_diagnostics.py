@@ -48,7 +48,7 @@ class DiagnosisTests(unittest.TestCase):
         self.assertEqual(valid_windows([8, 9, 3], 8), [(0, 0), (0, 1), (1, 1)])
 
     def test_training_is_staged_bounded_and_pilot_requires_calibration(self):
-        profile = json.loads((Path(__file__).resolve().parents[1]/'configs/s54_standing_3090.json').read_text())
+        profile = json.loads((Path(__file__).resolve().parents[1]/'configs/s54/s54_standing_3090.json').read_text())
         command = training_command(profile, 'python', 55, 's54_test')
         self.assertEqual(command[command.index('--iterations')+1], '200')
         self.assertEqual(command[command.index('--wm_only_iters')+1], '200')

@@ -29,7 +29,7 @@ from .m48_evaluation import FIELDS, load_archive, movement_metrics, save_archive
 from .m4_dynamics import SolverReadback
 from .m4_task import M4TrackingSim, build_reference_tracking, make_m4_sim
 from .m50_reference import MANIFEST, REFERENCE_ROOT, SOURCE, load_clip, read_manifest
-from .m50_task import MultiReferenceGoalSpec, MultiReferenceMDP, OUTPUT
+from .m50_task import MultiReferenceGoalSpec, MultiReferenceMDP, OUTPUT, reference_mdp_type
 
 
 HOLDOUT_SEEDS = (1201, 1202, 1203, 1204, 1205, 1206)
@@ -48,12 +48,7 @@ def scene_for(args, source, item, split):
     kin = RobotKinematics(device)
     motion = load_clip(item, kin, device, args.reference_root, split)
     spec = MultiReferenceGoalSpec('roban_foot', config.goal_frames, config.goal_dt)
-    mdp_type = MultiReferenceMDP
-    if getattr(config, 'm51_group', None):
-        from .m51_task import StanceFootMDP
-
-        mdp_type = StanceFootMDP
-    _, goals, mdp, _ = build_reference_tracking(config, kin, motion, spec, mdp_type)
+    _, goals, mdp, _ = build_reference_tracking(config, kin, motion, spec, reference_mdp_type(config))
     saved_goal = dict(checkpoint['goal_contract'], reference=spec.contract()['reference'])
     saved = checkpoint['task_contract']
     context = {'mode', 'duration_s', 'reset', 'foot_frame'}

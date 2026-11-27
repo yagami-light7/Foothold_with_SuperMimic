@@ -46,7 +46,7 @@ def training_command(profile, python, seed, run, phase='calibration', resume=Non
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--config', default='configs/s54_standing_3090.json')
+    p.add_argument('--config', default='configs/s54/s54_standing_3090.json')
     p.add_argument('--seed', type=int, default=54)
     p.add_argument('--phase', choices=['calibration', 'pilot'], default='calibration')
     p.add_argument('--resume', help='Reviewed calibration last.pt for the bounded pilot phase')

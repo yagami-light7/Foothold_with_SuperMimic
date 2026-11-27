@@ -3,8 +3,8 @@
   "max_wall_minutes": 30,
   "train": {
     "goal_mode": "foot_trajectory",
-    "foot_task_config": "configs/s54_standing_3090_task.json",
-    "foot_config": "configs/s54_foot_trajectory.json",
+    "foot_task_config": "configs/s54/s54_standing_3090_task.json",
+    "foot_config": "configs/s54/s54_foot_trajectory.json",
     "goal_frames": 10,
     "goal_dt": 0.1,
     "num_envs": 128,

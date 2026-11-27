@@ -20,7 +20,7 @@ from supermimic.roban_task import long_tail_position
 
 
 def build_reward_task(swing_aware=True):
-    config = json.loads((REPO / 'configs/roban/m4_2.json').read_text())
+    config = json.loads((REPO / 'configs/roban/m4/m4_2.json').read_text())
     config.update(reference_fps=None, wm_use_terrain=False, body_prior_weight=0.,
                   roban_reward_config={'swing_aware': int(swing_aware)})
     path = os.environ.get('M4_REFERENCE', str(REPO.parent / 'Humanoid_Online_Motion_Generator'

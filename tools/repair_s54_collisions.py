@@ -25,7 +25,7 @@ def main():
     p.add_argument('--skip_existing', action='store_true')
     p.add_argument('--continue_on_error', action='store_true')
     p.add_argument('--resume_candidates', action='store_true', help='Resume an interrupted private candidate whose source CSV still matches')
-    p.add_argument('--collision_config', type=Path, default=REPO / 'configs/s54_self_collision.json')
+    p.add_argument('--collision_config', type=Path, default=REPO / 'configs/s54/s54_self_collision.json')
     a = p.parse_args()
     src, out = a.input_dir.resolve(), a.out_dir.resolve()
     if not out.is_relative_to(REPO) or out == src or out in (REPO, REPO / 'library', REPO / 'library/motion_reference/kuavo_s54/retarget_data'):
@@ -36,7 +36,7 @@ def main():
     if not files:
         p.error('No matching source clips')
     cfg = json.loads(a.collision_config.read_text())
-    ground = json.loads((REPO / 'configs/s54_grounding.json').read_text())
+    ground = json.loads((REPO / 'configs/s54/s54_grounding.json').read_text())
     out.mkdir(parents=True, exist_ok=True)
     records = []
     manifest = out / 'diagnostics' / ('repair_' + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ') + '.json')

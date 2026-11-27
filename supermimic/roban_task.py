@@ -187,6 +187,7 @@ class RobanFootMDP:
     canonical_replay_reward=True
     observation_mode='roban_proprio_v1'
     stance_foot_terms = False
+    root_tilt_terms = False
 
     def __init__(self,kin,motion,default_q,goals,cfg=FootRewardConfig(),*,critic_use_body_reference=False,terrain=None):
         self.kin,self.motion,self.default_q,self.goals,self.cfg=kin,motion,default_q,goals,cfg
@@ -488,6 +489,14 @@ class RobanFootMDP:
                     raw[key], weighted[key] = value, contribution
             if terms:
                 prior_terms.update(telemetry)
+        if self.root_tilt_terms and (terms or c.root_tilt):
+            tilt, quality = self.root_tilt_reward(R, ref)
+            contribution = tilt * (c.root_tilt * CONTROL_DT)
+            if c.root_tilt:
+                reward = reward + contribution
+            if terms:
+                raw['root_tilt'], raw['root_tilt_quality'] = tilt, quality
+                weighted['root_tilt'] = contribution
         if terms:
             zero=torch.zeros_like(reward)
             foot_terms = (*_FOOT_OBJECTIVE_TERMS, 'swing_clearance') if c.swing_aware else _FOOT_OBJECTIVE_TERMS

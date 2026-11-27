@@ -15,7 +15,7 @@ from .m51_foot import PARAMETERS, TERMS, WEIGHTS, foot_axes, stance_signals
 OUTPUT = REPO / 'outputs/m5_1'
 SOURCE = REPO / 'outputs/m5_0/checkpoints/iter_5500.pt'
 GROUPS = {'a': 'a_baseline', 'b': 'b_stance_yaw', 'c': 'c_yaw_angular_slip'}
-CONFIGS = {key: REPO / f'configs/roban/m5_1_{key}.json' for key in GROUPS}
+CONFIGS = {key: REPO / f'configs/roban/m5/m5_1_{key}.json' for key in GROUPS}
 SCALES = ('_tolerance', '_sigma')
 REWARD_KEYS = (*TERMS, *PARAMETERS)
 LOG_TERMS = (*TERMS, 'foot_position', 'swing_orientation')

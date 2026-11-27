@@ -49,7 +49,7 @@ validate_output() {
 
 train_command() {
     local group=$1
-    trainer=(python -u supermimic/train.py --roban_config "configs/roban/m4_6_${group}.json"
+    trainer=(python -u supermimic/train.py --roban_config "configs/roban/m4/m4_6_${group}.json"
              --m4_reference /m4_reference.npz --device cuda:0 --m46_group "$group"
              --log_dir "$output/$group/checkpoints")
 }

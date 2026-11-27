@@ -229,7 +229,7 @@ def smoke():
             out = Path(scratch) / name
             weights = out / 'checkpoints'
             trainer = [sys.executable, '-u', 'supermimic/train.py', '--m411_group', key, '--m411_smoke',
-                       '--roban_config', f'configs/roban/m4_11_{key}.json', '--m4_reference', str(REFERENCE),
+                       '--roban_config', f'configs/roban/m4/m4_11_{key}.json', '--m4_reference', str(REFERENCE),
                        '--log_dir', str(weights), '--device', 'cuda:0']
             run(trainer)
             initial, warm, last = [checkpoint(weights / path) for path in ('initial.pt', 'critic_warmup.pt', 'last.pt')]

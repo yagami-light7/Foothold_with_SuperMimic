@@ -130,11 +130,11 @@ class SelectionAndSyncTests(unittest.TestCase):
     def test_foot_standing_dry_run_needs_no_motion_directory(self):
         result = subprocess.run(['bash',str(REPO/'run_train.sh'),'--dry-run','train','s54_standing_dry_test',
                                  '--goal-mode','foot_trajectory','--motion-dir',str(self.root/'missing_motion'),
-                                 '--foot-task-config','configs/s54_standing_balance.json',
+                                 '--foot-task-config','configs/s54/s54_standing_balance.json',
                                  '--check-foot-gradients','--no-swanlab'],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
         self.assertIn('Motion directory and clip selection are unused',result.stdout)
-        self.assertIn('--foot_task_config configs/s54_standing_balance.json',result.stdout)
+        self.assertIn('--foot_task_config configs/s54/s54_standing_balance.json',result.stdout)
         self.assertIn('--check_foot_gradients',result.stdout)
         self.assertNotIn('--clips dance1_subject1',result.stdout)
 

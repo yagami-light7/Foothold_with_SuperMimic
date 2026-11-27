@@ -103,7 +103,8 @@ def video_panels(names, seed, info, data, ref):
 
 
 def render_video(info, data, motion, output, *, sections=None, panels_from=video_panels,
-                 show_hand_errors=False, hold_end_frames=0, banner='Roban F2', panel_clock=False):
+                 show_hand_errors=False, hold_end_frames=0, banner='Roban F2', panel_clock=False,
+                 elevations=None):
     import mujoco
     from PIL import Image, ImageDraw
 
@@ -195,6 +196,7 @@ def render_video(info, data, motion, output, *, sections=None, panels_from=video
                 foot = row['foot_position_rmse_m']*1000
                 root = row['root_xy_rmse_m']*1000
                 caption = f'全程 RMSE   足 {foot:.1f} / Root XY {root:.1f} mm   臂 {body["arm_rmse_rad"]:.2f} rad'
+                caption = panel.get('caption', caption)
                 landed = sum(ev['actual_touchdown_s'] is not None
                              and ev['actual_touchdown_s'] <= section_times[i]+1.e-8
                              for ev in row['footsteps'])
@@ -234,7 +236,7 @@ def render_video(info, data, motion, output, *, sections=None, panels_from=video
                    '-c:v', 'libx264', '-preset', 'fast', '-crf', '17', '-threads', '4',
                    '-pix_fmt', 'yuv420p', '-movflags', '+faststart', str(tmp)]
         with subprocess.Popen(command, stdin=subprocess.PIPE) as encoder:
-            for heading, seed, names, azimuth in sections:
+            for section, (heading, seed, names, azimuth) in enumerate(sections):
                 panels = panels_from(names, seed, info, data, ref)
                 section_times = (np.arange(max(len(panel['state']) for panel in panels)) * CONTROL_DT
                                  if panel_clock else times)
@@ -243,6 +245,8 @@ def render_video(info, data, motion, output, *, sections=None, panels_from=video
                 xy = np.concatenate([panel['state'][:, :2] for panel in panels])
                 camera.lookat[:] = (*((xy.min(0) + xy.max(0))/2), .53)
                 camera.azimuth = azimuth
+                if elevations is not None:
+                    camera.elevation = elevations[section]
                 model.vis.global_.offwidth, model.vis.global_.offheight = width, 371
                 with mujoco.Renderer(model, height=371, width=width) as renderer:
                     for frame in range(0, len(section_times), 2):

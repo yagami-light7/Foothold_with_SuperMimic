@@ -13,7 +13,7 @@ import tempfile
 
 
 REPO = Path(__file__).resolve().parents[1]
-CONFIGS = REPO / 'configs' / 'roban'
+CONFIGS = REPO / 'configs/roban/m4'
 GROUPS = {'w002': .02, 'w005': .05}
 MODELS = ('pi', 'wm', 'critic')
 OPTIMIZERS = ('opt_pi', 'opt_wm', 'opt_v')
@@ -41,7 +41,7 @@ def check_files():
 
 
 def trainer(group, checkpoint_dir, reference, mode):
-    cmd = [sys.executable, 'supermimic/train.py', '--roban_config', f'configs/roban/m4_6_{group}.json',
+    cmd = [sys.executable, 'supermimic/train.py', '--roban_config', f'configs/roban/m4/m4_6_{group}.json',
            '--m4_reference', str(reference), '--device', 'cuda:0', '--log_dir', str(checkpoint_dir),
            '--m46_group', group, '--fresh_start', mode]
     return run_checked(cmd, f'{group} {mode}')

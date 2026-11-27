@@ -190,7 +190,7 @@ class MotionFeedbackTests(unittest.TestCase):
         self.assertTrue(torch.equal(mdp.reward(changed, f, a, a), old.reward(changed, f, a, a)))
 
     def test_config_reaches_training_as_valid_json(self):
-        config = json.loads(Path('configs/s54_m34_4060.json').read_text())
+        config = json.loads(Path('configs/s54/s54_m34_4060.json').read_text())
         args = train_args(config, Path('logs/s54_test'))
         raw = args[args.index('--motion_reward_config')+1]
         cfg = resolve_motion_reward(raw)
