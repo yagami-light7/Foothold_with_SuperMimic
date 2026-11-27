@@ -56,7 +56,7 @@ CORE_CONFIG_KEYS = {
     'hist', 'goal_frames', 'goal_dt', 'lr', 'actor_lr', 'critic_lr', 'gamma', 'lam',
     'action_noise', 'm34_straight_iters', 'm34_eval_every', 'amp', 'seed',
     'motion_obs_mode', 'obs_dim', 'motion_reward_config',
-    'wall_seconds', 'm50_adaptation_iters',
+    'wall_seconds', 'm50_adaptation_iters', 'm51_group', 'm51_critic_warmup',
 }
 CORE_METRICS = {key: METRICS[key] for key in (
     'wm_loss', 'pi_loss', 'v_loss', 'sim_rew', 'ep_ret_norm', 'ep_len',
@@ -179,7 +179,9 @@ def sync_run(args, swanlab):
     (run_dir / 'swanlab_sync.pid').write_text(f'{os.getpid()}\n')
     m411 = getattr(args, 'roban_m411', False)
     m50 = getattr(args, 'roban_m50', False)
-    staged = m411 or m50
+    m51 = getattr(args, 'roban_m51', False)
+    multi_reference = m50 or m51
+    staged = m411 or multi_reference
     config_path = run_dir / ('config/train.json' if staged else 'args.json')
     csv_path = run_dir / ('logs/train.csv' if staged else 'train_log.csv')
     deadline = time.monotonic() + args.startup_timeout
@@ -194,7 +196,8 @@ def sync_run(args, swanlab):
                 raise TimeoutError(f'Timed out waiting for {config_path}')
             time.sleep(args.poll_seconds)
 
-    warmup = int(config['m50_adaptation_iters'] if m50 else config['m411_critic_warmup']) if staged else 0
+    warmup_key = 'm51_critic_warmup' if m51 else 'm50_adaptation_iters' if m50 else 'm411_critic_warmup'
+    warmup = int(config[warmup_key]) if staged else 0
     last_step, active_header = -1, None
     uploaded_evaluations = {}
     previous_status = run_dir/'swanlab_sync_status.json'
@@ -269,13 +272,17 @@ def sync_run(args, swanlab):
                             step += warmup
                         values.update({name: float(row[key]) for key, name in M411_METRICS.items()
                                        if row.get(key) not in (None, '')})
-                    if m50:
+                    if multi_reference:
                         # 训练 CSV 已区分分片段的有效转移、存活率与实际 Replay 比例。
                         fields = ('episode_return', 'episode_length', 'foot_rmse_m', 'root_xy_rmse_m',
                                   'hand_left_rmse_m', 'hand_right_rmse_m', 'survival',
                                   'transitions', 'resets', 'perturbed_resets', 'replay_fraction')
                         if not core_only:
                             fields += ('wm_error_1', 'wm_error_4', 'wm_error_8', 'actor_gradnorm', 'real_imagined_gap')
+                        if m51:
+                            fields += ('foot_yaw_left_rms_deg', 'foot_yaw_right_rms_deg', 'stance_yaw_rms_deg',
+                                       'stance_omega_planned_rms_rad_s', 'stance_proxy_miss_rate',
+                                       'stance_yaw_huber_contribution', 'stance_angular_slip_contribution')
                         values.update({f'{clip}/{key}': float(row[f'{clip}/{key}'])
                                        for clip in config['clips'] for key in fields if row.get(f'{clip}/{key}')})
                 except (KeyError, TypeError, ValueError):
@@ -308,12 +315,12 @@ def sync_run(args, swanlab):
                 uploaded_evaluations[key] = digest
                 print(f'Recorded frozen evaluation {evaluation_step} ({args.mode})', flush=True)
                 status('running')
-            if m50:
+            if multi_reference:
                 path = run_dir/'evaluation/results.json'
                 if path.exists():
                     milestones = json.loads(path.read_text())['milestones']
                     for key, row in sorted(milestones.items(), key=lambda pair: pair[1]['iteration']):
-                        key = f'm50:{key}'
+                        key = f'{"m51" if m51 else "m50"}:{key}'
                         if key in uploaded_evaluations:
                             if uploaded_evaluations[key] != row['checkpoint']:
                                 raise ValueError('已同步的 M5.0 评估检查点发生变化')
@@ -327,6 +334,15 @@ def sync_run(args, swanlab):
                                 foot = result['observed']['foot_position_rmse_m']
                                 if foot is not None:
                                     metrics[f'{metric}/FootRMSE_m'] = foot
+                                if m51 and result['observed'].get('stance'):
+                                    stance = result['observed']['stance']
+                                    metrics[f'{metric}/PlannedLoadFraction'] = stance['plan_load_fraction']
+                                    yaw = stance['planned_stance']['yaw_rms_deg']
+                                    if yaw is not None:
+                                        metrics[f'{metric}/StanceYawRMSE_deg'] = yaw
+                                    omega = stance['support']['omega']
+                                    if omega is not None:
+                                        metrics[f'{metric}/SupportAngularSpeedRMS_rad_s'] = omega['rms']
                         swanlab.log(metrics, step=warmup+row['iteration'])
                         uploaded_evaluations[key] = row['checkpoint']
                         status('running')
@@ -372,6 +388,7 @@ def main():
     variant = parser.add_mutually_exclusive_group()
     variant.add_argument('--roban_m411', action='store_true', help='读取 M4.11 的分阶段训练 CSV 和组配置')
     variant.add_argument('--roban_m50', action='store_true', help='读取 M5.0 的分阶段 CSV 和冻结策略评估')
+    variant.add_argument('--roban_m51', action='store_true', help='读取 M5.1 的分阶段 CSV 及足部周期评估')
     parser.add_argument('--project', default='SuperMimic')
     parser.add_argument('--workspace')
     parser.add_argument('--experiment_name')

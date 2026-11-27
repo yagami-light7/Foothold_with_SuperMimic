@@ -124,6 +124,8 @@ parser.add_argument('--m50_reference_root', help='训练参考根目录，离线
 parser.add_argument('--m50_adaptation_iters', type=int, default=0, help='冻结 Actor 的 WM/Critic 适应轮数')
 parser.add_argument('--m50_smoke', type=int, choices=(8, 32, 256), help='在隔离目录运行指定环境数的 M5.0 冒烟')
 parser.add_argument('--m50_check', action='store_true', help='仅核对 M5.0 生效配置')
+parser.add_argument('--m51_group', choices=('a', 'b', 'c'), help='M5.1 足部支撑消融组')
+parser.add_argument('--m51_critic_warmup', type=int, default=0, help='M5.1 冻结 Actor 与 WM 的 Critic 预热轮次')
 parser.add_argument('--stair_config', help='Opt-in T1.5 audited mixed flat/stair experiment design')
 parser.add_argument('--init_from_flat', help='Explicit Flat -> Stair transfer; source checkpoint is read-only')
 parser.add_argument('--init_from_motion', help='Cross-task Stage 1 initialization; never a resume')
@@ -151,6 +153,7 @@ m49 = args.m49_group is not None
 m410 = args.m410_group is not None
 m411 = args.m411_group is not None
 m50 = args.m50_library is not None
+m51 = args.m51_group is not None
 fresh_run = False
 hand_tracking = m411 or m50
 whole_body = m410 or hand_tracking
@@ -164,8 +167,10 @@ if sum((m48, m49, m410, m411)) > 1 or any(
     parser.error('请选择对应的一组 M4.8 至 M4.11 实验入口')
 if args.m411_critic_warmup and not m411:
     parser.error('Critic 单独预热需要 M4.11 实验入口')
-if not m50 and any((args.m50_check, args.m50_smoke, args.m50_adaptation_iters, args.m50_reference_root)):
+if not m50 and any((args.m50_check, args.m50_smoke, args.m50_adaptation_iters, args.m50_reference_root, m51)):
     parser.error('M5.0 参数需要 --m50_library')
+if args.m51_critic_warmup and not m51:
+    parser.error('M5.1 Critic 预热需要对应消融组配置')
 if m50:
     from supermimic.integration.m50_reference import MANIFEST as M50_MANIFEST, read_manifest as read_m50_manifest
     from supermimic.integration.m50_task import CONFIG as M50_CONFIG, OUTPUT as M50_OUTPUT, TRAIN_CLIPS
@@ -175,7 +180,17 @@ if m50:
         parent = json.loads((M50_CONFIG.parent / 'm4_11_b.json').read_text())
         del parent['m411_critic_warmup']
         expected = dict(parent, m50_adaptation_iters=1000, iterations=6000, m4_eval_every=500)
-        if (not args.roban_config or Path(args.roban_config).resolve() != M50_CONFIG or config != expected
+        config_path = M50_CONFIG
+        if m51:
+            from supermimic.integration.m51_task import (CONFIGS, GRAD_PAIRS as M51_GRAD_PAIRS, GROUPS,
+                LOG_TERMS as M51_LOG_TERMS, OUTPUT as M51_OUTPUT, TERMS as M51_TERMS, expected_config)
+
+            if config != expected or args.fresh_start:
+                raise ValueError('M5.1 从冻结的 M5.0 配置与第 5500 轮权重初始化')
+            config_path = CONFIGS[args.m51_group]
+            expected = expected_config(config, args.m51_group)
+            config = json.loads(config_path.read_text())
+        if (not args.roban_config or Path(args.roban_config).resolve() != config_path or config != expected
                 or Path(args.m50_library).resolve() != M50_MANIFEST or args.m4_reference or upper_ablation
                 or args.m46_group or args.m451_source or args.device != 'cuda:0'):
             raise ValueError('M5.0 需要独立清单、冻结的 B 组配置与 CUDA:0')
@@ -186,12 +201,13 @@ if m50:
             raise ValueError('M5.0 正式训练清单需要原始 F1、F2、F3')
         output = Path(args.log_dir).resolve()
         if args.m50_smoke:
+            prefix = 'm51-smoke-' if m51 else 'm50-smoke-'
             if (output.name != 'checkpoints' or output.parent.parent != Path('/tmp')
-                    or not output.parent.name.startswith('m50-smoke-') or not output.parent.is_dir()):
-                raise ValueError('M5.0 冒烟输出需要已有 /tmp/m50-smoke-*/checkpoints')
+                    or not output.parent.name.startswith(prefix) or not output.parent.is_dir()):
+                raise ValueError(f'冒烟输出需要已有 /tmp/{prefix}*/checkpoints')
         else:
             fresh_run = args.fresh_start or (args.resume and output.parent == M50_OUTPUT / 'fresh')
-            expected_out = M50_OUTPUT / 'fresh' if fresh_run else M50_OUTPUT
+            expected_out = M51_OUTPUT / GROUPS[args.m51_group] if m51 else M50_OUTPUT / 'fresh' if fresh_run else M50_OUTPUT
             if output != expected_out / 'checkpoints':
                 raise ValueError(f'M5.0 本次检查点目录为 {expected_out / "checkpoints"}')
         if args.resume and Path(args.resume).resolve(strict=True) != output / 'last.pt':
@@ -212,7 +228,8 @@ if m50:
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     if args.m50_smoke:
-        vars(args).update(num_envs=args.m50_smoke, iterations=2, m50_adaptation_iters=2, warmup_steps=34,
+        setattr(args, 'm51_critic_warmup' if m51 else 'm50_adaptation_iters', 2)
+        vars(args).update(num_envs=args.m50_smoke, iterations=2, warmup_steps=34,
                           ckpt_every=1, m4_eval_every=0, log_every=1, gradient_audit_every=1)
 
 if not m49 and (args.soft_body_prior_weight or args.soft_body_prior_tolerance is not None):
@@ -393,8 +410,11 @@ try:
             raise ValueError('Roban uses its unified reference/task adapter; S54-only options are incompatible')
         if args.obs_adapter != 'identity' or args.freeze_decoder or args.paired_latent_weight or args.check_foot_gradients or (args.gradient_audit_every and not m43) or args.critic_real_batch:
             raise ValueError('Use Roban foot gradient tests; legacy S54 adapters/audits are incompatible')
-        from supermimic.roban_task import FootRewardConfig
-        reward_cfg = FootRewardConfig(**dict(args.roban_reward_config, body_prior_weight=args.body_prior_weight,
+        if m51:
+            from supermimic.integration.m51_task import StanceFootRewardConfig as reward_config_type
+        else:
+            from supermimic.roban_task import FootRewardConfig as reward_config_type
+        reward_cfg = reward_config_type(**dict(args.roban_reward_config, body_prior_weight=args.body_prior_weight,
                                             soft_body_prior_weight=args.soft_body_prior_weight,
                                             soft_body_prior_tolerance=args.soft_body_prior_tolerance))
         if reward_cfg.active_whole_body() and not whole_body:
@@ -540,7 +560,9 @@ else:
 # Record the resolved names, including when all clips or a glob was requested.
 args.clips = list(TRAIN_CLIPS) if m50 else ['F2'] if m4 else [Path(path).stem for path in motion_files]
 if upper_check or args.m50_check:
-    if m50:
+    if m51:
+        phase = f'M5.1-{args.m51_group.upper()}'
+    elif m50:
         phase = 'M5.0'
     print(f'{phase} effective config ' + json.dumps(vars(args), ensure_ascii=False), flush=True)
     sys.exit(0)
@@ -674,7 +696,8 @@ opt_wm = torch.optim.Adam(wm.parameters(), lr=args.lr)
 opt_pi = torch.optim.Adam(pi.parameters(), lr=actor_lr, betas=(0.9, 0.95))
 opt_v = torch.optim.Adam(critic.parameters(), lr=critic_lr)
 start_it, wall_offset, sim_steps = 0, 0.0, 0
-pretrain_iterations = args.m50_adaptation_iters if m50 else args.m411_critic_warmup
+pretrain_iterations = args.m51_critic_warmup if m51 else args.m50_adaptation_iters if m50 else args.m411_critic_warmup
+warmup_label = 'after_adaptation' if m50 and not m51 else 'critic_warmup'
 supervision_steps=0
 physics_metadata = mdp.physics_contract(args) if m4 else physical_contract(obs_dim=obs_dim)
 if stair_cfg:
@@ -693,7 +716,10 @@ if m43:
     args.environment_versions = {p: version(p) for p in ('isaaclab', 'newton', 'mujoco-warp', 'warp-lang', 'torch')}
     args.git_commit = git_sha
 if m46 or m49 or whole_body:
-    source_status_key = 'M50_SOURCE_GIT_STATUS' if m50 else f'M4{revision if upper_ablation else 6}_SOURCE_GIT_STATUS'
+    if m50:
+        source_status_key = 'M51_SOURCE_GIT_STATUS' if m51 else 'M50_SOURCE_GIT_STATUS'
+    else:
+        source_status_key = f'M4{revision if upper_ablation else 6}_SOURCE_GIT_STATUS'
     args.git_worktree = os.environ.get(source_status_key)
     if args.git_worktree is None:
         result = subprocess.run(['git', 'status', '--porcelain'], cwd=REPO, text=True, capture_output=True)
@@ -704,7 +730,8 @@ if whole_body:
 
 def evaluate_m4_checkpoint(checkpoint=None):
     if m50:
-        command = [sys.executable, '-m', 'supermimic.integration.m50_evaluation', 'periodic',
+        module = 'm51_evaluation' if m51 else 'm50_evaluation'
+        command = [sys.executable, '-m', f'supermimic.integration.{module}', 'periodic',
                    '--out', str(log_path.parent), '--library', args.m50_library,
                    '--reference-root', args.m50_reference_root, '--checkpoint', str(checkpoint or log_path / 'last.pt')]
         subprocess.run(command, cwd=REPO, check=True)
@@ -726,8 +753,9 @@ def evaluate_m4_checkpoint(checkpoint=None):
 def assert_periodic_final():
     summary = json.loads((log_path.parent / 'evaluation' / 'results.json').read_text())
     if m50:
+        best = 'best_contact_stability.pt' if m51 else 'best_robust.pt'
         if (str(args.iterations) not in summary['milestones'] or not (log_path / 'best_multi_reference.pt').is_file()
-                or not (log_path / 'best_robust.pt').is_file()):
+                or not (log_path / best).is_file()):
             raise RuntimeError('M5.0 最终周期评估及候选权重尚未落盘')
         return
     best = 'best_foot.pt' if m411 else 'best.pt'
@@ -765,13 +793,17 @@ if args.resume:
             resume_metadata.update(('m411_group', 'm411_check', 'm411_smoke', 'm411_critic_warmup'))
         if not m50:
             resume_metadata.update(('m50_library', 'm50_reference_root', 'm50_adaptation_iters', 'm50_smoke', 'm50_check'))
+        if not m51:
+            resume_metadata.update(('m51_group', 'm51_critic_warmup'))
         if whole_body:
             resume_metadata.add('training_gpu')
         differences = [key for key, value in vars(args).items() if key not in resume_metadata
                        and saved_args.get(key) != value]
         checkpoint_transfer = ck.get('transfer_report')
         strategy = (checkpoint_transfer or {}).get('strategy')
-        if m50:
+        if m51:
+            valid_transfer = strategy == 'm51_m50_5500_all_models'
+        elif m50:
             valid_transfer = strategy == 'm50_b1250_all_models' or (checkpoint_transfer is None and fresh_run)
         else:
             valid_transfer = strategy == 'm411_c9000_all_models' if m411 else checkpoint_transfer is None
@@ -818,10 +850,10 @@ if args.resume:
         critic_warmup_done = ck['adaptation_iterations' if m50 else 'critic_warmup_iterations']
         if not 0 <= critic_warmup_done <= pretrain_iterations or (start_it and critic_warmup_done != pretrain_iterations):
             raise ValueError('检查点的适应轮次和联合轮次不一致')
-        warmup_path = log_path / ('after_adaptation.pt' if m50 else 'critic_warmup.pt')
+        warmup_path = log_path / f'{warmup_label}.pt'
         if not start_it and critic_warmup_done == pretrain_iterations and not warmup_path.exists():
             os.link(args.resume, warmup_path)
-        if m50 and not start_it and critic_warmup_done == pretrain_iterations and args.m4_eval_every:
+        if m50 and not m51 and not start_it and critic_warmup_done == pretrain_iterations and args.m4_eval_every:
             evaluate_m4_checkpoint(warmup_path)
     if (m46 or upper_ablation or m50) and not 0 <= start_it <= args.iterations:
         raise ValueError(f'检查点轮次 {start_it} 超出本实验预算')
@@ -867,11 +899,14 @@ if m411 and not args.resume:
     del source
 
 if m50 and not (args.resume or args.fresh_start):
-    from supermimic.integration.m50_task import initialize_b1250
+    if m51:
+        from supermimic.integration.m51_task import initialize_m50 as initialize_multi
+    else:
+        from supermimic.integration.m50_task import initialize_b1250 as initialize_multi
 
     if (obs_dim, GOAL_DIM, CRITIC_IN) != (69, 320, 970):
         raise ValueError('M5.0 必须继承 Roban 的 69D 观测、320D 目标和 970D Critic')
-    transfer_report = initialize_b1250(
+    transfer_report = initialize_multi(
         dict(pi=pi, wm=wm, critic=critic), mdp, goals, physics_metadata,
         policy_contract(Hh, args.obs_adapter, not args.freeze_decoder, obs_dim=obs_dim,
                         observation_mode=args.motion_obs_mode), imagination_contract)
@@ -1230,6 +1265,10 @@ def policy_update(audit_gradients=False, *, critic_only=False):
                     objectives.update(hand_huber=heads['hand_huber_contribution'],
                                       root=sum(objectives[term] for term in ROOT_TERMS),
                                       joint_huber=sum(objectives[term] for term in HUBER_TERMS))
+                if m51:
+                    objectives.update({term: heads[f'{term}_contribution'] for term in M51_TERMS})
+                    objectives.update(foot_position=heads['swing_position_contribution']+heads['stance_position_contribution'],
+                                      swing_orientation=heads['swing_orientation_contribution'])
             else:
                 objectives={k:v for k,v in heads.items() if k.endswith('_contribution')}
                 objectives.update(base_height=heads['base_height']*task_cfg.w_base_height*.02,
@@ -1237,6 +1276,8 @@ def policy_update(audit_gradients=False, *, critic_only=False):
                                   foot=heads['foot_objective'])
             pairs = (M410_GRADIENT_PAIRS + M411_GRADIENT_PAIRS if hand_tracking else
                      M410_GRADIENT_PAIRS if m410 else M49_GRADIENT_PAIRS if m49 else ())
+            if m51:
+                pairs += M51_GRAD_PAIRS
             part_grads = {'bootstrap': bg}
             for key,values in objectives.items():
                 objective=-(disc*c_t.detach()*values.view(HZ,B)).sum(0).mean()
@@ -1382,12 +1423,17 @@ with launch_simulation(sim_cfg, args):
         if m50:
             from supermimic.integration.m50_task import ClipTrainingStats, MultiReferenceSim
 
-            env = MultiReferenceSim(sim_cfg, args.num_envs, motion, mdp, gamma=args.gamma, goals=goals,
-                                    seed=args.seed, iteration=start_it + 1)
+            sim_type, stats_type = MultiReferenceSim, ClipTrainingStats
+            if m51:
+                from supermimic.integration.m51_task import StanceFootSim, StanceTrainingStats
+
+                sim_type, stats_type = StanceFootSim, StanceTrainingStats
+            env = sim_type(sim_cfg, args.num_envs, motion, mdp, gamma=args.gamma, goals=goals,
+                           seed=args.seed, iteration=start_it + 1)
             if args.resume:
                 env.restore_curriculum(ck['m50_curriculum'])
                 env.reset(torch.arange(env.N, device=dev))
-            clip_stats = ClipTrainingStats(motion)
+            clip_stats = stats_type(motion)
         else:
             env = M4TrackingSim(sim_cfg, args.num_envs, motion, mdp, gamma=args.gamma, goals=goals)
         if args.m4_fault_trace:
@@ -1477,7 +1523,7 @@ with launch_simulation(sim_cfg, args):
             if count == 0:
                 continue
             S0, S1 = unflatten_state(out["s"]), unflatten_state(out["s1"])
-            if normalizers_online or m50:
+            if normalizers_online or (m50 and not m51):
                 executed = out['a_exec'] if action_context else _wm_action(out['a'],out['f'])
                 wm.in_norm.update(wm.inputs(S0, executed, normalize_xi(out['xi']))[keep])
                 wm.out_norm.update(wm.targets(S0, S1)[keep])
@@ -1580,16 +1626,15 @@ with launch_simulation(sim_cfg, args):
             return
         if m4:
             if initial:
-                initial_name = 'initial_b1250.pt' if m50 and transfer_report else 'initial.pt'
+                initial_name = ('initial_m50_5500.pt' if m51 else
+                                'initial_b1250.pt' if m50 and transfer_report else 'initial.pt')
                 atomic_save(ckpt, log_path / initial_name)
                 return
             atomic_save(ckpt, log_path/'last.pt')
             if m44 or m45 or m451 or action_context:
                 last_milestone_saved = progress
-            if m411 and label == 'critic_warmup':
-                os.link(log_path / 'last.pt', log_path / 'critic_warmup.pt')
-            if m50 and label == 'after_adaptation':
-                os.link(log_path / 'last.pt', log_path / 'after_adaptation.pt')
+            if (m50 or m411) and label == warmup_label:
+                os.link(log_path / 'last.pt', log_path / f'{warmup_label}.pt')
             milestone_interval = args.ckpt_every if m44 or m45 or m451 or action_context else 1000
             if m43 and current_it > 0 and (current_it % milestone_interval == 0 or current_it == args.iterations):
                 stage = log_path / milestone_name(current_it)
@@ -1639,6 +1684,8 @@ with launch_simulation(sim_cfg, args):
             reward_metric_names += ('body_prior', 'foot_objective')
         if action_context:
             reward_metric_names += ('upper_action_smoothness', 'upper_action_smoothness_contribution')
+        if m51:
+            reward_metric_names += ('m50_reward', *(term+'_contribution' for term in M51_TERMS))
         rms_names = ('root_xy_rmse_m', 'root_orientation_rmse_deg', 'action_rate_rms')
         stats.update({name: [] for name in (*reward_metric_names, *rms_names)})
         wm_metric_names = tuple(f'{name}_{k}' for name in ('wm_error', 'wm_foot_rmse', 'wm_reward_bias') for k in (1, 4, 8))
@@ -1707,6 +1754,11 @@ with launch_simulation(sim_cfg, args):
             m43_columns += (clip_stats.columns + clip_audit_columns + clip_wm_columns
                             + tuple(f'{name}/real_imagined_gap' for name in clip_names)
                             + ('reset_probability', 'reset_scale', 'wm_lr_effective', 'critic_lr_effective'))
+        if m51:
+            contact_audits = tuple(f'term_{term}_actor_gradnorm' for term in M51_LOG_TERMS)
+            contact_audits += tuple(f'grad_cosine_{left}_{right}' for left, right in M51_GRAD_PAIRS)
+            grad_metric_names += contact_audits
+            m43_columns += clip_stats.contact_columns + contact_audits
     # Replay is deliberately not checkpointed. Refill it on resume as well as on
     # the first run; otherwise sampling the fresh empty buffer fails immediately.
     # Fresh replay after resume: refill, then a short WM-only recovery before Actor updates.
@@ -1783,7 +1835,7 @@ with launch_simulation(sim_cfg, args):
             collect(n, stats)
             if prof:
                 torch.cuda.synchronize(); tp1 = time.time()
-            if not critic_only or m50:
+            if not critic_only or (m50 and not m51):
                 for _ in range(args.wm_batches):
                     l, e8, wm_grad_norm = wm_update()
                     if m46 or action_context:
@@ -1856,7 +1908,7 @@ with launch_simulation(sim_cfg, args):
                     if hand_tracking:
                         extra.update({name.replace('_error_sq', '_rmse_m'): math.sqrt(mean(stats[name]))
                                       for name in hand_error_names})
-                        extra.update(stage=('adaptation' if m50 else 'critic_warmup') if critic_only else 'joint',
+                        extra.update(stage=warmup_label.replace('after_adaptation', 'adaptation') if critic_only else 'joint',
                                      actor_lr_effective=0. if critic_only else opt_pi.param_groups[0]['lr'],
                                      real_imagined_reward_gap=extra['total_reward'] - extra['imagined_reward'])
                     if m50:
@@ -1879,7 +1931,7 @@ with launch_simulation(sim_cfg, args):
                 if standing_action:
                     resets += f' | epa_resets {env.epa_resets}'
                 if hand_tracking:
-                    stage_label = (('WM/Critic adaptation | ' if m50 else 'Critic warm-up | ')
+                    stage_label = (('WM/Critic adaptation | ' if m50 and not m51 else 'Critic warm-up | ')
                                    if critic_only else 'Joint | ')
                 else:
                     stage_label = ''
@@ -1894,12 +1946,14 @@ with launch_simulation(sim_cfg, args):
             if critic_only:
                 critic_warmup_done = it + 1
                 if warmup_complete:
-                    save_checkpoint('after_adaptation' if m50 else 'critic_warmup')
+                    save_checkpoint(warmup_label)
                     last_log_iteration = 0
-                    if m50:
+                    if m50 and not m51:
                         print(f'M5.0 WM/Critic 适应完成 | {critic_warmup_done} 轮', flush=True)
                         if args.m4_eval_every and not STOP_REQUESTED:
                             evaluate_m4_checkpoint(log_path / 'after_adaptation.pt')
+                    elif m51:
+                        print(f'M5.1-{args.m51_group.upper()} Critic 预热完成 | {critic_warmup_done} 轮', flush=True)
                     else:
                         print(f'M4.11 Critic warm-up complete | {critic_warmup_done} iterations', flush=True)
                 continue

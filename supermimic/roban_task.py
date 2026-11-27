@@ -186,6 +186,7 @@ class RobanFootMDP:
     is_reference_foot=True
     canonical_replay_reward=True
     observation_mode='roban_proprio_v1'
+    stance_foot_terms = False
 
     def __init__(self,kin,motion,default_q,goals,cfg=FootRewardConfig(),*,critic_use_body_reference=False,terrain=None):
         self.kin,self.motion,self.default_q,self.goals,self.cfg=kin,motion,default_q,goals,cfg
@@ -356,7 +357,7 @@ class RobanFootMDP:
                    contact_schedule=(valid*(1-(soft_contact-contact).square())).mean(-1),
                    touchdown=touchdown, **extra,
                    slip=-(contact*soft_contact*fv[...,:2].square().sum(-1)/c.slip_speed**2).mean(-1))
-        return raw, epos, valid
+        return raw, epos, valid, soft_contact
 
     def pose_tolerance(self, by_name):
         # 张量顺序跟随真实关节映射，非上身关节的值不参与姿态奖励。
@@ -398,9 +399,9 @@ class RobanFootMDP:
             torch._assert_async(torch.all(f==command.start_frame+ep_step), 'Reward reference clock mismatch')
         ref=self._reference(f,command)
         fp,fR,fv=self.motion.feet(S)
-        raw, epos, valid = self._foot_reward_terms(fp, fR, fv, ref, f, command)
+        raw, epos, valid, soft_contact = self._foot_reward_terms(fp, fR, fv, ref, f, command)
         slip = raw.pop('slip')
-        bp,bR,_,_=self.kin.forward(*S)
+        bp,bR,_,bw=self.kin.forward(*S)
         centers=bp[:,self.collision_ids]+(bR[:,self.collision_ids]@self.collision_offsets[...,None]).squeeze(-1)
         h=torch.zeros_like(centers[...,2]);collision_valid=torch.ones_like(h,dtype=torch.bool)
         if self.terrain: h,collision_valid,_=self.terrain.surface(centers[...,:2])
@@ -474,6 +475,19 @@ class RobanFootMDP:
                         prior_terms[f'hand_{side}_{axis}_error_sq'] = delta[:, i, j].square()
             if c.hand_huber:
                 reward = reward + contribution
+        if self.stance_foot_terms:
+            if terms:
+                prior_terms['m50_reward'] = reward
+            additions, telemetry = self.stance_rewards(fR, bw, ref, f, command, soft_contact, terms)
+            for key, value in additions.items():
+                weight = getattr(c, key)
+                contribution = value * (weight * CONTROL_DT)
+                if weight:
+                    reward = reward + contribution
+                if terms:
+                    raw[key], weighted[key] = value, contribution
+            if terms:
+                prior_terms.update(telemetry)
         if terms:
             zero=torch.zeros_like(reward)
             foot_terms = (*_FOOT_OBJECTIVE_TERMS, 'swing_clearance') if c.swing_aware else _FOOT_OBJECTIVE_TERMS

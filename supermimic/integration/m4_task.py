@@ -345,7 +345,7 @@ def build_reference_tracking(args, kin, motion, spec, mdp_type=F2TrackingMDP):
                    upper_action_smoothness_weight=getattr(args, 'upper_action_smoothness_weight', 0.),
                    soft_body_prior_weight=getattr(args, 'soft_body_prior_weight', 0.),
                    soft_body_prior_tolerance=getattr(args, 'soft_body_prior_tolerance', None))
-    cfg = FootRewardConfig(**rewards)
+    cfg = getattr(mdp_type, 'reward_config_type', FootRewardConfig)(**rewards)
     terrain = make_terrain(kin, vars(args)) if args.wm_use_terrain else None
     mdp = mdp_type(kin, motion, default_q, goals, cfg, action_mapping=mapping,
                         critic_use_body_reference=args.critic_use_body_reference, terrain=terrain,

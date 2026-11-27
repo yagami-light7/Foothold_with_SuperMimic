@@ -262,17 +262,27 @@ def benchmark(root):
     return results
 
 
-def run_smoke(root, envs):
-    with TemporaryDirectory(prefix='m50-smoke-', dir='/tmp') as scratch:
+def run_smoke(root, envs, *, group=None, resume_test=None):
+    config, source = CONFIG, SOURCE
+    initial_name, warmup_name, phase = 'initial_b1250.pt', 'after_adaptation.pt', 'adaptation'
+    prefix = 'm50-smoke-'
+    if group is not None:
+        from supermimic.integration.m51_task import CONFIGS, SOURCE as M51_SOURCE
+
+        config, source = CONFIGS[group], M51_SOURCE
+        initial_name, warmup_name, phase = 'initial_m50_5500.pt', 'critic_warmup.pt', 'critic_warmup'
+        prefix = 'm51-smoke-'
+    if resume_test is None:
+        resume_test = envs == 8
+    with TemporaryDirectory(prefix=prefix, dir='/tmp') as scratch:
         out = Path(scratch)
         ckpt = out / 'checkpoints'
-        cmd = [sys.executable, '-u', 'supermimic/train.py', '--roban_config', str(CONFIG), '--device', 'cuda:0',
+        cmd = [sys.executable, '-u', 'supermimic/train.py', '--roban_config', str(config), '--device', 'cuda:0',
                '--m50_library', str(MANIFEST), '--m50_reference_root', str(root), '--log_dir', str(ckpt),
                '--m50_smoke', str(envs)]
         subprocess.run(cmd, cwd=REPO, check=True)
-        initial, adapt, last = [read_checkpoint(ckpt / name) for name in
-                                ('initial_b1250.pt', 'after_adaptation.pt', 'last.pt')]
-        source = read_checkpoint(SOURCE)
+        initial, adapt, last = [read_checkpoint(ckpt / name) for name in (initial_name, warmup_name, 'last.pt')]
+        source = read_checkpoint(source)
 
         def equal(a, b, model):
             return all(torch.equal(a[model][name], b[model][name]) for name in a[model])
@@ -280,22 +290,30 @@ def run_smoke(root, envs):
         assert all(equal(initial, source, name) for name in ('pi', 'critic', 'wm'))
         assert all(not initial[key]['state'] for key in ('opt_pi', 'opt_wm', 'opt_v'))
         assert equal(initial, adapt, 'pi') and not adapt['opt_pi']['state']
-        assert not equal(adapt, initial, 'wm') and not equal(adapt, initial, 'critic')
+        assert equal(adapt, initial, 'wm') == (group is not None) and not equal(adapt, initial, 'critic')
+        if group is not None:
+            assert not adapt['opt_wm']['state'] and last['opt_wm']['state']
+            assert not equal(last, adapt, 'wm')
         assert not equal(last, adapt, 'pi') and last['opt_pi']['param_groups'][0]['lr'] == 5.e-5
         assert last['iteration'] == last['adaptation_iterations'] == 2
         with (out/'logs/train.csv').open() as stream:
             rows = list(csv.DictReader(stream))
-        assert [row['stage'] for row in rows] == ['adaptation']*2 + ['joint']*2
+        assert [row['stage'] for row in rows] == [phase]*2 + ['joint']*2
         for row in rows:
             assert float(row['reward_sync_max_error']) <= 1e-5 and float(row['goal_sync_max_error']) <= 1e-5
             assert all(float(row[key]) == 0. for key in ('invalid_transitions', 'epa_resets', 'physics_exceptions'))
             assert all(math.isfinite(float(value)) for key, value in row.items() if key != 'stage' and value)
             assert abs(sum(float(row[f'{name}/replay_fraction']) for name in ('F1','F2','F3')) - 1.) < 1e-5
-        if envs == 8:
-            with TemporaryDirectory(prefix='m50-smoke-', dir='/tmp') as resume:
+        if group is not None:
+            assert all(float(r['reset_probability']) == .5 and float(r['reset_scale']) == 1. for r in rows)
+            for key, enabled in (('stance_yaw_huber', group != 'a'), ('stance_angular_slip', group == 'c')):
+                assert (float(rows[-1][f'term_{key}_actor_gradnorm']) > 0.) == enabled
+                assert (float(rows[-1][f'{key}_contribution']) < 0.) == enabled
+        if resume_test:
+            with TemporaryDirectory(prefix=prefix, dir='/tmp') as resume:
                 dest = Path(resume)/'checkpoints'
                 dest.mkdir()
-                (dest/'last.pt').hardlink_to(ckpt/'after_adaptation.pt')
+                (dest/'last.pt').hardlink_to(ckpt/warmup_name)
                 retry = cmd.copy()
                 retry[retry.index('--log_dir')+1] = str(dest)
                 subprocess.run(retry + ['--resume',str(dest/'last.pt')], cwd=REPO, check=True)
@@ -303,10 +321,18 @@ def run_smoke(root, envs):
                 assert resumed['iteration'] == resumed['adaptation_iterations'] == 2
                 with (dest.parent/'logs/train.csv').open() as stream:
                     assert [row['stage'] for row in csv.DictReader(stream)] == ['joint']*2
-        return dict(envs=envs, transitions=last['sim_steps'], epa=0,
+        result = dict(envs=envs, transitions=last['sim_steps'], epa=0,
                     collection_fps=float(rows[-1]['collect_fps']), training_fps=float(rows[-1]['train_fps']),
                     maximum_device_mib=max(float(row['device_used_mib']) for row in rows),
                     actor_grad=float(rows[-1]['pi_gradnorm']))
+        if group is not None:
+            result.update(group=group, resumed=resume_test, warmup_actor_wm_frozen=True,
+                          warmup_value_loss=float(rows[1]['v_loss']),
+                          critic_target_min=float(rows[1]['critic_target_min']),
+                          critic_target_negative_ratio=float(rows[1]['critic_target_negative_ratio']),
+                          yaw_grad=float(rows[-1]['term_stance_yaw_huber_actor_gradnorm']),
+                          angular_grad=float(rows[-1]['term_stance_angular_slip_actor_gradnorm']))
+        return result
 
 
 def main():

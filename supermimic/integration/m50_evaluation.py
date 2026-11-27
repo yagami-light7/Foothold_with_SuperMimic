@@ -48,7 +48,12 @@ def scene_for(args, source, item, split):
     kin = RobotKinematics(device)
     motion = load_clip(item, kin, device, args.reference_root, split)
     spec = MultiReferenceGoalSpec('roban_foot', config.goal_frames, config.goal_dt)
-    _, goals, mdp, _ = build_reference_tracking(config, kin, motion, spec, MultiReferenceMDP)
+    mdp_type = MultiReferenceMDP
+    if getattr(config, 'm51_group', None):
+        from .m51_task import StanceFootMDP
+
+        mdp_type = StanceFootMDP
+    _, goals, mdp, _ = build_reference_tracking(config, kin, motion, spec, mdp_type)
     saved_goal = dict(checkpoint['goal_contract'], reference=spec.contract()['reference'])
     saved = checkpoint['task_contract']
     context = {'mode', 'duration_s', 'reset', 'foot_frame'}

@@ -35,7 +35,12 @@ def build_m50_task(args, kin, device, *, entries=None):
     motion = MultiReferenceProvider(manifest['train'] if entries is None else entries, kin, device,
                                     root=args.m50_reference_root, version=manifest['reference_version'])
     spec = MultiReferenceGoalSpec('roban_foot', args.goal_frames, args.goal_dt)
-    return build_reference_tracking(args, kin, motion, spec, MultiReferenceMDP)
+    mdp_type = MultiReferenceMDP
+    if getattr(args, 'm51_group', None):
+        from .m51_task import StanceFootMDP
+
+        mdp_type = StanceFootMDP
+    return build_reference_tracking(args, kin, motion, spec, mdp_type)
 
 
 def curriculum_at(iteration):
